@@ -15,10 +15,10 @@ from llm.structured import call_json
 
 OPTION_INTENTS = [i for i in PLAYER_INTENTS if i != "冒犯"]   # 想冒犯的话玩家可以自己打字，不往嘴里塞
 
-SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地的旅行者，独自来到稻妻；为人礼貌、好奇、有分寸，说话像普通人。{player}正在和{npc}说话，你替{player}想出接下来可以说的 {n} 句话。
+SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地的旅行者，独自来到稻妻；为人礼貌、好奇、有分寸，说话像普通人。{player}正在和{npc}说话，你替{player}想几句接下来可以说的话，给玩家参考——玩家也可以自己打字。
 
 要求：
-1. {n} 句话的语气各不相同，语气从这些里选：{tones}；意图从这些里选：{intents}。
+1. 给 0~{n} 句，看情况：接下来明显有几个不同的方向时才给满 {n} 句；对方只是在闲聊、或者明显该{player}自己回答一个具体问题时，给一两句就够，觉得不需要提示时可以一句不给（options 为空）。不要凑数，不要每次都是「一句关心、一句查案、一句玩笑」的固定套路。语气从这些里选：{tones}；意图从这些里选：{intents}。
 2. 每句都要接得上{npc}刚才说的话，带着具体的细节（对方说过的东西、眼前的景物、自己的旅途见闻），不要空泛的客套。
 3. 如果「可以问的方向」不为空，至少一句自然地朝那个方向问；方向为空时顺着对话聊，最多一句提到眼下的目标。私人时光里不谈公务。
 4. 不要重复{player}之前说过的话，也不要和之前的选项换汤不换药。
@@ -77,7 +77,7 @@ class PlayerOptionLLMAdapter:
 # {player}之前说过的话（不要重复）
 {chr(10).join('- ' + s for s in said[-6:]) or '（无）'}
 
-请给出 {n} 句。"""
+请给出 0~{n} 句。"""
         req = LLMRequest(
             task="player_options",
             messages=[{"role": "system", "content": SYSTEM.format(player=player, npc=npc_name, n=n,

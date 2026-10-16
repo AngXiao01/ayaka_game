@@ -17,6 +17,7 @@ class TurnContext:
     handoff: dict = field(default_factory=dict)         # 上次见面的结构化交接（上下文重置后接续的唯一来源）
     turn: int = 0
     player_view: dict = field(default_factory=dict)     # 玩家视角（Explorer.player_view），只给替玩家想台词的选项 agent
+    place: dict = field(default_factory=dict)           # 物理世界里这个 NPC 该知道的：身边的人、同行、提到的人在哪、口信
 
     @property
     def task(self) -> dict:

@@ -68,9 +68,11 @@ def test_private_event_only_has_private_signals():
 def test_time_deadline_and_endings():
     g = make_god()
     assert g.slots_left() == 11
-    for _ in range(WORLD.turns_per_phase):
+    for _ in range(20):
         g.conversation_turn()
-    assert g.phase == "午后"
+    assert g.phase == "清晨" and g.clock_label() == "07:40"         # 说一轮话只花两分钟
+    g.advance(1)
+    assert g.phase == "午后" and g.clock_label() == "11:00"
     g.advance(10)
     assert g.deadline_reached() and g.compute_ending(30).id == "too_late"
     g2 = make_god()
@@ -106,12 +108,12 @@ def test_menu_and_actions():
     assert next(o for o in talk if o.meta["npc"] == "ayaka").meta["pending"] > 0
     assert "print_workshop" not in [o.meta.get("dest") for o in menu]
     ex.move("hanamizaka")
-    assert g.phase == "午后" and g.location == "hanamizaka"
+    assert g.location == "hanamizaka" and g.clock_label() == "07:45"             # 走过去 45 分钟
     assert "print_workshop" not in [o.meta.get("dest") for o in ex.menu()]     # 没线索，找不到印坊
     g.clues.append("c_workshop")
     assert "print_workshop" in [o.meta.get("dest") for o in ex.menu()]
     ex.move("print_workshop")
-    assert g.phase == "午后"                                                     # 同一片区，不花时间
+    assert g.clock_label() == "07:55"                                            # 同一片区，走几步就到
     _, gained = ex.examine("o_scrap_box")
     assert gained == ["c_seal_rubbing"] and g.journal
 

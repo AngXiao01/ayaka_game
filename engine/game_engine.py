@@ -24,6 +24,7 @@ from core.dialogue_session import DialogueEndReason, DialogueSession, SessionRes
 from core.explorer import Explorer
 from core.god_env import GodEnv, QuestDef
 from core.npc_agent import NPCAgent
+from core.physical import PhysicalWorld
 from core.player_option_generator import PlayerOptionGenerator
 from core.reviewer import SignalReviewer
 from core.scene import SceneAgent
@@ -40,7 +41,7 @@ from llm.scene_llm_adapter import SceneLLMAdapter
 from llm.router import ModelRouter
 from llm.summary_llm_adapter import CompressLLMAdapter, SummaryLLMAdapter
 from models.knowledge import LoreBase
-from models.memory import MemoryStore
+from models.memory import MemoryItem, MemoryStore
 from models.personality import Personality
 from models.relationship import Relationship
 
@@ -92,7 +93,13 @@ class GameEngine:
         state = json.loads(self.save_path.read_text(encoding="utf-8")) if self.save_path.is_file() else {}
         self.resumed = bool(state)
         self.god = GodEnv(self.quest, self.world.phases, self.world.start, self.world.turns_per_phase,
-                          state.get("world"))
+                          state.get("world"), clock=self.world.clock())
+        # 物理世界：谁在哪、跟谁同行、口信在路上——GodEnv 持有，位置以它为准
+        self.god.physical = PhysicalWorld(self.world, self.personas, self.god, (state.get("world") or {}).get("physical"),
+                                          player_name=g.player_name)
+        self.god.physical.on_deliver = self._on_message
+        # 主线结束（结局）、截止时间到了之后还能继续玩；自动玩家 / 评测跑到结局就停
+        self.continue_after_ending = g.continue_after_ending and not getattr(player, "stops_at_ending", False)
         rels = state.get("relationships", {})
 
         r, t, rep = self.router, self.tracer, lp.json_repair_attempts
@@ -155,6 +162,9 @@ class GameEngine:
         for p in self.personas.values():
             for slot in p.schedule:
                 w.loc(slot["location"])
+            for other in list(p.confidants) + list((p.outing or {}).get("tell", [])):
+                if other not in self.personas:
+                    raise ValueError(f"{p.id} 的 confidants / outing.tell 里有不存在的人：{other}")
         for e in q.events:
             w.loc(e.location)
         for lid in w.locations:
@@ -188,13 +198,28 @@ class GameEngine:
 
     # ------------------------------------------------------------ 主循环
 
+    def _on_message(self, msg: dict) -> None:
+        """口信送到：进收信人的记忆（之后检索得到），下次对话时出现在它的情境里。"""
+        to, phys = msg["to"], self.god.physical
+        if to in self.npcs:
+            self.npcs[to].memory.add(MemoryItem(
+                text=f"（{self.god.time_label()}）{phys.name(msg['from'])}托人带话：{msg['text']}", kind="message",
+                importance=3, world_time=self.god.total_turns, extra={"from": msg["from"], "sent": msg["sent"]}))
+        self.tracer.log("message", action="delivered", **{k: msg[k] for k in ("id", "from", "to", "kind", "text")})
+
+    def _flush_notices(self) -> None:
+        for line in self.god.notices:
+            self.out("\n" + line)
+        self.god.notices.clear()
+
     def run(self, max_actions: int = 400) -> GameResult:
         g = self.god
         result = GameResult(ending=g.ending)
-        if g.ending:
+        if g.ending and not self.continue_after_ending:
             self.out("这条主线已经结束了。用 --new 重新开始。")
             return result
         self.intro()
+        g.notices += g.physical.tick()            # 开局 / 读档：先看一眼谁在身边
         h = self.settings.harness
         self.tracer.log("game_start", backend=self.backend.name, routes=self.router.describe(),
                         resumed=self.resumed, world=g.to_dict(),
@@ -203,9 +228,18 @@ class GameEngine:
         show_panel = True
         self.director.run()                       # 记下开局的时段，之后每到新时段才跑
         for _ in range(max_actions):
-            if g.resolved or g.deadline_reached():
+            if g.resolved and not g.ending:
                 self._finish(result)
-                break
+                if not self.continue_after_ending:
+                    break
+                self._after_ending()
+                show_panel = True
+            elif g.deadline_reached() and not g.resolved and "deadline_passed" not in g.flags:
+                if not self.continue_after_ending:
+                    self._finish(result)
+                    break
+                self._deadline_event()
+                show_panel = True
             if self.budget.exhausted():
                 result.stopped_by_budget = True
                 if not any(sr.end_reason is DialogueEndReason.BUDGET for sr in result.sessions[-1:]):
@@ -232,6 +266,7 @@ class GameEngine:
                                     tracer=self.tracer, branch=self.branch,
                                     player_view=self.explorer.player_view).run()
                 result.sessions.append(r)
+                self._pass_word(npc, r, ev)
                 self.tracer.log("session_end", npc=r.npc, end_reason=r.end_reason.name, turns=r.turns,
                                 signals=r.signals, clues_gained=r.clues_gained, degraded_turns=r.degraded_turns,
                                 world=g.to_dict(), budget=self.budget.snapshot())
@@ -261,8 +296,12 @@ class GameEngine:
             elif action.kind == "wait":
                 self.out("\n" + self.explorer.wait())
                 show_panel = True
+            elif action.kind == "dismiss":
+                self.out("\n" + self.explorer.dismiss(action.meta["npc"]))
+                show_panel = True
             elif action.kind == "view":
                 self.out("\n" + self.explorer.view(action.meta["view"]))
+            self._flush_notices()
             if not (g.resolved or g.deadline_reached()):
                 with self.tracer.span(agent="director"):
                     for line in self.director.run(degraded=self.budget.degraded()):
@@ -273,6 +312,32 @@ class GameEngine:
         self.out("\n（进度已保存）")
         return result
 
+    def _pass_word(self, npc: NPCAgent, r: SessionResult, ev) -> None:
+        """见过玩家之后，NPC 会托人跟自己信得过的人说一声（人物卡 confidants）：只传话，不替玩家解锁证据。"""
+        if ev or not r.summary or r.turns == 0:
+            return
+        text = f"{self.settings.game.player_name}来找过我。{r.summary.get('summary', '')}"
+        for c in npc.p.confidants:
+            if c in self.npcs and c != npc.p.id:
+                msg = self.god.physical.send(npc.p.id, c, text, kind="note")
+                self.tracer.log("message", action="sent", **{k: msg[k] for k in ("id", "from", "to", "kind", "text")},
+                                deliver=msg["deliver"])
+
+    def _deadline_event(self) -> None:
+        """截止时间到了、主线还没解决：那件事照样发生（茶会照开），作为剧情播出来，然后继续——真相还可以接着查。"""
+        g = self.god
+        g.flags.append("deadline_passed")
+        e = next((x for x in self.quest.endings if x.when.get("deadline_passed")), None)
+        if e:
+            self.out(f"\n════ {self.quest.deadline['label']} · {e.title} ════\n\n{e.text}\n")
+        self.out("（主线还没有结束：真相还可以接着查下去。）")
+        g.journal.append(f"{g.time_label()}　{self.quest.deadline['label']}已经过去了，伪信的事还没有查清")
+        self.tracer.log("deadline_event", time=g.time_label())
+
+    def _after_ending(self) -> None:
+        self.out(self.quest.after_hint or "（主线告一段落。你可以继续在稻妻走走：约人同行、拜访旧识……想结束时选「保存并退出」。）")
+        self.tracer.log("after_ending", ending=self.god.ending)
+
     def _finish(self, result: GameResult) -> None:
         g = self.god
         aff = self.companion.relationship.affinity
@@ -280,7 +345,9 @@ class GameEngine:
         g.ending = e.id
         result.ending = e.id
         tier = self.companion.relationship.tier()[0]
-        self.out(f"\n════ 结局：{e.title} ════\n\n{e.text}\n")
+        late = "deadline_passed" in g.flags and not e.when.get("deadline_passed")
+        self.out(f"\n════ 结局：{e.title} ════\n\n" + (self.quest.late_note + "\n\n" if late and self.quest.late_note else "")
+                 + f"{e.text}\n")
         if self.quest.epilogue_by_tier.get(tier):
             self.out(self.quest.epilogue_by_tier[tier] + "\n")
         self.out(f"（{g.time_label()} ｜ 线索 {len(g.clues)}/{len(self.quest.clues)} ｜ "

@@ -167,7 +167,7 @@ function renderLine(l) {
   }
   if (/^—— .* ——$/.test(s)) return el("div", "convend", s.replace(/—/g, "").trim());
   if (/^（不知不觉/.test(s)) return el("div", "time", s);
-  if (/^(✦|📜|⚡)/.test(s)) return el("div", "event", s);
+  if (/^(✦|📜|⚡|🚶|👋)/.test(s)) return el("div", "event", s);
   if (/^(😣|……)/.test(s)) return el("div", "event bad", s);
   if (/^\s+(·|✗|🤥|📝)/.test(t)) return el("div", "debug", s);      // 调试行都带缩进；线索本等列表的「·」不算
   if (/^提示：/.test(s)) return el("div", "narr hint", s);
@@ -223,7 +223,7 @@ function renderSide(p) {
   const sec = (title, items, empty) => [el("h2", null, title), ...(items.length ? items : [el("div", "empty", empty)])];
   const people = p.people.map(x => el("div", "card",
     el("div", "n", `${x.name}`, el("span", "d", `  ${x.title} · ${x.tier}`)),
-    el("div", "d", `此刻大概在：${x.where}`),
+    el("div", "d", `你知道的去向：${x.where}`),
     el("div", "d", `好感 ${x.affinity}　信任 ${x.trust}`),
     el("div", "bar", (() => { const i = el("i"); i.style.width = x.affinity + "%"; return i; })())));
   const nextSec = (p.leads.length || p.checklist.length) ? [el("h2", null, "下一步"), el("div", "card next",
@@ -240,6 +240,7 @@ function renderSide(p) {
     ...nextSec,
     el("h2", null, "现在"),
     el("div", "card", el("div", "n", `${p.time} · ${p.location}`), el("div", "d", p.status.split("｜")[1] || ""),
+       p.party && p.party.length ? el("div", "d", "和你同行：" + p.party.join("、")) : null,
        el("div", "d", p.act), el("div", "d", "提示：" + p.hint)),
     ...sec(`线索 ${p.clues.length}/${p.clue_total}`, p.clues.map(c => el("div", "card", el("div", "n", c.name), el("div", "d", c.desc))), "还没有线索。"),
     ...sec("证词本（不一定都是真话）", p.testimonies.map(t => el("div", "card",

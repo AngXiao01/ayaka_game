@@ -190,6 +190,7 @@ class GameSettings:
     memory_top_k: int = 3                       # 自动注入的记忆条数，更多靠 recall_memory 按需检索
     options_mode: str = "llm"                   # llm | static
     hints: bool = True                          # 菜单里用 💡 标出可能有进展的人、物、地点
+    continue_after_ending: bool = True          # 结局 / 截止时间之后继续玩（后日谈）；自动玩家和评测照旧在结局处停
     debug: bool = False
     seed: Optional[int] = None
     data_dir: Path = ROOT / "data"
@@ -275,6 +276,7 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         memory_top_k=_env_int("MEMORY_TOP_K", 3),
         options_mode=_env("OPTIONS_MODE", "llm"),
         hints=_env_bool("GAME_HINTS", True),
+        continue_after_ending=_env_bool("CONTINUE_AFTER_ENDING", True),
         debug=_env_bool("GAME_DEBUG", False),
         seed=int(seed) if seed else None,
     )

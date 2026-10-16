@@ -9,7 +9,7 @@ WORLD = World.load(ROOT / "content/world.json")
 
 
 def make_god(state=None, trust=None):
-    g = GodEnv(QUEST, WORLD.phases, WORLD.start, WORLD.turns_per_phase, state)
+    g = GodEnv(QUEST, WORLD.phases, WORLD.start, WORLD.turns_per_phase, state, clock=WORLD.clock())
     trust = trust or {}
     g.trust_lookup = lambda npc: trust.get(npc, 20)
     return g
