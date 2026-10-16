@@ -111,6 +111,7 @@ footer { border-top: 1px solid var(--line); background: var(--panel); padding: 1
   header .status { display: none; }
   header label { margin-left: auto; }
 }
+.act-tag{margin-left:.5em;color:var(--gold);font-weight:600}
 </style>
 </head>
 <body>
@@ -201,8 +202,13 @@ function renderOptions(st) {
     box.append(el("div", "typing", "对方正在想", el("span", null, "."), el("span", null, "."), el("span", null, ".")));
   }
   for (const o of st.options) {
-    const b = el("button", o.kind === "say" ? "say" : (["ask", "report", "propose", "event", "confront_menu"].includes(o.kind) ? "primary" : ""));
-    if (o.kind === "say") { b.append("「" + o.text + "」"); b.append(el("small", null, [o.tone, o.intent].filter(Boolean).join(" · "))); }
+    const spoken = o.kind === "say" || o.line;
+    const b = el("button", spoken ? "say" : (["ask", "report", "propose", "event", "confront_menu"].includes(o.kind) ? "primary" : ""));
+    if (spoken) {
+      b.append("「" + o.text + "」");
+      b.append(el("small", null, [o.tone, o.line ? "" : o.intent].filter(Boolean).join(" · ")));
+      if (o.line) b.append(el("small", "act-tag", "→ " + o.act));      // 这句话会直接起作用：告辞、邀请、问出关键问题……
+    }
     else b.append(o.text);
     b.type = "button";
     b.onclick = () => choose({index: o.i});

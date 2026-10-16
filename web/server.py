@@ -67,7 +67,8 @@ class WebPlayer:
     def choose(self, options, ctx) -> PlayerAction:
         io = self.io
         with io.cond:
-            io.options = [{"i": i, "text": o.text, "kind": o.kind, "intent": o.intent, "tone": o.tone}
+            io.options = [{"i": i, "text": o.text, "kind": o.kind, "intent": o.intent, "tone": o.tone,
+                           "line": bool(o.meta.get("line")), "act": o.meta.get("act_label", "")}
                           for i, o in enumerate(options)]
             io.allow_free = True              # 对话里自由发言；地点层自由写想查看什么
             io.in_dialogue = ctx is not None
@@ -87,6 +88,8 @@ class WebPlayer:
         o = options[ans["index"]]
         if o.kind == "say":
             io.write(f"{self.player_name}：「{o.text}」", "player")
+        elif o.meta.get("line"):
+            pass                                  # 带动作的台词：对话里会作为玩家的话显示出来
         elif o.kind not in ("view",):
             io.write(f"▸ {o.text}", "action")
         return PlayerAction.of(o)

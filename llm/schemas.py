@@ -187,6 +187,7 @@ PLAYER_OPTIONS_SCHEMA = {
                     "text": {"type": "string"},
                     "intent": {"type": "string", "enum": PLAYER_INTENTS},
                     "tone": {"type": "string", "enum": PLAYER_TONES},
+                    "act": {"type": "string"},
                 },
                 "required": ["text", "intent", "tone"],
             },
@@ -212,7 +213,7 @@ def validate_player_options(obj: Any, max_len: int = 60) -> list[dict]:
         seen.add(text)
         intent, tone = _str(it.get("intent")), _str(it.get("tone"))
         out.append({"text": text, "intent": intent if intent in PLAYER_INTENTS else "闲聊",
-                    "tone": tone if tone in PLAYER_TONES else ""})
+                    "tone": tone if tone in PLAYER_TONES else "", "act": _str(it.get("act"))})
     return out                  # 0~3 句都可以：不是每一轮都需要替玩家想台词
 
 

@@ -61,7 +61,20 @@ class PlayerOptionGenerator:
             out = self._polish(list(fallback), said, known, terms, dropped)
         if dropped and self.tracer:
             self.tracer.log("options_filter", dropped=dropped)
-        return [PlayerOption(o["text"], o["intent"], tone=o.get("tone", "")) for o in out], degraded
+        acts = {a["id"]: a for a in ctx.player_view.get("actions", [])}
+        res, used = [], set()
+        for o in out:
+            act = o.get("act") or ""
+            if not act and o.get("intent") == "告别" and "leave" in acts:
+                act = "leave"                          # 告别的话就是告辞：说了就走，不再另点按钮
+            a = acts.get(act)
+            if a and act not in used:                  # 只认此刻真能做的事，每件事一句
+                used.add(act)
+                res.append(PlayerOption(o["text"], o["intent"], kind=a["kind"], tone=o.get("tone", ""),
+                                        meta={**a.get("meta", {}), "line": True, "act": act, "act_label": a["tag"]}))
+            else:
+                res.append(PlayerOption(o["text"], o["intent"], tone=o.get("tone", "")))
+        return res, degraded
 
     def _polish(self, raw: list[dict], said: list[str], known: str = "", terms: Optional[list[str]] = None,
                 dropped: Optional[list[dict]] = None) -> list[dict]:
