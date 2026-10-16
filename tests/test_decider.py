@@ -108,3 +108,39 @@ def test_threat_alerts_the_npc(tmp_path):
     eng, _, _ = engine(tmp_path, {"act_id": "act2", "phase_idx": 1, "location": "ritou", "clues": ["c_case"]},
                        [{"kind": "talk", "npc": "soji"}, ("不说实话我就把你送去天领奉行！", "自由发言"), "q"], decider=d)
     assert "alerted:soji" in eng.god.flags
+
+
+class FakeLLM:
+    name = "fake"
+
+    def __init__(self, text):
+        self.text, self.reqs = text, []
+
+    def complete(self, req):
+        from llm.base import LLMResponse
+        self.reqs.append(req)
+        return LLMResponse(self.text, usage={})
+
+
+def test_llm_decider_answers_the_same_questions():
+    from llm.decider import LLMDecider
+    llm = FakeLLM('{"is_bug": {"answer": true, "p": 0.8}, "team": {"answer": "payments", "p": 0.9}, '
+                  '"urgency": {"answer": 2, "p": 0.7}}')
+    d = LLMDecider(llm, type("P", (), {"max_tokens": 300})())
+    out = d.decide("t", {"ticket": "Pay 之后白屏"}, Q)
+    assert out["is_bug"].yes(0.75) and out["team"].answer == "payments" and out["urgency"].answer == 2
+    assert "Pay 之后白屏" in llm.reqs[0].messages[1]["content"]
+    bad = LLMDecider(FakeLLM("不是 JSON"), type("P", (), {"max_tokens": 300})(), max_failures=1)
+    assert bad.decide("t", {"a": 1}, Q) is None and bad.decide("t", {"a": 2}, Q) is None   # 失败退回关键词，之后停用
+
+
+def test_auto_mode_prefers_jev_then_llm():
+    from config.settings import load_settings
+    from llm.decider import Decider, LLMDecider, make_decider
+    s = load_settings()
+    s.harness.decider_mode = "auto"
+    s.llm.backend, s.llm.api_key = "gemma", ""
+    assert isinstance(make_decider(s, "gemma", None, (FakeLLM("{}"), None)), LLMDecider)
+    assert type(make_decider(s, "mock", None, (FakeLLM("{}"), None))) is Decider          # mock 不判
+    s.llm.backend, s.llm.api_key = "openrouter", "sk-or-v1-abc"
+    assert isinstance(make_decider(s, "openrouter", None, (FakeLLM("{}"), None)), JevDecider)

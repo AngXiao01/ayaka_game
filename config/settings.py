@@ -178,7 +178,7 @@ class HarnessSettings:
     branch_mode: str = "llm"                    # 分支（自由输入的处置方案 → 预设方案）：llm | rules | off
     scene_mode: str = "llm"                     # 场景（自由描述要查看的东西）：llm | rules | off
     persona_mode: str = "index"                 # 人物卡：index 只放核心 + 索引、细节按话题注入 | full 全量进 system
-    # 便宜的分支判定（OpenRouter Decisions API / Jev，只算输入 token）：auto = 用 OpenRouter 且有 key 时开 | jev | off
+    # 分支判定：auto = OpenRouter 有 key 用 Jev（便宜），否则用大模型 | jev | llm | off（只用关键词）
     decider_mode: str = "auto"
     decider_model: str = "typesafe/jev-1.13"
     decider_url: str = "https://openrouter.ai/api/alpha/decisions"

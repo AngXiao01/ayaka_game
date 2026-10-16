@@ -214,6 +214,18 @@ NPC 说「达成了」不算数，要依次过：
 三层的状态都外化进存档（`nudges`、`npc_overrides`、`rumors`、`last_progress_slot`），trace 里记 `director` / `branch` / `scene` 事件，
 提议、执行、驳回原因都可以回看。开关：`DIRECTOR_MODE` / `BRANCH_MODE` / `SCENE_MODE` = `llm | rules | off`。
 
+### 上下文：短期、长期、按需（`core/context_fs.py`）
+
+- **短期**：这次谈话（工作记忆，超窗时摘要压缩）+ 只和这一轮有关的情境（时间地点、关系、你此刻的心思、别人带来的话）。
+- **长期**：每个 NPC 的记忆库（`data/memories/<存档>/<npc>.jsonl`），开场按话题检索几条，更多用 `recall_memory`。
+- **按需**：一棵只读的目录树，NPC 用 `ls` / `read` 去翻，翻到的内容只在这一轮出现、不常驻上下文：
+  `/地点/<名>`（离这儿多远、你觉得谁在那；含璃月、蒙德等海外国度）、`/人物/<名>`（关系、看法、你知道的去向）、
+  `/我/记忆`、`/我/今天`、`/案子/我知道的`、`/稻妻/<条目>`。**权限即视角**：树由代码按「这个人知道什么」现生成，没给她看过的线索不在里面。
+- **不对劲要察觉（模型判，不靠代码规则）**：NPC 回复的第一个字段是 `fit`（接得上 / 换了话题 / 有点跳 / 毫不相干），先判后说；
+  「有点跳」「毫不相干」时要先对这份突兀有反应（意外、困惑、问一句怎么忽然说这个），拿不准地方多远可以先 `read /地点/…`。
+  判定器（Jev / 大模型）另给一个第二意见（abrupt），判为突兀时作为「这话有点不对劲」放进情境。
+- **选项不串视角**：和 NPC 最近说的话太像的选项直接丢掉，提示里也写明不要替对方说话。
+
 ### 便宜的分支判定：Jev（`llm/decider.py`、`core/judge.py`）
 
 「这句话是哪个行动」「说中了哪条推测」「是不是在威胁」这类判断不需要生成文字，交给 OpenRouter 的 Decisions API
@@ -228,7 +240,8 @@ NPC 说「达成了」不算数，要依次过：
 Jev 只给答案和概率，不改状态：采不采纳、怎么结算都由代码决定。同样的问题有缓存；连续失败 3 次整局停用，退回关键词，游戏照常进行。
 trace 里记 `decision` 事件（耗时、花费、答案和把握）。
 
-开关：`DECIDER_MODE=auto | jev | off`（auto = 用 OpenRouter 且有 key 时开）、`DECIDER_MODEL`、`DECIDER_TIMEOUT_S`。
+开关：`DECIDER_MODE=auto | jev | llm | off`。auto：OpenRouter 有 key 用 Jev；否则用大模型回答同样的问题（`LLMDecider`，贵一些但不退回关键词）；mock 后端不判。
+每句自由发言的那一次判定里还问了「接不接得上」（abrupt）和「是不是在邀请同行」（invite），关键词只在判定器不可用时兜底。
 
 ### Context：往循环里喂什么（`llm/npc_llm_adapter.py`）
 

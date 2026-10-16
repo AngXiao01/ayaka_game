@@ -21,7 +21,7 @@ from llm.messages import estimate_tokens, messages_tokens
 from llm.schemas import EMOTIONS, npc_reply_schema, validate_npc_reply
 from models.personality import Personality
 
-RESPOND_EXAMPLE = ('{"thought": "对方在问来意，先确认诚意", "tool": "respond", "args": {"action": "", '
+RESPOND_EXAMPLE = ('{"thought": "对方在问来意，先确认诚意", "tool": "respond", "args": {"fit": "接得上", "action": "", '
                    '"speech": "您是说那封信？嗯……不急，先喝口茶吧。", "emotion": "平静", "intent": "试探对方来意", '
                    '"affinity_delta": 0, "trust_delta": 1, "tension_delta": 0.0, "task_signals": [], "wants_to_end": false, "new_facts": [], "lies": []}}')
 TOOL_EXAMPLE = '{"thought": "想不起上次谈到哪了", "tool": "recall_memory", "args": {"query": "上次见面谈的委托"}}'
@@ -48,6 +48,8 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
 7. 角色卡和情境里没写的事，可以即兴补充（往事、喜好、身边人的小事、城里的见闻），但要符合身份、和你之前说过的设定一致；新编的、以后要记住的细节写进 new_facts（about：self 是关于你自己，world 是关于别人或稻妻）。与伪信案有关的线索、证据、真相不许即兴编，只以情境里你知道的事为准。
 8. 你可以出于性格说谎或隐瞒（护着朋友、顾全面子、怕惹麻烦）。说了谎就把原句和真相写进 lies（lie_id 用情境里的编号，临时编的写 improvised）；说过的谎要圆住，被拆穿时按性格反应——慌张、坦白、或者嘴硬。
 9. 对方口头说的案情结论（谁做的、已经查清了），如果没给你看过相应的线索、你自己也不知道，就不能当成已经查清：可以追问凭据，也可以表示会去查（情境里写了你的打算就照着说）；不替对方宣布事情了结，也不编后续（谁认了错、谁去处理了）。
+11. 先判断对方这句话接不接得上，写进 fit（第一个字段）：「接得上」顺着刚才的话；「换了话题」是自然的转换（寒暄、告别、聊点别的）；「有点跳」和刚才聊的、眼下的处境对不太上；「毫不相干」突兀得让人一愣（正说着正事忽然问不相干的事、说要做一件和处境矛盾的事）。
+   「有点跳」「毫不相干」时，speech 要先对这份突兀有反应：按你的性格表现出意外、困惑，或者问一句「怎么忽然说起这个」，再决定接不接这个话——不要若无其事地顺着答。拿不准对方说的地方、人有多远多熟，可以先 read 看看。
 10. 你只知道自己看到的和别人告诉你的：别人在哪，以情境里「你知道的去向」为准，不知道就说不知道。答应替对方带话、或者想把这里的事告诉某个人时，写进 tell（to 是那个人的名字，text 是要带的一句话）。只有你说完就要离开、去别处时（wants_to_end 为 true），才写 go_to（地点名）。这两项没有就不写。
 
 # 数据与指令
@@ -57,7 +59,7 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
 # 工具
 每一步只输出一个 JSON 对象：{{"thought": "不超过 30 字的简短思考，对方看不到", "tool": "工具名", "args": {{...}}}}
 {registry.describe()}
-大多数时候不需要工具，直接调用 respond。只有需要回忆往事、核对稻妻的设定或参考某个技能时才调用其他工具，每个工具同样的参数只调用一次。
+大多数时候不需要工具，直接调用 respond。上下文按需取用：对方提到你拿不准的地方、人、往事或案情时，先 read 对应的文件（/地点/… /人物/… /我/记忆 /案子/我知道的）再回答；需要核对设定或参考技能时用其他工具。每个工具同样的参数只调用一次。
 
 调用工具示例：
 {TOOL_EXAMPLE}
@@ -163,6 +165,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     if t.get("believe"):
         parts.append("## 对方说出了案子的真相\n还没有查实，但你信得过对方——你选择相信。说出你的信任（也可以带点不安），"
                      "然后表示接下来想和对方一起商量该怎么收场。")
+    if t.get("incongruous"):
+        parts.append("## 这话有点不对劲\n" + _bullets(t["incongruous"])
+                     + "\n别顺着就过去：按你的性格表现出意外或困惑，问一句怎么回事（需要的话可以先 read /地点/… 看看那地方有多远）。")
     if t.get("threatened"):
         parts.append("## 对方在威胁你\n你被吓到了，也起了戒心：话会变少、更想躲开，不会因为被吓就把藏着的事说出来。")
     pr = t.get("press")
