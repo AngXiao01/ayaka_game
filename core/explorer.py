@@ -290,10 +290,16 @@ class Explorer:
         if clue and clue not in g.clues and obj.get("check"):
             # 概率判定：找不找得到。同行的人会帮忙，每失败一次下次更容易；失败只花时间
             c = obj["check"]
-            p = c["p"] + sum(v for n, v in c.get("helpers", {}).items() if n in self.party) + 0.25 * g.misses.get(obj_id, 0)
-            ok, pct = roll(g, f"examine:{obj_id}", p)
-            helped = "、".join(self.personas[n].name for n in c.get("helpers", {}) if n in self.party)
-            line = tag(pct, ok) + (f"（{helped}帮你一起找）" if helped else "")
+            parts = [("", c["p"])]
+            parts += [(f"{self.personas[n].name}帮忙", v) for n, v in c.get("helpers", {}).items() if n in self.party]
+            if g.misses.get(obj_id):
+                parts.append((f"找过{g.misses[obj_id]}遍、心里有数", 0.25 * g.misses[obj_id]))
+            if g.phase == "夜晚":
+                parts.append(("天黑看不清", -0.2))
+            elif g.phase == "黄昏":
+                parts.append(("天色暗了", -0.1))
+            ok, pct = roll(g, f"examine:{obj_id}", sum(v for _, v in parts))
+            line = tag(pct, ok, [f"{k}{v:+.0%}" for k, v in parts if k])
             if not ok:
                 g.misses[obj_id] = g.misses.get(obj_id, 0) + 1
                 return f"{line}\n{c['fail']}", []

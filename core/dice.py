@@ -13,5 +13,5 @@ def roll(god: Any, key: str, p: float) -> tuple[bool, int]:
     return ok, round(p * 100)
 
 
-def tag(pct: int, ok: bool) -> str:
-    return f"🎲 {pct}% → {'成功' if ok else '失败'}"
+def tag(pct: int, ok: bool, why: list[str] = ()) -> str:
+    return f"🎲 {pct}%{'（' + '，'.join(why) + '）' if why else ''} → {'成功' if ok else '失败'}"

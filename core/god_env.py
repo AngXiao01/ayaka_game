@@ -506,25 +506,52 @@ class GodEnv:
         hs = self.hypotheses_for(npc, text)
         return hs[0] if hs else None
 
-    def belief_chance(self, npc: str, text: str, affinity: int, trust: int) -> float:
+    def belief_chance(self, npc: str, text: str, affinity: int, trust: int) -> tuple[float, list[str]]:
         """委托人和玩家关系够深、玩家说出了「是谁做的」：她有多大可能直接信（跳过查证进入处置，留下「没查实」的标记）。
-        好感、信任到了门槛才有机会，越高越可能；同一天被拒过就不再掷。返回 0 表示没有这个机会。"""
+        不是死概率：关系、她手上的证据、说得多具体、上次被婉拒后有没有拿出新东西，都会改变成功率。
+        返回 (成功率, 各项加减的说明)；0 表示没有这个机会。"""
         b = self.quest.belief
         if not b or b["npc"] != npc or b["signal"] in self.achieved or b["signal"] not in self.act.complete_when:
-            return 0.0
-        if self.misses.get("belief") == self.day:
-            return 0.0
+            return 0.0, []
         lo_a, lo_t = b.get("min_affinity", 0), b.get("min_trust", 0)
         if affinity < lo_a or trust < lo_t:
-            return 0.0
-        said = {h["id"] for h in self.quest.hypotheses if self._says(h, text)}
-        if not said & set(b.get("needs_any", [])):
-            return 0.0
-        c = {"base": 0.3, "per_point": 0.02, "max": 0.9, **b.get("chance", {})}
-        return min(c["max"], c["base"] + c["per_point"] * ((affinity - lo_a) + (trust - lo_t)))
+            return 0.0, []
+        said = [h for h in self.quest.hypotheses if self._says(h, text)]
+        if not {h["id"] for h in said} & set(b.get("needs_any", [])):
+            return 0.0, []
+        c = {"base": 0.3, "per_point": 0.02, "per_clue": 0.1, "per_detail": 0.05, "max": 0.9, **b.get("chance", {})}
+        parts: list[tuple[str, float]] = []
+        bond = affinity - lo_a + trust - lo_t
+        parts.append(("交情", c["base"] + c["per_point"] * bond))
+        support = {x for h in self.quest.hypotheses for x in h["clues"]} | set(self.quest.signal(b["signal"]).requires_clues)
+        ev = len(support & set(self.known.get(npc, [])))
+        if ev:
+            parts.append((f"她见过的证据×{ev}", c["per_clue"] * ev))
+        if len(said) > 1:
+            parts.append(("说得具体", c["per_detail"] * (len(said) - 1)))
+        last = self.misses.get("belief")
+        if isinstance(last, dict):
+            fresh = ev > last["ev"] or bond > last["bond"]
+            if fresh:
+                parts.append(("这次拿出了新东西", 0.1))
+            elif self.minute - last["minute"] < 120:
+                parts.append((f"刚被婉拒又说一遍", -0.15 * last["n"]))
+            else:
+                parts.append(("隔了些时候再提", 0.0))
+        p = max(0.05, min(c["max"], sum(v for _, v in parts)))
+        return p, [f"{k}{v:+.0%}" for k, v in parts if v]
+
+    def note_belief_miss(self, npc: str, text: str, affinity: int, trust: int) -> None:
+        """婉拒了也可以再试：记下这次的底子，下次有没有新东西决定成功率往哪边走。"""
+        b = self.quest.belief
+        support = {x for h in self.quest.hypotheses for x in h["clues"]} | set(self.quest.signal(b["signal"]).requires_clues)
+        prev = self.misses.get("belief")
+        self.misses["belief"] = {"n": (prev["n"] + 1) if isinstance(prev, dict) else 1, "minute": self.minute,
+                                 "ev": len(support & set(self.known.get(npc, []))),
+                                 "bond": affinity - b.get("min_affinity", 0) + trust - b.get("min_trust", 0)}
 
     def believes(self, npc: str, text: str, affinity: int, trust: int) -> bool:
-        return self.belief_chance(npc, text, affinity, trust) > 0
+        return self.belief_chance(npc, text, affinity, trust)[0] > 0
 
     def accept_on_trust(self) -> None:
         b = self.quest.belief

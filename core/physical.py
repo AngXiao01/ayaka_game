@@ -252,7 +252,7 @@ class PhysicalWorld:
     def _snag(self, agent: str, tag: str) -> tuple[int, str]:
         """概率判定：这趟差事会不会被耽搁。耽搁只多花时间，不会让事情办砸。"""
         from core.dice import roll
-        late, _ = roll(self.god, f"snag:{agent}:{tag}", self.SNAG_P)
+        late, _ = roll(self.god, f"snag:{agent}:{tag}", self.SNAG_P + (0.15 if self.god.phase in ("黄昏", "夜晚") else 0))
         if not late:
             return 0, ""
         i = sum(map(ord, tag)) % len(self.SNAGS)

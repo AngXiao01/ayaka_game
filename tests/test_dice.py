@@ -29,15 +29,22 @@ def test_companion_helps_search(monkeypatch):
     ex = explorer(g)
     monkeypatch.setattr(type(ex), "party", property(lambda self: ["thoma"]))
     desc, _ = ex.examine("o_manifest")
-    assert "托马帮你一起找" in desc
+    assert "托马帮忙" in desc
     assert g.rolls[-1]["p"] == 0.8
 
 
-def test_belief_needs_relationship_and_scales():
+def test_belief_needs_relationship_and_moves_with_context():
     g = make_god({"act_id": "act2", "clues": ["c_case", "c_shops"]})
     say = "伪信是辰巳印坊的学徒小吉做的"
-    assert g.belief_chance("ayaka", say, 40, 20) == 0
-    lo, hi = g.belief_chance("ayaka", say, 55, 40), g.belief_chance("ayaka", say, 70, 55)
+    assert g.belief_chance("ayaka", say, 40, 20)[0] == 0
+    lo, hi = g.belief_chance("ayaka", say, 55, 40)[0], g.belief_chance("ayaka", say, 70, 55)[0]
     assert 0 < lo < hi <= 0.9
-    g.misses["belief"] = g.day
-    assert g.belief_chance("ayaka", say, 70, 55) == 0          # 当天被婉拒过，不再掷
+    g.note_belief_miss("ayaka", say, 55, 40)
+    again, why = g.belief_chance("ayaka", say, 55, 40)
+    assert again < lo and any("又说一遍" in w for w in why)        # 刚被婉拒、什么都没变，再说只会更难
+    g.known["ayaka"] = ["c_letter"]
+    more, why = g.belief_chance("ayaka", say, 55, 40)
+    assert more > lo and any("新东西" in w for w in why)          # 拿出了新证据，更容易信
+    g.known["ayaka"] = []
+    g.pass_time(180)
+    assert g.belief_chance("ayaka", say, 55, 40)[0] == lo         # 隔了些时候，回到平常
