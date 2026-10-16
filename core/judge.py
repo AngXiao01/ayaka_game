@@ -56,7 +56,8 @@ def action(god: Any, text: str, verbs: dict, people: dict[str, str]) -> Optional
     return v.answer, (t.answer if t and t.answer != NONE and t.p >= SURE else None)
 
 
-def turn(god: Any, npc_name: str, text: str, hyps: list[dict]) -> Optional[dict]:
+def turn(god: Any, npc_name: str, text: str, hyps: list[dict], last_line: str = "",
+         situation: str = "") -> Optional[dict]:
     """对话里每一句自由发言只问一次：语气 + 说中了哪几条推测，合在一个请求里（省一次往返）。
     返回 {"threat": bool, "specific": 0~2, "hypotheses": [...]}；None = 没判。"""
     d = _decider(god)
@@ -67,14 +68,19 @@ def turn(god: Any, npc_name: str, text: str, hyps: list[dict]) -> Optional[dict]
                    "criteria": {"true": "玩家用后果、报官、动手之类的话施压，或者语气凶狠地逼问",
                                 "false": "玩家语气平和，或者只是认真地追问"}},
         "specific": {"type": "score", "instructions": "玩家说出的推断有多具体、有多少依据？",
-                     "criteria": ["没有推断，或者只是泛泛地猜", "说出了具体的人或事", "具体到人、做了什么、怎么知道的"]}}
+                     "criteria": ["没有推断，或者只是泛泛地猜", "说出了具体的人或事", "具体到人、做了什么、怎么知道的"]},
+        "abrupt": {"type": "noul", "instructions": "玩家这句话是不是来得很突兀：和对方刚说的话、眼下的处境接不上，换了谁听了都会愣一下？",
+                   "criteria": {"true": "话题或打算突然跳开，跟刚才聊的、眼下要做的事对不上（比如正查着案子忽然说要出远门）",
+                                "false": "顺着刚才的话说，或者是自然的转换话题、告别、寒暄"}}}
     for h in hyps:
         qs[h["id"]] = {"type": "noul", "instructions": f"玩家是不是在明确断言：{h['desc']}？",
                        "criteria": {"true": f"玩家把「{h['desc']}」当成判断说了出来（哪怕换了说法）",
                                     "false": "玩家没这么说，只是在提问、猜测别的事，或者只是提到了相关的人和东西"}}
-    out = d.decide("turn", {"listener": npc_name, "player_said": text}, qs)
+    out = d.decide("turn", {"listener": npc_name, "listener_just_said": last_line, "situation": situation,
+                            "player_said": text}, qs)
     if not out:
         return None
-    th, sp = out.get("threat"), out.get("specific")
+    th, sp, ab = out.get("threat"), out.get("specific"), out.get("abrupt")
     return {"threat": bool(th and th.yes(SURE)), "specific": sp.answer if sp else 0,
+            "abrupt": bool(ab and ab.yes(SURE)),
             "hypotheses": [h for h in hyps if h["id"] in out and out[h["id"]].yes(SURE)]}

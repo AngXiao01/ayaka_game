@@ -839,7 +839,8 @@ class GodEnv:
             "dispatch": (self.conv or {}).get("dispatch"),      # 对方说出了推测：你决定派人去查
             "believe": bool((self.conv or {}).get("believe")),
             "press": (self.conv or {}).get("press"),
-            "threatened": bool((self.conv or {}).get("threatened")),            # 对方硬问了一件事：代码掷过骰，告诉你松不松口  # 关系够深：你直接信了对方说的真相
+            "threatened": bool((self.conv or {}).get("threatened")),
+            "incongruous": (self.conv or {}).get("incongruous") or [],   # 对方这话不对劲（代码 / Jev 看出来的）            # 对方硬问了一件事：代码掷过骰，告诉你松不松口  # 关系够深：你直接信了对方说的真相
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
             "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],

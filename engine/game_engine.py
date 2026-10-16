@@ -20,6 +20,7 @@ from core.agendas import Agendas
 from core.actions import ActionResolver
 from core.agent_loop import LoopLimits
 from core.branch import BranchAgent
+from core.context_fs import ContextFS
 from core.budget import Budget
 from core.director import Director
 from core.dialogue_session import DialogueEndReason, DialogueSession, SessionResult
@@ -123,6 +124,9 @@ class GameEngine:
                                       self.lore, self.skills, rng=random.Random(g.seed), tracer=t,
                                       world_canon=self.world_canon, guard_terms=self.quest.canon_guard_terms,
                                       persona_mode=h.persona_mode)
+        for nid, a in self.npcs.items():         # 按需翻看的上下文：每个人只看得到自己知道的那部分
+            a.fs = ContextFS(nid, self.god, self.world, self.personas, self.lore,
+                             lambda k, a=a: [m.text for m in reversed(a.memory.items[-k:])])
         self.god.trust_lookup = lambda nid: self.npcs[nid].relationship.trust
         self.companion = self.npcs[self.quest.companion]
         self.option_gen = PlayerOptionGenerator(

@@ -72,6 +72,7 @@ class NPCAgent:
         self.world_canon = world_canon          # 所有角色共享：关于别人和稻妻的即兴设定
         self.guard_terms = guard_terms or []
         self.persona_mode = persona_mode
+        self.fs = None                          # ContextFS：按需翻看的上下文（引擎装配；没有就不提供 ls / read）
         self.registry = self._build_tools()
 
     @property
@@ -101,9 +102,18 @@ class NPCAgent:
             body = self.p.detail(args["section"])
             return body or f"没有这一类。可查：{'、'.join(DETAIL_SECTIONS)}"
 
+        def fs_ls(args: dict) -> str:
+            return self.fs.ls(args.get("path", "/")) if self.fs else "（不可用）"
+
+        def fs_read(args: dict) -> str:
+            return self.fs.read(args.get("path", "/")) if self.fs else "（不可用）"
+
+        files = [Tool("ls", "列出可以翻看的上下文目录（/地点 /人物 /我 /案子 /稻妻）", {"path": "目录，如 /地点"}, fs_ls, cacheable=True),
+                 Tool("read", "翻看一个上下文文件：某个地方离这儿多远、你和某人的关系和你知道的去向、你的记忆、你知道的案情",
+                      {"path": "文件路径，如 /地点/璃月"}, fs_read, cacheable=False)]
         extra = [Tool("load_persona", "查看你自己人物细节的某一类全文（喜好 / 人际 / 看法 / 往事）",
                       {"section": "类别名"}, load_persona, cacheable=True)] if self.persona_mode == "index" else []
-        return ToolRegistry(extra + [
+        return ToolRegistry(files + extra + [
             Tool("recall_memory", "回忆你与对方过去见面的经历", {"query": "想回忆的内容"}, recall, cacheable=True),
             Tool("lookup_lore", "查阅稻妻的风物、人物与制度设定，避免说错", {"topic": "要查的主题"}, lore,
                  cacheable=True),

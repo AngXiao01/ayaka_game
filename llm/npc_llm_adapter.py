@@ -57,7 +57,7 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
 # 工具
 每一步只输出一个 JSON 对象：{{"thought": "不超过 30 字的简短思考，对方看不到", "tool": "工具名", "args": {{...}}}}
 {registry.describe()}
-大多数时候不需要工具，直接调用 respond。只有需要回忆往事、核对稻妻的设定或参考某个技能时才调用其他工具，每个工具同样的参数只调用一次。
+大多数时候不需要工具，直接调用 respond。上下文按需取用：对方提到你拿不准的地方、人、往事或案情时，先 read 对应的文件（/地点/… /人物/… /我/记忆 /案子/我知道的）再回答；需要核对设定或参考技能时用其他工具。每个工具同样的参数只调用一次。
 
 调用工具示例：
 {TOOL_EXAMPLE}
@@ -163,6 +163,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     if t.get("believe"):
         parts.append("## 对方说出了案子的真相\n还没有查实，但你信得过对方——你选择相信。说出你的信任（也可以带点不安），"
                      "然后表示接下来想和对方一起商量该怎么收场。")
+    if t.get("incongruous"):
+        parts.append("## 这话有点不对劲\n" + _bullets(t["incongruous"])
+                     + "\n别顺着就过去：按你的性格表现出意外或困惑，问一句怎么回事（需要的话可以先 read /地点/… 看看那地方有多远）。")
     if t.get("threatened"):
         parts.append("## 对方在威胁你\n你被吓到了，也起了戒心：话会变少、更想躲开，不会因为被吓就把藏着的事说出来。")
     pr = t.get("press")

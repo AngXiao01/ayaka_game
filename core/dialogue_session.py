@@ -151,6 +151,19 @@ class DialogueSession:
 
     # ------------------------------------------------------------ 选项
 
+    def _incongruity(self, text: str) -> list[str]:
+        """代码能看出来的「不对劲」：说要去海外的国度（坐船要好些天）——正查着案子、离茶会只剩几天，谁听了都会愣一下。"""
+        far = self.world.cfg.get("far_places", {})
+        going = re.search(r"(去|回|出发|动身|启程|坐船|前往|走一趟)", text)
+        out = []
+        for name, desc in far.items():
+            if name in text and going:
+                g = self.god
+                left = max(0, g.quest.deadline["day"] - g.day)
+                out.append(f"对方说要去{name}。{desc}可眼下离{g.quest.deadline['label']}只剩 {left} 天"
+                           + ("，委托还没有着落" if not g.resolved else "") + "。")
+        return out
+
     def _actions(self) -> list[tuple[str, PlayerOption, str, str]]:
         """此刻能做的事：(编号, 按钮, 给选项 agent 看的说明, 台词上标的小字)。选项 agent 可以把其中一件「顺带」进一句台词里。"""
         g, nid = self.god, self.npc.p.id
@@ -538,7 +551,7 @@ class DialogueSession:
             dest_id, dest = self._place_name(guard.text)
             invite = {"accept": ok, "reason": why, "dest": dest}
             self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
-        dispatch, believe, threatened = None, False, False
+        dispatch, believe, threatened, odd = None, False, False, []
         self._roll_line = None
         if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
             rel = self.npc.relationship
@@ -546,7 +559,13 @@ class DialogueSession:
             open_hs = [] if g.hypotheses_for(nid, guard.text) else \
                 [h for h in g.quest.hypotheses if nid in h["listeners"]
                  and f"dispatched:{h['id']}" not in g.flags and not set(h["clues"]) <= set(g.clues)]
-            felt = judge.turn(g, self.npc.name, guard.text, open_hs) or {}
+            last_line = next((h["text"] for h in reversed(ctx.history) if h["speaker"] == "npc"), "")
+            felt = judge.turn(g, self.npc.name, guard.text, open_hs, last_line, g.act.objective or "") or {}
+            odd = self._incongruity(guard.text)
+            if felt.get("abrupt") and not odd:
+                odd.append("对方这话来得有点突然，和刚才聊的、眼下要做的事接不上。")
+            if odd:
+                self._log("incongruous", npc=nid, notes=odd, text=guard.text)
             if felt.get("threat"):
                 threatened = True
                 if f"alerted:{nid}" not in g.flags:
@@ -580,6 +599,7 @@ class DialogueSession:
             g.conv["believe"] = believe
             g.conv["press"] = press
             g.conv["threatened"] = threatened
+            g.conv["incongruous"] = odd
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
             g.conv["invite"] = invite
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party

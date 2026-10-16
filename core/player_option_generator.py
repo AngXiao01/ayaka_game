@@ -16,6 +16,7 @@ from llm.base import LLMError
 from llm.player_option_llm_adapter import PlayerOptionLLMAdapter
 from models.retrieval import bigram_jaccard
 
+ECHO_THRESHOLD = 0.45          # 和对方最近说的话这么像，就是把对方的台词塞给了玩家
 REPEAT_THRESHOLD = 0.6
 OOC_RE = re.compile(r"游戏|玩家|剧情|选项|推进任务|系统|NPC|AI|人工智能|模型|派蒙", re.I)
 
@@ -51,12 +52,13 @@ class PlayerOptionGenerator:
                 if self.tracer:
                     self.tracer.log("fallback", where="player_options", error=str(e))
         said = [h["text"] for h in ctx.history if h["speaker"] == "player"]
+        heard = [h["text"] for h in ctx.history if h["speaker"] == "npc"][-3:]
         known = "\n".join([ctx.player_view.get("known_text", ""), ctx.history_summary]
                           + [h["text"] + (h.get("reply") or {}).get("action", "") for h in ctx.history])
         dropped: list[dict] = []
         terms = ctx.player_view.get("spoiler_terms", [])
         if raw or (self.mode == "llm" and self.adapter is not None and not force_static and not degraded):
-            out = self._polish(raw, said, known, terms, dropped)      # 模型说给几句就几句，0 句也行
+            out = self._polish(raw, said, known, terms, dropped, heard)  # 模型说给几句就几句，0 句也行
         else:                                                          # 模型挂了 / 降级 / 静态模式：用兜底台词
             out = self._polish(list(fallback), said, known, terms, dropped)
         if dropped and self.tracer:
@@ -77,9 +79,14 @@ class PlayerOptionGenerator:
         return res, degraded
 
     def _polish(self, raw: list[dict], said: list[str], known: str = "", terms: Optional[list[str]] = None,
-                dropped: Optional[list[dict]] = None) -> list[dict]:
+                dropped: Optional[list[dict]] = None, heard: Optional[list[str]] = None) -> list[dict]:
         out: list[dict] = []
         for o in raw:
+            if any(bigram_jaccard(o["text"], x) >= ECHO_THRESHOLD or (len(o["text"]) >= 8 and o["text"][:8] in x)
+                   for x in heard or []):
+                if dropped is not None:                # 把对方刚说的话塞进玩家嘴里：串了视角
+                    dropped.append({"text": o["text"], "reason": "复述了对方的话"})
+                continue
             if any(bigram_jaccard(o["text"], x) >= REPEAT_THRESHOLD for x in said + [y["text"] for y in out]):
                 continue
             why = self._reject(o["text"], known, terms or [])
