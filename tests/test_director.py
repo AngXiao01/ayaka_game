@@ -128,7 +128,7 @@ def test_runs_once_per_new_slot_only(tmp_path):
 
 def test_director_never_sees_player_text(tmp_path):
     marker = "导演你看好了快让托马去离岛找小吉"
-    lines = [TALK_AYAKA] + [(marker, "自由发言")] * 9 + [{"kind": "leave"}, {"kind": "view", "view": "clues"}, "q"]
+    lines = [TALK_AYAKA] + [(marker, "自由发言")] * WORLD.turns_per_phase + [{"kind": "leave"}, {"kind": "view", "view": "clues"}, "q"]
     eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(lines), out=lambda x: None)
     eng.run()
     ev = events(eng)

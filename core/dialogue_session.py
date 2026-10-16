@@ -244,6 +244,13 @@ class DialogueSession:
         if forced:
             self._log("action_signal", npc=self.npc.p.id, action=(player or {}).get("kind"), forced=forced,
                       accepted=[s["id"] for s in newly])
+        # NPC 自己说出口了（不管有没有上报、条件满没满足），玩家听到了就算：线索本和剧情不能对不上
+        heard = [] if flags else g.spoken_signals(r.speech + r.action, (player or {}).get("text", ""))
+        if heard:
+            got = g.apply_signals(heard, heard=True)
+            newly += got
+            self._log("heard_signal", npc=self.npc.p.id, heard=heard, accepted=[s["id"] for s in got])
+            forced = forced + heard
         review = self.reviewer.review([x for x in r.task_signals if x not in forced], opening=opening,
                                       injection_flags=flags or [],
                                       player_text=(player or {}).get("text", ""), npc_speech=r.speech,
@@ -417,6 +424,15 @@ class DialogueSession:
         guard = inspect_player_input(text, self.h.player_input_max_chars if action.kind == "say" else 2000)
         if guard.suspicious:
             forced = []
+        elif action.kind == "say":
+            # 打字说出手上线索的内容，和点「出示线索」一样：对方知道了，因此能开口的事就由这句话直接达成
+            told = g.mentioned_clues(nid, guard.text)
+            if told:
+                g.mark_known(nid, told)
+                after = g.available_ids(check_turns=False)
+                forced = [s.id for s in g.quest.signals
+                          if s.id in after and s.id not in before and not g.missing_prereqs(s.id)]
+                self._log("mention", npc=nid, clues=told, forced=forced)
         if g.conv is not None:
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
@@ -465,7 +481,7 @@ class DialogueSession:
             return DialogueEndReason.PLAYER_LEFT, ids, deg
         if reply.wants_to_end:
             return DialogueEndReason.NPC_ENDED, ids, deg
-        if g.conversation_turn():
+        if g.conversation_turn(spend_time=self.event is None):
             self.out(f"\n    （不知不觉，已是{g.time_label()}）")
             if g.deadline_reached():
                 return DialogueEndReason.DEADLINE, ids, deg

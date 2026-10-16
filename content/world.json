@@ -1,7 +1,7 @@
 {
   "phases": ["清晨", "午后", "黄昏", "夜晚"],
   "start": {"location": "kamisato_estate", "day": 1, "phase": 0},
-  "turns_per_phase": 8,
+  "turns_per_phase": 10,
   "locations": {
     "kamisato_estate": {
       "name": "神里屋敷",

@@ -185,7 +185,7 @@ class GameSettings:
     npc_id: str = "ayaka"
     quest_id: str = "ayaka_main"
     player_name: str = "旅行者"
-    max_turns_per_session: int = 12
+    max_turns_per_session: int = 20
     history_turns: int = 8                      # 工作记忆窗口：保留原文的最近轮数，更早的压成摘要
     memory_top_k: int = 3                       # 自动注入的记忆条数，更多靠 recall_memory 按需检索
     options_mode: str = "llm"                   # llm | static
@@ -270,7 +270,7 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         npc_id=_env("GAME_NPC", "ayaka"),
         quest_id=_env("GAME_QUEST", "ayaka_main"),
         player_name=_env("PLAYER_NAME", "旅行者"),
-        max_turns_per_session=_env_int("MAX_TURNS_PER_SESSION", 12),
+        max_turns_per_session=_env_int("MAX_TURNS_PER_SESSION", 20),
         history_turns=_env_int("HISTORY_TURNS", 8),
         memory_top_k=_env_int("MEMORY_TOP_K", 3),
         options_mode=_env("OPTIONS_MODE", "llm"),

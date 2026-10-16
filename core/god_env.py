@@ -36,6 +36,7 @@ class SignalDef:
     lead: str = ""                              # 「下一步」里的一句：去找谁、做什么
     ask: Optional[dict] = None                  # {label, text}：条件满足时对话里出现的关键问题按钮
     reveal: str = ""                            # 由动作直接达成时，告诉 NPC 这一轮要说出口的事
+    evidence: list[list[str]] = field(default_factory=list)   # NPC 自己说出口就算数：每组至少一个词出现在 NPC 的话里
 
 
 @dataclass
@@ -157,6 +158,7 @@ class GodEnv:
         self.tension: float = s.get("tension", quest.initial_tension)
         self.session_count: int = s.get("session_count", 0)
         self.total_turns: int = s.get("total_turns", 0)
+        self.phase_turns: int = s.get("phase_turns", self.total_turns % self.turns_per_phase)  # 这个时段已经聊了几轮
         self.resolved: bool = s.get("resolved", False)
         self.ending: Optional[str] = s.get("ending")
         self.journal: list[str] = s.get("journal", [])
@@ -321,13 +323,18 @@ class GodEnv:
     def end_conversation(self) -> None:
         self.conv = None
 
-    def conversation_turn(self) -> bool:
-        """一轮对话结束时调用；返回这一轮是否让时间往前走了一个时段。"""
+    def conversation_turn(self, spend_time: bool = True) -> bool:
+        """一轮对话结束时调用；返回这一轮是否让时间往前走了一个时段。
+        spend_time=False：私人时光占着那个时段本身，聊多久都不再额外花时间。"""
         self.total_turns += 1
         if self.conv:
             self.conv["turns"] += 1
             self.conv["turns_since_progress"] += 1
-        if self.total_turns % self.turns_per_phase == 0:
+        if not spend_time:
+            return False
+        self.phase_turns += 1
+        if self.phase_turns >= self.turns_per_phase:
+            self.phase_turns = 0
             self.advance(1)
             return True
         return False
@@ -405,6 +412,28 @@ class GodEnv:
         return [s for s, _ in self._conv_signals("available", check_turns=False)
                 if s.ask and not self.missing_prereqs(s.id)]
 
+    def mentioned_clues(self, npc: str, text: str) -> list[str]:
+        """玩家在对话里提到了手上的哪条线索（线索的 keywords），而对方还不知道：说出来就等于出示了。"""
+        known = set(self.known.get(npc, []))
+        return [c for c in self.clues if c not in known
+                and any(k and k in text for k in self.quest.clues[c].get("keywords", []))]
+
+    def spoken_signals(self, speech: str, player_text: str = "") -> list[str]:
+        """NPC 这句话里自己说出了哪件事（信号的 evidence：每组至少一个词在 NPC 的话里、且不是玩家刚说过的）。
+        只看当前对话里没有被隐藏的信号（别人的、别的幕的、私人时光以外的都不算）。"""
+        if not self.conv:
+            return []
+        out = []
+        for s in self.quest.signals:
+            if not s.evidence or s.id in self.achieved or self.missing_prereqs(s.id):
+                continue
+            st, _ = self.signal_status(s, self.conv["npc"], self.conv["event"], self.conv["turns"], check_turns=False)
+            if st == "hidden":
+                continue
+            if all(any(k in speech and k not in player_text for k in group) for group in s.evidence):
+                out.append(s.id)
+        return out
+
     def checklist(self) -> list[tuple[str, bool]]:
         """这一幕要弄清的几件事，各自弄清了没有（给玩家看的目标进度）。"""
         return [(c["label"], bool(set(c.get("clues_any", [])) & set(self.clues))) for c in self.act.checklist]
@@ -451,11 +480,16 @@ class GodEnv:
                 pending.discard(i)
         return out
 
-    def apply_signals(self, ids: list[str], forced: bool = False) -> list[dict]:
+    def apply_signals(self, ids: list[str], forced: bool = False, heard: bool = False) -> list[dict]:
         """只接受当前对话里此刻可达成的信号；返回新达成的（含获得的线索）。
         forced：玩家用明确的动作（关键问题、出示证据、汇报、提议）满足了条件，由代码直接判定达成——
-        不经审核，所以这里自己查前置信号；也不看聊了几轮（轮数门槛是防模型抢跑的，动作不存在抢跑）。"""
+        不经审核，所以这里自己查前置信号；也不看聊了几轮（轮数门槛是防模型抢跑的，动作不存在抢跑）。
+        heard：NPC 已经亲口说出来了（spoken_signals），玩家听到了就算——条件没满足（locked）也认，
+        不然剧情里说过的事线索本里没有，前后对不上。"""
+        forced = forced or heard
         available = self.available_ids(check_turns=not forced)
+        if heard:
+            available |= {s.id for s, _ in self._conv_signals("locked", check_turns=False)}
         newly = []
         for sid in ids:
             s = self.quest.signal(sid)
@@ -625,6 +659,7 @@ class GodEnv:
                 "act_id": self.act_id, "clues": self.clues, "known": self.known, "achieved": self.achieved,
                 "flags": self.flags, "examined": self.examined, "events_done": self.events_done, "met": self.met,
                 "tension": self.tension, "session_count": self.session_count, "total_turns": self.total_turns,
+                "phase_turns": self.phase_turns,
                 "resolved": self.resolved, "ending": self.ending, "journal": self.journal,
                 "testimonies": self.testimonies, "director_slot": self.director_slot,
                 "last_progress_slot": self.last_progress_slot, "nudges": self.nudges,

@@ -89,6 +89,10 @@ class Explorer:
         if g.resolved or g.ending:
             return []
         out: list[dict] = []
+        left = g.slots_left()
+        if 0 < left <= 3:
+            out.append({"key": f"deadline:{left}", "here": True,
+                        "text": f"⏳ 离{q.deadline['label']}只剩 {left} 个时段了，抓紧把该查的查完"})
         for s in q.signals:
             if not s.lead or s.event or s.id in g.achieved or g.missing_prereqs(s.id):
                 continue
