@@ -220,7 +220,7 @@ def build_messages(system: str, ctx: TurnContext, player_text: Optional[str], pl
                "可以多说几句（不超过四句）；action 一般留空。只输出 JSON。")
     else:
         now = (f"# 对方刚才说\n{player_input_tag(player_text, player_intent)}\n\n"
-               f"# 现在\n先接住对方这句话。需要信息就调用工具，否则调用 respond 回应对方。{length_hint(player_text, player_intent)}只输出 JSON。")
+               f"# 现在\n先接住对方这句话，别重复你自己说过的话。需要信息就调用工具，否则调用 respond 回应对方。{length_hint(player_text, player_intent)}只输出 JSON。")
     last = {"role": "user", "content": state + "\n\n" + now}
     # 兜底：压缩之后仍超预算，就从最老的历史成对丢弃
     while hist and messages_tokens([{"content": system}, *hist, last]) > budget_tokens:

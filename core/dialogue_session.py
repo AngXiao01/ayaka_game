@@ -283,7 +283,7 @@ class DialogueSession:
                                       player_text=(player or {}).get("text", ""), npc_speech=r.speech,
                                       context_lines=context_lines or [], degraded=self.budget.degraded())
         newly += g.apply_signals(review.accepted)
-        for s_ in newly:
+        for s_ in [] if self.npc.p.role == "companion" else newly:
             if s_["clues"]:                  # 吐露线索的那句话记进证词本（和谎话同一格式）
                 g.add_testimony(self.npc.p.id, r.speech[:80], "truth")
         self._world_moves(r, flags or [])
