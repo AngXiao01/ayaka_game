@@ -3,6 +3,5 @@ __pycache__/
 .pytest_cache/
 data/saves/*.json
 data/memories/*/
-data/traces/*.jsonl
 data/traces/*.html
 evals_out/
