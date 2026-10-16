@@ -162,7 +162,8 @@ class GameEngine:
         for p in self.personas.values():
             for slot in p.schedule:
                 w.loc(slot["location"])
-            for other in list(p.confidants) + list((p.outing or {}).get("tell", [])):
+            for other in list(p.confidants) + list((p.outing or {}).get("tell", [])) + [
+                    x for h in q.hypotheses for x in (h["listeners"] + [h["agent"]])]:
                 if other not in self.personas:
                     raise ValueError(f"{p.id} 的 confidants / outing.tell 里有不存在的人：{other}")
         for e in q.events:
@@ -201,6 +202,13 @@ class GameEngine:
     def _on_message(self, msg: dict) -> None:
         """口信送到：进收信人的记忆（之后检索得到），下次对话时出现在它的情境里。"""
         to, phys = msg["to"], self.god.physical
+        if to == "player":                         # 派去查事的人托人带话给玩家：带来的证据当场到手
+            g = self.god
+            g.notices.append(f"📨 {phys.name(msg['from'])}托人带话：{msg['text']}")
+            for c in msg.get("clues") or []:
+                if g.give_clue(c):
+                    g.notices.append(f"    📜 获得线索「{self.quest.clue_name(c)}」")
+                    g.journal.append(f"{g.time_label()}　{phys.name(msg['from'])}托人带话，得到线索「{self.quest.clue_name(c)}」")
         if to in self.npcs:
             self.npcs[to].memory.add(MemoryItem(
                 text=f"（{self.god.time_label()}）{phys.name(msg['from'])}托人带话：{msg['text']}", kind="message",

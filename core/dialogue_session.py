@@ -69,6 +69,7 @@ class DialogueSession:
                  player_view: Optional[Callable[[str, Optional[str]], dict]] = None):
         self.npc = npc
         self.player_view = player_view  # 玩家视角（Explorer.player_view）：选项 agent 只能看这个，看不到 NPC 的心思
+        self.npc_names = set(god.physical.personas) if god.physical is not None else set()
         self.player = player
         self.option_gen = option_gen
         self.god = god
@@ -496,7 +497,17 @@ class DialogueSession:
             dest_id, dest = self._place_name(guard.text)
             invite = {"accept": ok, "reason": why, "dest": dest}
             self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
+        dispatch = None
+        if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
+            # 玩家直接说出了推测（比如玩过一遍、知道真相）：不当真也不置之不理——派人去查，查到了托人带话回来
+            h = g.hypothesis_for(nid, guard.text)
+            if h:
+                agent = h["agent"] if h["agent"] in self.npc_names and h["agent"] not in phys.party else nid
+                dispatch = {"id": h["id"], "agent": agent, "self": agent == nid, "plan": h["plan"],
+                            "desc": h["desc"], "location": self.world.name(h["location"])}
+                self._log("dispatch", npc=nid, hypothesis=h["id"], agent=agent)
         if g.conv is not None:
+            g.conv["dispatch"] = dispatch
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
             g.conv["invite"] = invite
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party
@@ -532,6 +543,17 @@ class DialogueSession:
                                  options=options, flags=guard.flags, context_lines=context_lines, forced=forced)
         self._show_debug(reply)
         dismissed = bool(g.conv and g.conv.get("dismiss"))
+        went = False
+        dsp = g.conv.pop("dispatch", None) if g.conv else None
+        if dsp and phys is not None:
+            h = next(x for x in g.quest.hypotheses if x["id"] == dsp["id"])
+            g.flags.append(f"dispatched:{h['id']}")
+            phys.dispatch(dsp["agent"], h["location"], h.get("search_minutes", 30),
+                          [x for x in ("player", nid) if x != dsp["agent"]], h["report"], h["clues"], h["id"])
+            who = "自己" if dsp["self"] else phys.name(dsp["agent"])
+            self.out(f"    🔎 {self.npc.name}{'决定亲自' if dsp['self'] else '派' + who}去{dsp['location']}查一查，有消息会托人告诉你。")
+            g.journal.append(f"{g.time_label()}　你说出了推测：{h['desc']}。{self.npc.name}{'亲自' if dsp['self'] else '让' + who}去{dsp['location']}查了")
+            went = dsp["self"]
         if g.conv:
             g.conv.pop("confrontation", None)
             g.conv.pop("forced", None)
@@ -559,6 +581,8 @@ class DialogueSession:
             return DialogueEndReason.RESOLVED, ids, deg
         if action.kind == "leave" or dismissed:
             return DialogueEndReason.PLAYER_LEFT, ids, deg
+        if went:
+            return DialogueEndReason.NPC_LEFT, ids, deg
         if reply.wants_to_end:
             return DialogueEndReason.NPC_ENDED, ids, deg
         if g.conversation_turn(spend_time=self.event is None):

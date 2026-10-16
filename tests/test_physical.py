@@ -155,3 +155,31 @@ def test_deadline_is_an_event_not_game_over(tmp_path):
     assert "deadline_passed" in eng.god.flags and eng.god.ending is None
     assert any("雪落无声" in line for line in out) and any("还可以接着查" in line for line in out)
     assert any("线索本" in line for line in out)                # 茶会过后还能继续操作
+
+
+def test_stating_the_truth_sends_someone_to_check(tmp_path):
+    # 玩家玩过一遍，直接说出真相：绫华不当真，但会派托马去查；托马走过去、查完、托人带话，证据到手
+    eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
+                         [{"kind": "talk", "npc": "ayaka"}, ("伪信是辰巳印坊的学徒小吉做的，我很确定。", "自由发言"),
+                          {"kind": "leave"}, {"kind": "wait"}, "q"])
+    g, phys = eng.god, eng.god.physical
+    assert any("派托马去辰巳印坊" in line for line in out)
+    assert {"c_workshop", "c_seal_rubbing"} <= set(g.clues)
+    assert any("托马托人带话" in line for line in out)
+    assert "dispatched:h_workshop" in g.flags
+    assert g.hypothesis_for("ayaka", "就是小吉做的伪信") is None          # 同一件事不会派第二次
+
+
+def test_dispatched_agent_is_really_away():
+    g, phys, ex = world({"act_id": "act2", "phase_idx": 0})
+    phys.dispatch("thoma", "print_workshop", 30, ["player"], "查过了", ["c_seal_rubbing"], "h")
+    g.pass_time(10)
+    assert phys.where("thoma") is None                                   # 在路上
+    g.pass_time(40)
+    assert phys.where("thoma") == "print_workshop"                       # 到了印坊
+    got = []
+    phys.on_deliver = got.append
+    g.pass_time(30)                                                      # 查完，托人带话（印坊到屋敷还要 45 分钟）
+    assert not got
+    g.pass_time(45)
+    assert got and got[0]["clues"] == ["c_seal_rubbing"]

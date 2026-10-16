@@ -33,6 +33,7 @@ class PhysicalWorld:
         self.sightings: dict[str, dict[str, dict]] = s.get("sightings", {})   # observer -> target -> 最近一次认知
         self.mail: list[dict] = s.get("mail", [])
         self.inbox: dict[str, list[str]] = s.get("inbox", {})            # 送到了、还没在对话里提起的口信 id
+        self.errands: list[dict] = s.get("errands", [])                  # 派出去查事的人：到地方、查完、托人回话
         self.on_deliver: Optional[Callable[[dict], None]] = None
 
     # ------------------------------------------------------------ 名字
@@ -211,14 +212,14 @@ class PhysicalWorld:
     # ------------------------------------------------------------ 带话
 
     def send(self, frm: str, to: str, text: str, kind: str = "note", about: Optional[str] = None,
-             location: Optional[str] = None) -> dict:
+             location: Optional[str] = None, clues: Optional[list[str]] = None) -> dict:
         g = self.god
         src = g.location if frm == PLAYER else self.where(frm)
         dst = g.location if to == PLAYER else self.where(to)
         delay = 0 if src and src == dst else self.world.travel_minutes(src, dst)
         msg = {"id": f"m{len(self.mail) + 1}-{g.minute}", "from": frm, "to": to, "kind": kind, "text": text[:80],
                "about": about, "location": location, "sent": g.minute, "deliver": g.minute + delay,
-               "delivered": False}
+               "delivered": False, "clues": list(clues or [])}
         self.mail.append(msg)
         self.mail = self.mail[-MAIL_KEEP:]
         if delay == 0:
@@ -245,6 +246,18 @@ class PhysicalWorld:
 
     # ------------------------------------------------------------ 时间推进时结算
 
+    def dispatch(self, agent: str, location: str, search_minutes: int, report_to: list[str], text: str,
+                 clues: list[str], tag: str) -> dict:
+        """派 agent 去 location 查一件事：走过去、查 search_minutes 分钟，然后托人把结果带给 report_to。"""
+        g = self.god
+        plan = self.set_plan(agent, location, 0, "errand", reason=tag)
+        done = plan["arrive"] + search_minutes
+        plan["until"] = done + 30                       # 查完再待一会儿才回去
+        e = {"agent": agent, "location": location, "done": done, "report_to": report_to, "text": text,
+             "clues": clues, "tag": tag, "reported": False, "sent": g.minute}
+        self.errands.append(e)
+        return e
+
     def tick(self) -> list[str]:
         """时间往前走之后调用：过期的计划失效、同行者到点告辞、同处一地的人互相看见、到点的口信送达。
         返回玩家看得到的事。"""
@@ -256,6 +269,12 @@ class PhysicalWorld:
                 lines.append(f"（{self.name(npc)}看了看天色：「{o.get('farewell') or '时候不早了，我得回去了。'}」）")
                 self.leave(npc)
         self.observe()
+        for e in self.errands:
+            if not e["reported"] and e["done"] <= g.minute:
+                e["reported"] = True
+                for to in e["report_to"]:
+                    self.send(e["agent"], to, e["text"], kind="report",
+                              clues=e["clues"] if to == PLAYER else None)
         for m in self.mail:
             if not m["delivered"] and m["deliver"] <= g.minute:
                 self._deliver(m)
@@ -279,4 +298,4 @@ class PhysicalWorld:
 
     def to_dict(self) -> dict:
         return {"party": self.party, "party_info": self.party_info, "plans": self.plans,
-                "sightings": self.sightings, "mail": self.mail, "inbox": self.inbox}
+                "sightings": self.sightings, "mail": self.mail, "inbox": self.inbox, "errands": self.errands}
