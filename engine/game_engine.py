@@ -19,6 +19,7 @@ from config.settings import Settings
 from core.agendas import Agendas
 from core.actions import ActionResolver
 from core.agent_loop import LoopLimits
+from core import judge
 from core.branch import BranchAgent
 from core.context_fs import ContextFS
 from core.budget import Budget
@@ -146,6 +147,7 @@ class GameEngine:
         # 便宜的分支判定（Jev）：这句话是哪个动词、说中了哪条推测、是不是在威胁……没开或出错时一律退回关键词规则
         self.decider = decider or make_decider(settings, backend.name, t, (r.backend("branch"), r.params("branch")))
         self.god.decider = self.decider
+        self.option_gen.verify = lambda fp, texts: judge.unbacked(self.god, fp, texts)
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
                                   mode=h.branch_mode, tracer=t, decider=self.decider)
         self.scene = SceneAgent(self.god, self.world, self.explorer, self.world_canon, self.quest.canon_guard_terms,

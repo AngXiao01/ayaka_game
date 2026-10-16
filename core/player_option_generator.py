@@ -38,6 +38,7 @@ class PlayerOptionGenerator:
         self.mode = mode
         self.n = n
         self.tracer = tracer
+        self.verify = None          # (足迹, [台词]) → 要丢掉的下标（模型判：替玩家编了没有的经历）；引擎装配
 
     def generate(self, ctx: TurnContext, npc_name: str, fallback: list[dict],
                  force_static: bool = False) -> tuple[list[PlayerOption], bool]:
@@ -61,6 +62,10 @@ class PlayerOptionGenerator:
             out = self._polish(raw, said, known, terms, dropped, heard)  # 模型说给几句就几句，0 句也行
         else:                                                          # 模型挂了 / 降级 / 静态模式：用兜底台词
             out = self._polish(list(fallback), said, known, terms, dropped)
+        if self.verify and out and ctx.player_view.get("footprint"):
+            bad = self.verify(ctx.player_view["footprint"], [o["text"] for o in out]) or set()
+            dropped += [{"text": o["text"], "reason": "编了没有的经历"} for i, o in enumerate(out) if i in bad]
+            out = [o for i, o in enumerate(out) if i not in bad]
         if dropped and self.tracer:
             self.tracer.log("options_filter", dropped=dropped)
         acts = {a["id"]: a for a in ctx.player_view.get("actions", [])}

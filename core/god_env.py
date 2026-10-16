@@ -180,6 +180,7 @@ class GodEnv:
         self.misses: dict[str, int] = s.get("misses", {})    # 某件事判定失败过几次（越试越容易）
         self.events_done: list[str] = s.get("events_done", [])
         self.met: dict[str, int] = s.get("met", {})
+        self.visited: list[str] = s.get("visited", [])       # 玩家亲自到过的地方（足迹：选项不许替玩家编没去过的地方）
         self.tension: float = s.get("tension", quest.initial_tension)
         self.session_count: int = s.get("session_count", 0)
         self.total_turns: int = s.get("total_turns", 0)
@@ -889,6 +890,7 @@ class GodEnv:
                 "flags": self.flags, "examined": self.examined,
                 "seed": self.seed, "rolls": self.rolls, "misses": self.misses,
                 "agenda_state": self.agenda_state, "events_done": self.events_done, "met": self.met,
+                "visited": self.visited,
                 "tension": self.tension, "session_count": self.session_count, "total_turns": self.total_turns,
                 "resolved": self.resolved, "ending": self.ending, "journal": self.journal,
                 "testimonies": self.testimonies, "director_slot": self.director_slot,
