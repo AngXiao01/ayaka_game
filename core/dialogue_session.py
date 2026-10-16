@@ -163,6 +163,10 @@ class DialogueSession:
         for s in g.askable():               # 关键问题：条件都满足了，问出口就由代码判定达成，不赌模型
             opts.append(PlayerOption(s.ask["label"], "表达关心" if s.event else "推进任务", kind="ask",
                                      meta={"signal": s.id}))
+        if not self.event:                   # 软锁：条件不够也能硬问，由代码掷骰定松不松口
+            for s, p, _ in g.pressable(nid):
+                opts.append(PlayerOption(f"🎲 {s.ask['label']}（硬问，约 {round(p * 100)}%）", "推进任务", kind="press",
+                                         meta={"signal": s.id}))
         unknown = [c for c in g.clues if c not in g.known.get(nid, [])]
         if unknown and not self.event:
             useful = g.useful_clues_for(nid)
@@ -428,10 +432,22 @@ class DialogueSession:
         nid = self.npc.p.id
         before = g.available_ids(check_turns=False)
         forced: list[str] = []
+        press = None
         if action.kind == "ask":
             s = g.quest.signal(action.meta["signal"])
             text, intent = s.ask["text"], action.intent or "推进任务"
             forced = [s.id]
+        elif action.kind == "press":
+            s = g.quest.signal(action.meta["signal"])
+            text, intent = s.ask["text"], "推进任务"
+            p, why = g.press_chance(s, nid)
+            ok, pct = roll(g, f"press:{s.id}", p)
+            press = {"ok": ok, "desc": s.desc, "line": tag(pct, ok, why)}
+            if ok:
+                forced = [s.id]
+            else:
+                g.note_press_miss(s, nid)
+            self._log("press", npc=nid, signal=s.id, p=p, ok=ok)
         elif action.kind == "clue":
             c = action.meta["clue"]
             g.mark_known(nid, [c])
@@ -523,6 +539,7 @@ class DialogueSession:
         if g.conv is not None:
             g.conv["dispatch"] = dispatch
             g.conv["believe"] = believe
+            g.conv["press"] = press
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
             g.conv["invite"] = invite
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party
@@ -539,8 +556,10 @@ class DialogueSession:
                 ctx = self._last_ctx = self.build_ctx(turn, query_text=guard.text)
                 if self.cfg.debug:
                     self.out(f"    · 分支：识别为{prop['label']}")
-        if action.kind in ("ask", "clue", "report", "propose", "confront", "invite", "dismiss"):
+        if action.kind in ("ask", "press", "clue", "report", "propose", "confront", "invite", "dismiss"):
             self.out(f"\n{self.cfg.player_name}：{guard.text}")
+        if press:
+            self.out(f"    {press['line']}")
         skills = self.npc.skills.route(intent, guard.text, g.act_id, guard.suspicious,
                                        has_locked=bool(ctx.task["locked_info"]))
         context_lines = self.wm.lines()

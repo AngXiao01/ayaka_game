@@ -163,6 +163,10 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     if t.get("believe"):
         parts.append("## 对方说出了伪信的真相\n还没有查实，但你信得过对方——你选择相信。说出你的信任（也可以带点不安），"
                      "然后表示接下来想和对方一起商量，该怎么处置伪造者。")
+    pr = t.get("press")
+    if pr and not pr["ok"]:                        # 硬问没问出来：代码掷过骰，这次不松口
+        parts.append(f"## 对方在逼问：{pr['desc']}\n这次你没有松口。用你的方式回避——岔开话题、推说不知道、"
+                     "或者明显地紧张起来，但不要说出这件事。你心里起了戒心。")
     dsp = t.get("dispatch")
     if dsp:
         parts.append(f"## 对方说出了一个推测：{dsp['desc']}\n没有凭据，你不会就此认定；但这值得查一查。"

@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from config.settings import Settings
+from core.agendas import Agendas
+from core.actions import ActionResolver
 from core.agent_loop import LoopLimits
 from core.branch import BranchAgent
 from core.budget import Budget
@@ -100,6 +102,8 @@ class GameEngine:
         self.god.physical = PhysicalWorld(self.world, self.personas, self.god, (state.get("world") or {}).get("physical"),
                                           player_name=g.player_name)
         self.god.physical.on_deliver = self._on_message
+        self.god.agendas = Agendas(self.god, self.quest.agendas)
+        self.god.tracer_log = lambda kind, **kw: self.tracer.log(kind, **kw)
         # 主线结束（结局）、截止时间到了之后还能继续玩；自动玩家 / 评测跑到结局就停
         self.continue_after_ending = g.continue_after_ending and not getattr(player, "stops_at_ending", False)
         rels = state.get("relationships", {})
@@ -128,6 +132,7 @@ class GameEngine:
         self.compressor = CompressLLMAdapter(r.backend("compress"), r.params("compress"), t, min(rep, 1)).compress
         self.explorer = Explorer(self.god, self.world, self.personas, lambda nid: self.npcs[nid].relationship,
                                  out, hints=g.hints)
+        self.actions = ActionResolver(self.god, self.world, self.personas, self.explorer)
         self.director = Director(
             self.god, self.world, self.personas, self.explorer,
             lambda nid: (self.npcs[nid].relationship.affinity, self.npcs[nid].relationship.trust),
@@ -208,9 +213,15 @@ class GameEngine:
             g = self.god
             g.notices.append(f"📨 {phys.name(msg['from'])}托人带话：{msg['text']}")
             for c in msg.get("clues") or []:
-                if g.give_clue(c):
+                if g.destroyed(c):
+                    g.notices.append(f"    （{g.destroyed(c)}）")
+                elif g.give_clue(c):
                     g.notices.append(f"    📜 获得线索「{self.quest.clue_name(c)}」")
                     g.journal.append(f"{g.time_label()}　{phys.name(msg['from'])}托人带话，得到线索「{self.quest.clue_name(c)}」")
+        if to in self.npcs and msg["from"] in self.npcs and f"alerted:{msg['from']}" in self.god.flags \
+                and f"alerted:{to}" not in self.god.flags:
+            self.god.flags.append(f"alerted:{to}")         # 起了戒心的人托人报信：收信的人也警觉起来
+            self.tracer.log("alert", frm=msg["from"], to=to)
         if to in self.npcs:
             self.npcs[to].memory.add(MemoryItem(
                 text=f"（{self.god.time_label()}）{phys.name(msg['from'])}托人带话：{msg['text']}", kind="message",
@@ -296,13 +307,19 @@ class GameEngine:
                 for c in gained:
                     self.out(f"    📜 获得线索「{self.quest.clue_name(c)}」")
                 show_panel = bool(gained)                  # 有了新线索，下一步也跟着变了
-            elif action.kind in ("look", "say"):          # 地点层的自由输入：想查看什么
-                with self.tracer.span(agent="scene"):
-                    desc, gained = self.scene.look(action.text, degraded=self.budget.degraded())
-                self.out("\n" + desc)
-                for c in gained:
-                    self.out(f"    📜 获得线索「{self.quest.clue_name(c)}」")
-                show_panel = bool(gained)
+            elif action.kind in ("look", "say"):          # 地点层的自由输入：先看是不是一个自由行动，不是再交给场景描写
+                act = self.actions.parse(action.text)
+                if act:
+                    desc, gained = self.actions.resolve(act[0], act[1], action.text)
+                    self.out("\n" + desc)
+                    show_panel = True
+                else:
+                    with self.tracer.span(agent="scene"):
+                        desc, gained = self.scene.look(action.text, degraded=self.budget.degraded())
+                    self.out("\n" + desc)
+                    for c in gained:
+                        self.out(f"    📜 获得线索「{self.quest.clue_name(c)}」")
+                    show_panel = bool(gained)
             elif action.kind == "wait":
                 self.out("\n" + self.explorer.wait())
                 show_panel = True
@@ -360,11 +377,18 @@ class GameEngine:
         self.out(f"\n════ 结局：{e.title} ════\n\n" + (self.quest.late_note + "\n\n" if late and self.quest.late_note else "")
                  + (self.quest.unverified_note + "\n\n" if unverified and self.quest.unverified_note else "")
                  + f"{e.text}\n")
+        for line in self.outcome_lines():          # 结局不只是四选一：这一局发生过的事各留一笔
+            self.out(line + "\n")
         if self.quest.epilogue_by_tier.get(tier):
             self.out(self.quest.epilogue_by_tier[tier] + "\n")
         self.out(f"（{g.time_label()} ｜ 线索 {len(g.clues)}/{len(self.quest.clues)} ｜ "
                  f"与{self.companion.name}：{tier}，好感 {aff}，信任 {self.companion.relationship.trust}）")
         self.tracer.log("ending", ending=e.id, title=e.title, flags=g.flags, clues=g.clues, affinity=aff, tier=tier)
+
+    def outcome_lines(self) -> list[str]:
+        g = self.god
+        return [o["text"] for o in self.quest.outcomes
+                if set(o.get("flags_all", [])) <= set(g.flags) and not set(o.get("flags_none", [])) & set(g.flags)]
 
     def stats_line(self) -> str:
         s = self.tracer.summary()
