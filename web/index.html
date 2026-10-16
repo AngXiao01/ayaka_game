@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>伪信与雪见茶会</title>
+<style>
+:root {
+  --bg: #f4f1ec; --panel: #fffdf9; --ink: #2b2a28; --muted: #8a857c; --line: #e4ded3;
+  --accent: #5b7fa8; --accent-ink: #ffffff; --npc: #ffffff; --player: #e6eef7; --gold: #a07a2c;
+  --gold-bg: #f6eedb; --bad: #b5523b; --chip: #efe9df; --shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17181b; --panel: #1f2125; --ink: #e8e6e1; --muted: #9a958c; --line: #33353a;
+    --accent: #86a8d1; --accent-ink: #10151c; --npc: #26292e; --player: #23324a; --gold: #d8b469;
+    --gold-bg: #2f2918; --bad: #e0806a; --chip: #2a2c31; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17181b; --panel: #1f2125; --ink: #e8e6e1; --muted: #9a958c; --line: #33353a;
+  --accent: #86a8d1; --accent-ink: #10151c; --npc: #26292e; --player: #23324a; --gold: #d8b469;
+  --gold-bg: #2f2918; --bad: #e0806a; --chip: #2a2c31; --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.75 "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, sans-serif; }
+body { overflow: hidden; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: 100vh; height: 100dvh; }
+.main { display: flex; flex-direction: column; min-width: 0; height: 100vh; height: 100dvh; }
+#sidebtn { display: none; }
+header { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: .05em; white-space: nowrap; }
+header button { white-space: nowrap; }
+header .status { color: var(--muted); font-size: 13px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header label { font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; }
+header button, .side button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: transparent; color: var(--muted);
+  border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+#log { flex: 1; overflow-y: auto; padding: 20px 24px 12px; }
+.inner { max-width: 760px; margin: 0 auto; }
+.narr { margin: 4px 0; }
+.narr.hint { color: var(--muted); font-size: 13px; }
+.place { margin: 22px 0 6px; font-weight: 600; font-size: 17px; letter-spacing: .08em; }
+.statusline { margin: 18px 0 0; padding-top: 12px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
+.title { text-align: center; margin: 26px 0 14px; font-size: 20px; letter-spacing: .2em; font-weight: 600; }
+.convhead { margin: 18px 0 8px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 8px 8px 0; font-size: 13px; color: var(--muted); box-shadow: var(--shadow); }
+.convhead b { color: var(--ink); font-size: 15px; margin-right: 6px; }
+.convend { text-align: center; color: var(--muted); font-size: 12px; margin: 10px 0 16px; }
+.time { text-align: center; color: var(--muted); font-size: 12px; margin: 8px 0; }
+.msg { display: flex; margin: 10px 0; }
+.msg.player { justify-content: flex-end; }
+.bubble { max-width: 82%; padding: 9px 14px; border-radius: 14px; box-shadow: var(--shadow); white-space: pre-wrap; word-break: break-word; }
+.npc .bubble { background: var(--npc); border: 1px solid var(--line); border-top-left-radius: 4px; }
+.player .bubble { background: var(--player); border-top-right-radius: 4px; }
+.who { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.who i { font-style: normal; margin-left: 4px; }
+.event { margin: 4px 0; padding: 4px 12px; background: var(--gold-bg); color: var(--gold); border-radius: 8px; font-size: 13px; width: fit-content; }
+.event.bad { background: transparent; color: var(--bad); padding-left: 0; }
+.debug { color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; margin: 1px 0; }
+body:not(.show-debug) .debug { display: none; }
+.act { color: var(--muted); font-size: 13px; margin: 6px 0; }
+.meta { color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+.typing { color: var(--muted); font-size: 13px; padding: 4px 0 8px; }
+.typing span { animation: blink 1.2s infinite; }
+.typing span:nth-child(2) { animation-delay: .2s; } .typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 100% { opacity: .2 } 50% { opacity: 1 } }
+footer { border-top: 1px solid var(--line); background: var(--panel); padding: 12px 24px 16px; max-height: 45vh; max-height: 45dvh; overflow-y: auto; flex-shrink: 0; }
+#options { max-width: 760px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px; }
+#options button { font: inherit; font-size: 14px; text-align: left; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  border-radius: 10px; padding: 7px 12px; cursor: pointer; line-height: 1.5; }
+#options button:hover:not(:disabled) { border-color: var(--accent); }
+#options button.say { width: 100%; background: var(--panel); }
+#options button:not(.say) { font-size: 13px; padding: 5px 10px; border-radius: 8px; }
+#options button.say small { color: var(--muted); margin-left: 8px; font-size: 12px; }
+#options button.primary { border-color: var(--accent); color: var(--accent); }
+#options button:disabled { opacity: .45; cursor: default; }
+.free { max-width: 760px; margin: 10px auto 0; display: flex; gap: 8px; }
+.free input { flex: 1; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+.free button { font: inherit; padding: 8px 16px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.free button:disabled, .free input:disabled { opacity: .5; }
+.side { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 14px 16px; font-size: 13px; height: 100vh; height: 100dvh; }
+.side h2 { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .1em; margin: 18px 0 6px; }
+.side h2:first-child { margin-top: 0; }
+.card { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; background: var(--bg); }
+.card .n { font-weight: 600; }
+.card .d { color: var(--muted); font-size: 12px; }
+.bar { height: 4px; background: var(--chip); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.caught { text-decoration: line-through; color: var(--muted); }
+.empty { color: var(--muted); font-size: 12px; }
+.err { color: var(--bad); padding: 10px 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  #sidebtn { display: inline-block; }
+  .side { position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 88vw); z-index: 10;
+    transform: translateX(100%); transition: transform .2s ease; box-shadow: -4px 0 16px rgba(0,0,0,.15); }
+  body.side-open .side { transform: none; }
+  #log { padding: 14px 16px 8px; }
+  footer { padding: 10px 16px 14px; }
+  header { padding: 8px 12px; gap: 8px; }
+  header h1 { font-size: 15px; }
+  header .status { display: none; }
+  header label { margin-left: auto; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="main">
+    <header>
+      <h1>伪信与雪见茶会</h1>
+      <div class="status" id="status"></div>
+      <label><input type="checkbox" id="dbg"> 调试信息</label>
+      <button id="sidebtn" type="button">线索 / 人物</button>
+      <button id="restart" type="button">重新开始</button>
+    </header>
+    <div id="log"><div class="inner" id="inner"></div></div>
+    <footer>
+      <div id="options"></div>
+      <form class="free" id="free">
+        <input id="say" placeholder="也可以直接打字说你想说的话……" autocomplete="off">
+        <button type="submit">说</button>
+      </form>
+    </footer>
+  </div>
+  <aside class="side" id="side"></aside>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const PLAYER = "旅行者";
+let next = 0, waiting = false, lastOptsKey = "", busy = false;
+
+function el(tag, cls, ...kids) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  for (const k of kids) if (k !== null && k !== undefined) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return n;
+}
+
+// ---------- 把引擎的文本输出渲染成聊天界面
+const DIALOGUE = /^(\S{1,8}?)(?:（([^）]*)）)?：「([\s\S]*)」$/;
+function renderLine(l) {
+  const t = l.text, s = t.trim();
+  if (l.kind === "player") {
+    const m = t.match(/^[^：]+：「([\s\S]*)」$/);
+    return el("div", "msg player", el("div", "bubble", m ? m[1] : t));
+  }
+  if (l.kind === "action") return el("div", "act", t);
+  if (l.kind === "meta") return el("div", "meta", t);
+  if (!s) return null;
+  if (/^─+$/.test(s)) return null;
+  if (/^════/.test(s)) return el("div", "title", s.replace(/═/g, "").trim());
+  if (/^第\d+天·/.test(s) && s.includes("｜")) return el("div", "statusline", s);
+  if (/^【[^】]+】$/.test(s)) return el("div", "place", s);
+  if (/^—— 与/.test(s)) {
+    const m = s.match(/^—— 与(.+?)交谈 ——\s*(.*)$/);
+    return el("div", "convhead", el("b", null, m ? m[1] : s), m ? m[2] : "");
+  }
+  if (/^—— .* ——$/.test(s)) return el("div", "convend", s.replace(/—/g, "").trim());
+  if (/^（不知不觉/.test(s)) return el("div", "time", s);
+  if (/^(✦|📜|⚡)/.test(s)) return el("div", "event", s);
+  if (/^(😣|……)/.test(s)) return el("div", "event bad", s);
+  if (/^(·|✗|🤥|📝)/.test(s)) return el("div", "debug", s);
+  if (/^提示：/.test(s)) return el("div", "narr hint", s);
+  if (s.startsWith(PLAYER + "：")) return el("div", "msg player", el("div", "bubble", s.slice(PLAYER.length + 1)));
+  const m = s.match(DIALOGUE);
+  if (m) {
+    return el("div", "msg npc", el("div", "bubble",
+      el("span", "who", m[1], m[2] ? el("i", null, "（" + m[2] + "）") : null), m[3]));
+  }
+  return el("div", "narr", s);
+}
+
+function append(lines) {
+  const box = $("inner"), log = $("log");
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+  for (const l of lines) { const n = renderLine(l); if (n) box.append(n); }
+  if (atBottom || lines.length) log.scrollTop = log.scrollHeight;
+}
+
+// ---------- 选项
+function renderOptions(st) {
+  const key = JSON.stringify([st.options, st.waiting, st.finished]);
+  if (key === lastOptsKey) return;
+  lastOptsKey = key;
+  const box = $("options");
+  box.replaceChildren();
+  if (st.finished) {
+    box.append(el("div", "typing", st.error ? "" : "游戏结束。点右上角「重新开始」可以再玩一局。"));
+  } else if (!st.waiting) {
+    box.append(el("div", "typing", "对方正在想", el("span", null, "."), el("span", null, "."), el("span", null, ".")));
+  }
+  for (const o of st.options) {
+    const b = el("button", o.kind === "say" ? "say" : (["report", "propose", "event", "confront_menu"].includes(o.kind) ? "primary" : ""));
+    if (o.kind === "say") { b.append("「" + o.text + "」"); b.append(el("small", null, [o.tone, o.intent].filter(Boolean).join(" · "))); }
+    else b.append(o.text);
+    b.type = "button";
+    b.onclick = () => choose({index: o.i});
+    box.append(b);
+  }
+  $("say").disabled = !(st.waiting && st.allow_free);
+  $("free").querySelector("button").disabled = !(st.waiting && st.allow_free);
+  $("say").placeholder = st.in_dialogue ? "也可以直接打字说你想说的话……" : "也可以直接写想查看什么，比如「看看廊下的茶具」……";
+  if (st.waiting && st.allow_free) $("say").focus({preventScroll: true});
+}
+
+// ---------- 侧栏
+function renderSide(p) {
+  const side = $("side");
+  if (!p || !p.time) return;
+  $("status").textContent = (p.incognito ? "🕶 无痕 · " : "") + `${p.time} · ${p.location} · ${p.act}`;
+  $("restart").textContent = p.incognito ? "再开一局" : "重新开始";
+  const sec = (title, items, empty) => [el("h2", null, title), ...(items.length ? items : [el("div", "empty", empty)])];
+  const people = p.people.map(x => el("div", "card",
+    el("div", "n", `${x.name}`, el("span", "d", `  ${x.title} · ${x.tier}`)),
+    el("div", "d", `此刻大概在：${x.where}`),
+    el("div", "d", `好感 ${x.affinity}　信任 ${x.trust}`),
+    el("div", "bar", (() => { const i = el("i"); i.style.width = x.affinity + "%"; return i; })())));
+  side.replaceChildren(
+    el("h2", null, "现在"),
+    el("div", "card", el("div", "n", `${p.time} · ${p.location}`), el("div", "d", p.status.split("｜")[1] || ""),
+       el("div", "d", p.act), el("div", "d", "提示：" + p.hint)),
+    ...sec(`线索 ${p.clues.length}/${p.clue_total}`, p.clues.map(c => el("div", "card", el("div", "n", c.name), el("div", "d", c.desc))), "还没有线索。"),
+    ...sec("证词本（不一定都是真话）", p.testimonies.map(t => el("div", "card",
+      el("div", t.caught ? "caught" : "", `${t.npc}：「${t.said}」`), el("div", "d", t.time + (t.caught ? " · 已被拆穿" : "")))), "还没有记下的说法。"),
+    ...sec("人物", people, ""),
+    ...sec("调查日志", p.journal.map(j => el("div", "d", j)), "还没有记录。"),
+  );
+}
+
+// ---------- 通信
+async function poll() {
+  try {
+    const r = await fetch(`/api/state?since=${next}`, {cache: "no-store"});
+    const st = await r.json();
+    if (st.lines.length) append(st.lines);
+    next = st.next;
+    waiting = st.waiting;
+    if (st.error && !document.querySelector(".err")) $("inner").append(el("div", "err", st.error));
+    renderOptions(st);
+    renderSide(st.panel);
+  } catch (e) { /* 服务重启中，下次再试 */ }
+  setTimeout(poll, waiting ? 1500 : 500);
+}
+
+async function choose(body) {
+  if (!waiting || busy) return;
+  busy = true; waiting = false; lastOptsKey = "";
+  renderOptions({options: [], waiting: false, finished: false, allow_free: false});
+  try { await fetch("/api/choose", {method: "POST", body: JSON.stringify(body)}); } finally { busy = false; }
+}
+
+$("free").onsubmit = e => {
+  e.preventDefault();
+  const v = $("say").value.trim();
+  if (!v) return;
+  $("say").value = "";
+  choose({text: v});
+};
+$("restart").onclick = async () => {
+  if (!confirm("从头开始一局新的？")) return;
+  await fetch("/api/restart", {method: "POST", body: JSON.stringify({new: true})});
+  next = 0; lastOptsKey = ""; $("inner").replaceChildren();
+};
+$("sidebtn").onclick = e => { e.stopPropagation(); document.body.classList.toggle("side-open"); };
+$("log").addEventListener("click", () => document.body.classList.remove("side-open"));
+const dbg = $("dbg");
+try { dbg.checked = localStorage.getItem("ayaka-debug") === "1"; } catch {}
+document.body.classList.toggle("show-debug", dbg.checked);
+dbg.onchange = () => {
+  document.body.classList.toggle("show-debug", dbg.checked);
+  try { localStorage.setItem("ayaka-debug", dbg.checked ? "1" : "0"); } catch {}
+};
+poll();
+</script>
+</body>
+</html>

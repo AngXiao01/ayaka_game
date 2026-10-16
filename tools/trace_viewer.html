@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trace 查看器</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280; --line: #e3e1dc;
+  --accent: #3b6ea5; --player: #eef3f9; --npc: #fbf7f0; --ok: #2f7d4f; --warn: #b7791f; --bad: #c0392b;
+  --chip: #f0eeea; --code: #f7f7f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16181c; --panel: #1e2126; --ink: #e6e6e6; --muted: #9aa0a6; --line: #30343a;
+    --accent: #7fb0e6; --player: #1f2a36; --npc: #2a2620; --ok: #5cc28a; --warn: #e0a84a; --bad: #ef6b5e;
+    --chip: #2a2e34; --code: #15171a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16181c; --panel: #1e2126; --ink: #e6e6e6; --muted: #9aa0a6; --line: #30343a;
+  --accent: #7fb0e6; --player: #1f2a36; --npc: #2a2620; --ok: #5cc28a; --warn: #e0a84a; --bad: #ef6b5e;
+  --chip: #2a2e34; --code: #15171a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+header .file { color: var(--muted); font-size: 12px; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px; }
+.stat { background: var(--chip); border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+.stat b { font-variant-numeric: tabular-nums; }
+.stat.bad b { color: var(--bad); } .stat.warn b { color: var(--warn); }
+.controls { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); }
+.controls label { cursor: pointer; user-select: none; }
+.controls button { font: inherit; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); color: var(--ink); cursor: pointer; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+.session { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
+.session > .head { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.session > .head h2 { margin: 0; font-size: 15px; }
+.session > .head .meta { color: var(--muted); font-size: 12px; }
+.end { padding: 10px 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.end .memory { color: var(--ink); margin-top: 4px; }
+.turn { padding: 12px 14px; border-top: 1px dashed var(--line); }
+.turn:first-of-type { border-top: none; }
+.turn.problem { box-shadow: inset 3px 0 0 var(--bad); }
+.tlabel { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.bubble { border-radius: 8px; padding: 8px 10px; margin: 4px 0; }
+.bubble.player { background: var(--player); }
+.bubble.npc { background: var(--npc); }
+.who { font-weight: 600; margin-right: 4px; }
+.action { color: var(--muted); }
+.intent { font-size: 11px; color: var(--accent); margin-left: 6px; }
+.options { margin: 2px 0 6px 0; padding-left: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.options li { padding: 1px 0; }
+.options li.chosen { color: var(--ink); }
+.options li.chosen::before { content: "▸ "; color: var(--accent); }
+.options li:not(.chosen)::before { content: "· "; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.chip { background: var(--chip); border-radius: 999px; padding: 0 8px; font-size: 12px; }
+.chip.up { color: var(--ok); } .chip.down { color: var(--bad); }
+.chip.signal { color: var(--accent); font-weight: 600; }
+.chip.bad { color: var(--bad); font-weight: 600; }
+details.calls { margin-top: 8px; }
+details.calls > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.call { border: 1px solid var(--line); border-radius: 8px; margin: 6px 0; overflow: hidden; }
+.call > summary { cursor: pointer; padding: 4px 10px; font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; background: var(--code); }
+.call .task { font-weight: 600; }
+.call .okv { color: var(--ok); } .call .errv { color: var(--bad); }
+.call .body { padding: 8px 10px; }
+.call .err { color: var(--bad); font-size: 12px; margin-bottom: 6px; }
+.msg { margin: 6px 0; }
+.msg .role { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+pre { margin: 2px 0 0; padding: 8px; background: var(--code); border: 1px solid var(--line); border-radius: 6px;
+  white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-height: 420px; overflow: auto; }
+details.sys > summary { cursor: pointer; font-size: 11px; color: var(--muted); }
+.empty { text-align: center; color: var(--muted); padding: 60px 16px; }
+.drop { outline: 2px dashed var(--accent); outline-offset: -8px; }
+.orphan { padding: 10px 14px; }
+@media (max-width: 640px) { .controls { margin-left: 0; } main { padding: 12px 8px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Trace 查看器</h1>
+    <div class="file" id="file"></div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="controls">
+    <label><input type="checkbox" id="onlyProblems"> 只看有问题的轮次</label>
+    <label><input type="checkbox" id="expandCalls"> 展开 LLM 调用</label>
+    <button id="openBtn" type="button">打开 jsonl…</button>
+    <input type="file" id="fileInput" accept=".jsonl,.json,.txt" hidden>
+  </div>
+</header>
+<main id="main"></main>
+<script>
+const EMBEDDED = /*__TRACE_DATA__*/null;
+const NPC_NAME = "神里绫华";
+const END_REASONS = {PLAYER_QUIT: "保存并退出", PLAYER_FAREWELL: "双方道别", PLAYER_LEFT: "起身告辞",
+  NPC_ENDED: "对方结束了谈话", NPC_LEFT: "对方有事先走了", MAX_TURNS: "聊了很久，自然收尾",
+  STALLED: "话题冷了下来", BUDGET: "预算用尽", DEADLINE: "时间到了", RESOLVED: "事情有了决断",
+  STAGE_ADVANCED: "本幕目标达成，转场", QUEST_COMPLETE: "主线完成"};
+const NPC_NAMES = {ayaka: "神里绫华", thoma: "托马", aen: "阿缘", yohei: "与平", soji: "宗次", kokichi: "小吉"};
+
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") n.className = v; else if (k === "open") n.open = !!v; else n.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false)
+    n.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return n;
+}
+const signed = x => (x > 0 ? "+" : "") + x;
+const fmtS = s => (s == null ? "–" : s.toFixed(1) + "s");
+const norm = s => String(s || "").trim().replace(/^[「“"『]+|[」”"』]+$/g, "").trim();
+
+// ------------------------------------------------------------ 解析
+// 新 trace 每个事件带 span（session / turn / agent），按 span 分组；老 trace 没有 span，按事件顺序推断。
+function parse(events) {
+  return events.some(e => e.span && e.span.session != null) ? parseBySpan(events) : parseByOrder(events);
+}
+
+function newSession() { return {start: null, turns: [], end: null, endCalls: []}; }
+const ACTION_ICONS = {move: "🧭", examine: "🔎", wait: "⏳", view: "📖", talk: "💬", event: "✨", quit: "💾"};
+
+function parseBySpan(events) {
+  const meta = {start: null, sessions: [], orphans: [], timeline: []};
+  const byId = new Map();
+  let last = null;
+  for (const ev of events) {
+    const sp = ev.span || {};
+    if (ev.event === "game_start") { meta.start = ev; continue; }
+    if (ev.event === "session_end") { if (last) last.end = ev; else meta.orphans.push(ev); continue; }
+    if (ev.event === "action" || ev.event === "ending") { meta.timeline.push({kind: ev.event, ev}); continue; }
+    if (sp.session == null) { meta.orphans.push(ev); continue; }
+    if (!byId.has(sp.session)) {
+      const s = newSession(); s.turnMap = new Map(); byId.set(sp.session, s); meta.sessions.push(s);
+      meta.timeline.push({kind: "session", s});
+    }
+    const s = last = byId.get(sp.session);
+    if (ev.event === "session_start") { s.start = ev; continue; }
+    if (sp.turn == null) { s.endCalls.push(ev); continue; }
+    if (!s.turnMap.has(sp.turn)) { const t = {ev: null, calls: [], no: sp.turn}; s.turnMap.set(sp.turn, t); s.turns.push(t); }
+    const t = s.turnMap.get(sp.turn);
+    if (ev.event === "turn") t.ev = ev; else t.calls.push(ev);
+  }
+  for (const s of meta.sessions) s.turns.sort((a, b) => a.no - b.no);
+  return meta;
+}
+
+function parseByOrder(events) {
+  const meta = {start: null, sessions: [], orphans: []};
+  let cur = null, pending = [];
+  const ensure = () => { if (!cur) { cur = newSession(); meta.sessions.push(cur); } return cur; };
+  for (const ev of events) {
+    switch (ev.event) {
+      case "game_start": meta.start = ev; break;
+      case "session_start": cur = newSession(); cur.start = ev; meta.sessions.push(cur); break;
+      case "turn": ensure().turns.push({ev, calls: pending}); pending = []; break;
+      case "session_end": ensure().end = ev; cur.endCalls = pending; pending = []; cur = null; break;
+      default: pending.push(ev);
+    }
+  }
+  if (pending.length) meta.orphans = pending;
+  return meta;
+}
+
+// 老 trace 的 turn 事件里没有 player：从 npc 调用的最后一条 user 消息里推回来
+function inferPlayer(t) {
+  if (!t.ev) return null;
+  if (t.ev.player) return t.ev.player;
+  const call = [...t.calls].reverse().find(c => c.event === "llm" && c.task === "npc_reply" && c.attempt === 0);
+  if (!call) return null;
+  const users = call.messages.filter(m => m.role === "user");
+  const last = users.length ? users[users.length - 1].content : "";
+  if (last.startsWith("（场景开始")) return null;
+  const m = last.match(/^(.+?)(?:（意图：(.+?)）)?：「([\s\S]*?)」\s*(?:\n|$)/);
+  return m ? {text: m[3], intent: m[2] || ""} : null;
+}
+
+function inferOptions(t) {
+  if (t.ev && t.ev.options) return t.ev.options;
+  const call = [...t.calls].reverse().find(c => c.event === "llm" && c.task === "player_options" && c.ok);
+  if (!call) return null;
+  try { const o = JSON.parse(call.output); return o.options || o; } catch { return null; }
+}
+
+function callProblem(c) {
+  switch (c.event) {
+    case "llm": return !c.ok || c.attempt > 0;
+    case "fallback": case "bad_line": case "stall": return true;
+    case "tool_call": return !c.ok;
+    case "loop_end": return c.stop !== "finished" || !!c.forced_by;
+    case "guard": return (c.flags || []).length > 0;
+    default: return false;
+  }
+}
+function isProblem(calls, ev) { return calls.some(callProblem) || !!(ev && ev.degraded); }
+
+// ------------------------------------------------------------ 渲染
+function renderStats(events) {
+  const llm = events.filter(e => e.event === "llm");
+  const sum = k => llm.reduce((a, e) => a + ((e.usage || {})[k] || 0), 0);
+  const cached = llm.reduce((a, e) => a + (e.cached_tokens || 0), 0);
+  const lat = llm.reduce((a, e) => a + (e.latency_s || 0), 0);
+  const count = (pred) => events.filter(pred).length;
+  const failed = llm.filter(e => !e.ok).length;
+  const repairs = llm.filter(e => e.attempt > 0).length;
+  const fallbacks = count(e => e.event === "fallback");
+  const tools = events.filter(e => e.event === "tool_call" && !e.terminal);
+  const toolErr = tools.filter(e => !e.ok).length;
+  const forced = count(e => e.event === "loop_end" && (e.forced_by || e.stop !== "finished"));
+  const reviews = events.filter(e => e.event === "review");
+  const claimed = reviews.reduce((a, e) => a + e.claimed.length, 0);
+  const accepted = reviews.reduce((a, e) => a + e.accepted.length, 0);
+  const inj = count(e => e.event === "guard" && (e.flags || []).length);
+  const canon = events.filter(e => e.event === "canon_write");
+  const canonKept = canon.reduce((a, e) => a + e.kept.length, 0), canonDrop = canon.reduce((a, e) => a + e.dropped.length, 0);
+  const start = events.find(e => e.event === "game_start");
+  const byTask = {};
+  for (const e of llm) { (byTask[e.task] ||= []).push(e.latency_s || 0); }
+  const stat = (label, val, cls) => el("div", {class: "stat " + (cls || "")}, label + " ", el("b", {}, val));
+  const prompt = sum("prompt_tokens");
+  document.getElementById("stats").replaceChildren(...[
+    start ? stat("后端", start.backend) : null,
+    stat("轮次", count(e => e.event === "turn")),
+    stat("LLM 调用", llm.length),
+    stat("失败输出", failed, failed ? "bad" : ""),
+    stat("JSON 修复", repairs, repairs ? "warn" : ""),
+    stat("兜底", fallbacks, fallbacks ? "bad" : ""),
+    tools.length || toolErr ? stat("工具调用", `${tools.length}（失败 ${toolErr}）`, toolErr ? "warn" : "") : null,
+    forced ? stat("被闸收敛", forced, "warn") : null,
+    reviews.length ? stat("进度 声称/采纳", `${claimed}/${accepted}`) : null,
+    inj ? stat("注入拦截", inj, "warn") : null,
+    canon.length ? stat("即兴设定 记下/拦下", `${canonKept}/${canonDrop}`) : null,
+    stat("tokens", prompt + " + " + sum("completion_tokens")),
+    prompt ? stat("前缀缓存", Math.round(100 * cached / prompt) + "%") : null,
+    stat("模型耗时", fmtS(lat)),
+    ...Object.entries(byTask).map(([k, v]) => stat(k + " 平均", fmtS(v.reduce((a, b) => a + b, 0) / v.length))),
+  ].filter(Boolean));
+}
+
+const line = (...kids) => el("div", {class: "call"}, el("summary", {}, ...kids));
+const tag = (text, bad) => el("span", {class: "task " + (bad ? "errv" : "")}, text);
+
+function renderEvent(c) {
+  switch (c.event) {
+    case "fallback": return line(tag("兜底", true), c.where, " · ", c.error || c.stop || "");
+    case "bad_line": return line(tag("坏行 #" + c.line, true), c.raw);
+    case "tool_call": {
+      if (c.terminal) return line(tag(`步骤 ${c.step} · respond`), el("span", {class: "okv"}, "✓ 交付"),
+                                  c.thought ? el("span", {}, "💭 " + c.thought) : null, fmtS(c.latency_s));
+      const head = el("summary", {}, tag(`步骤 ${c.step} · 🔧 ${c.tool}`, !c.ok),
+        el("span", {}, JSON.stringify(c.args)),
+        el("span", {class: c.ok ? "okv" : "errv"}, c.ok ? "✓" : "✗ " + c.error),
+        c.cached ? el("span", {}, "缓存命中") : null, el("span", {}, fmtS(c.latency_s)));
+      return el("details", {class: "call"}, head, el("div", {class: "body"},
+        c.thought ? el("div", {class: "msg"}, el("div", {class: "role"}, "thought"), el("pre", {}, c.thought)) : null,
+        el("div", {class: "msg"}, el("div", {class: "role"}, "observation"), el("pre", {}, c.observation || ""))));
+    }
+    case "loop_end": {
+      const bad = c.stop !== "finished" || c.forced_by;
+      return line(tag("循环结束", bad), el("span", {class: bad ? "errv" : "okv"},
+        c.stop + (c.forced_by ? `（被 ${c.forced_by} 收敛）` : "")),
+        `${c.steps} 步 · ${c.tokens} tok · ${fmtS(c.elapsed_s)}`, c.error ? el("span", {class: "errv"}, c.error) : null);
+    }
+    case "review": {
+      const head = el("summary", {}, tag("进度审核"), `声称 ${c.claimed.length} → 采纳 ${c.accepted.length}`,
+                      c.degraded ? el("span", {class: "errv"}, "降级：只走规则") : el("span", {}, "模式 " + c.mode));
+      return el("details", {class: "call"}, head, el("div", {class: "body"}, el("ul", {class: "options"},
+        c.verdicts.map(v => el("li", {class: v.accepted ? "chosen" : ""},
+          `${v.accepted ? "✓" : "✗"} ${v.id} · ${v.layer} · ${v.reason}`, v.evidence ? `（证据：${v.evidence}）` : "")))));
+    }
+    case "guard":
+      return (c.flags || []).length ? line(tag("输入防护", true), (c.flags || []).join("；"), c.truncated ? " · 已截断" : "")
+                                    : line(tag("输入防护"), el("span", {class: "okv"}, "通过"), c.truncated ? " · 已截断" : "");
+    case "compress":
+      return el("details", {class: "call"}, el("summary", {}, tag("工作记忆压缩"),
+        `${c.mode} · 丢出 ${c.dropped_entries} 条 · ${c.tokens_before} → ${c.tokens_after} tok`),
+        el("div", {class: "body"}, el("pre", {}, c.summary || "")));
+    case "memory_write":
+      return el("details", {class: "call"}, el("summary", {}, tag("写入长期记忆"), c.merged ? "（与旧记忆合并）" : "",
+        `事实保留 ${c.facts_kept.length} · 丢弃 ${c.facts_dropped.length}`),
+        el("div", {class: "body"}, el("pre", {}, c.summary),
+           c.facts_dropped.length ? el("div", {class: "err"}, "无原文依据而丢弃：" + c.facts_dropped.join("；")) : null));
+    case "lie":
+      return el("details", {class: "call"}, el("summary", {}, tag("🤥 说谎", false), `${c.kept.length} 句`),
+        el("div", {class: "body"}, el("ul", {class: "options"},
+          c.kept.map(k => el("li", {class: "chosen"}, `「${k.said}」${k.lie_id ? "（预设 " + k.lie_id + "）" : "（临时编的）"}`)),
+          c.dropped.map(d => el("li", {}, `✗ 没说出口，不记：${d.said}`)))));
+    case "confront":
+      return line(tag("⚠ 对质", c.outcome !== "caught"), `「${c.said}」`, c.clue ? ` · 证据 ${c.clue}` : " · 没拿证据",
+        el("span", {class: c.outcome === "caught" ? "okv" : "errv"},
+           {caught: " → 拆穿", unproven: " → 证明不了", truth: " → 冤枉了人"}[c.outcome]));
+    case "canon_write":
+      return el("details", {class: "call"}, el("summary", {}, tag("即兴设定", c.dropped.length > 0),
+        `记下 ${c.kept.length} · 不记 ${c.dropped.length}`),
+        el("div", {class: "body"}, el("ul", {class: "options"},
+          c.kept.map(k => el("li", {class: "chosen"}, `📝 ${k.fact}${k.about === "world" ? "（共享）" : ""}${k.merged ? "（与旧设定合并）" : ""}`)),
+          c.dropped.map(d => el("li", {}, `✗ ${d.fact} —— ${d.reason}`)))));
+    case "budget": return line(tag("预算", true), c.action === "stop" ? "用尽，停止" : "进入降级", ` · ${c.used}/${c.max}`);
+    case "stall": return line(tag("停滞收束", true), `连续 ${c.turns_since_progress} 轮无进展（上限 ${c.limit}）`);
+    case "llm": return renderLLM(c);
+    default: return line(tag(c.event));
+  }
+}
+
+function renderLLM(c) {
+  const u = c.usage || {};
+  const head = el("summary", {},
+    el("span", {class: "task"}, c.task + (c.span && c.span.agent ? ` @${c.span.agent}` : "")),
+    c.attempt > 0 ? el("span", {class: "errv"}, "重试 #" + c.attempt) : null,
+    el("span", {class: c.ok ? "okv" : "errv"}, c.ok ? "✓ 合法" : "✗ " + (c.output == null ? "请求失败" : "格式错误")),
+    el("span", {}, fmtS(c.latency_s)),
+    u.prompt_tokens != null ? el("span", {}, `${u.prompt_tokens} → ${u.completion_tokens} tok`) : null,
+    c.cached_tokens ? el("span", {}, `缓存 ${c.cached_tokens}`) : null,
+    c.finish_reason && c.finish_reason !== "stop" ? el("span", {class: "errv"}, "finish=" + c.finish_reason) : null,
+    el("span", {}, `T=${c.temperature}`),
+    c.seq != null ? el("span", {}, `seq=${c.seq}`) : null,
+  );
+  const body = el("div", {class: "body"});
+  if (c.error) body.append(el("div", {class: "err"}, c.error));
+  for (const m of c.messages || []) {
+    const pre = el("pre", {}, m.content);
+    body.append(m.role === "system"
+      ? el("details", {class: "sys msg"}, el("summary", {}, `system（${m.content.length} 字，点开）`), pre)
+      : el("div", {class: "msg"}, el("div", {class: "role"}, m.role), pre));
+  }
+  if (c.reasoning) body.append(el("div", {class: "msg"}, el("div", {class: "role"}, "reasoning"), el("pre", {}, c.reasoning)));
+  let out = c.output;
+  try { out = JSON.stringify(JSON.parse(out), null, 2); } catch {}
+  body.append(el("div", {class: "msg"}, el("div", {class: "role"}, "output"), el("pre", {}, out == null ? "（无）" : out)));
+  return el("details", {class: "call"}, head, body);
+}
+
+function brief(c) {
+  switch (c.event) {
+    case "llm": return `${c.task}${c.attempt ? "#" + c.attempt : ""} ${fmtS(c.latency_s)}${c.ok ? "" : " ✗"}`;
+    case "tool_call": return c.terminal ? "respond" : `🔧${c.tool}${c.ok ? "" : "✗"}`;
+    case "loop_end": return c.forced_by || c.stop !== "finished" ? `⚠${c.forced_by || c.stop}` : null;
+    case "review": return `审核 ${c.accepted.length}/${c.claimed.length}`;
+    case "guard": return (c.flags || []).length ? "⚠注入" : null;
+    case "compress": return "压缩";
+    case "lie":
+      return el("details", {class: "call"}, el("summary", {}, tag("🤥 说谎", false), `${c.kept.length} 句`),
+        el("div", {class: "body"}, el("ul", {class: "options"},
+          c.kept.map(k => el("li", {class: "chosen"}, `「${k.said}」${k.lie_id ? "（预设 " + k.lie_id + "）" : "（临时编的）"}`)),
+          c.dropped.map(d => el("li", {}, `✗ 没说出口，不记：${d.said}`)))));
+    case "confront":
+      return line(tag("⚠ 对质", c.outcome !== "caught"), `「${c.said}」`, c.clue ? ` · 证据 ${c.clue}` : " · 没拿证据",
+        el("span", {class: c.outcome === "caught" ? "okv" : "errv"},
+           {caught: " → 拆穿", unproven: " → 证明不了", truth: " → 冤枉了人"}[c.outcome]));
+    case "canon_write": return `📝即兴${c.kept.length}` + (c.dropped.length ? `/拦${c.dropped.length}` : "");
+    case "lie": return `🤥${c.kept.length}`;
+    case "confront": return `⚠对质:${c.outcome}`;
+    default: return c.event;
+  }
+}
+
+function renderCalls(calls, open) {
+  if (!calls.length) return null;
+  const text = calls.map(brief).filter(Boolean).join(" · ");
+  return el("details", {class: "calls", open}, el("summary", {}, `事件 ${calls.length}：${text}`), calls.map(renderEvent));
+}
+
+function renderTurn(t, idx, openCalls) {
+  const ev = t.ev || {}, r = ev.reply || {};
+  const player = inferPlayer(t), options = inferOptions(t);
+  const turnNo = ev.turn ?? t.no ?? idx;
+  const chosen = o => player && norm(o.text) === norm(player.text);
+  const problem = isProblem(t.calls, ev);
+  const node = el("div", {class: "turn" + (problem ? " problem" : "")});
+  node.dataset.problem = problem ? "1" : "";
+  node.append(el("div", {class: "tlabel"}, turnNo === 0 ? "开场" : `第 ${turnNo} 轮`,
+    ev.stage_title ? ` · ${ev.stage_title}` : "", ev.turns_in_stage != null ? ` · 本幕第 ${ev.turns_in_stage + 1} 轮` : ""));
+  if (options && options.length) {
+    node.append(el("ul", {class: "options"}, options.map(o =>
+      el("li", {class: chosen(o) ? "chosen" : ""}, norm(o.text), el("span", {class: "intent"}, o.intent)))));
+  }
+  if (player && !(options || []).some(chosen)) {
+    node.append(el("div", {class: "bubble player"}, el("span", {class: "who"}, "旅行者"), `「${player.text}」`,
+                   player.intent ? el("span", {class: "intent"}, player.intent) : null));
+  }
+  if (!t.ev) {
+    node.append(el("div", {class: "tlabel"}, "（这一轮没有结算：玩家离开或中途中断）"));
+  } else {
+    node.append(el("div", {class: "bubble npc"}, el("span", {class: "who"}, NPC_NAME),
+      r.action ? el("span", {class: "action"}, `（${r.action}）`) : null, `「${r.speech || ""}」`));
+    const rel = ev.relationship || {};
+    const loop = ev.loop || {};
+    const flags = (player && player.flags) || [];
+    const claimed = ev.claimed || r.task_signals || [];
+    const delta = (label, d, v) => el("span", {class: "chip " + (d > 0 ? "up" : d < 0 ? "down" : "")},
+                                      `${label} ${signed(d || 0)}${v != null ? " → " + v : ""}`);
+    node.append(el("div", {class: "chips"},
+      el("span", {class: "chip"}, r.emotion || "—"),
+      delta("好感", r.affinity_delta, rel.affinity),
+      delta("信任", r.trust_delta, rel.trust),
+      el("span", {class: "chip " + (r.tension_delta > 0 ? "down" : r.tension_delta < 0 ? "up" : "")},
+         `张力 ${signed(r.tension_delta || 0)} → ${ev.tension != null ? ev.tension.toFixed(2) : "?"}`),
+      (ev.new_signals || []).map(s => el("span", {class: "chip signal"}, "✦ " + s)),
+      claimed.filter(s => !(ev.new_signals || []).includes(s)).map(s => el("span", {class: "chip down"}, "✗ 未采纳 " + s)),
+      (loop.tools || []).map(x => el("span", {class: "chip"}, "🔧 " + x)),
+      loop.forced_by ? el("span", {class: "chip bad"}, "被 " + loop.forced_by + " 收敛") : null,
+      flags.length ? el("span", {class: "chip bad"}, "注入：" + flags.join("；")) : null,
+      ((player && player.skills) || []).map(x => el("span", {class: "chip"}, "📘 " + x)),
+      r.wants_to_end ? el("span", {class: "chip"}, "想结束") : null,
+      ev.degraded ? el("span", {class: "chip bad"}, "兜底台词") : null,
+    ));
+  }
+  const calls = renderCalls(t.calls, openCalls);
+  if (calls) node.append(calls);
+  return node;
+}
+
+function renderSession(s, i, openCalls) {
+  const st = s.start || {};
+  const firstTurn = s.turns[0] && s.turns[0].ev ? s.turns[0].ev : {};
+  const title = st.stage_title || firstTurn.stage_title || "";
+  const box = el("section", {class: "session"});
+  const who = NPC_NAMES[st.npc] || st.npc;
+  box.append(el("div", {class: "head"},
+    el("h2", {}, who ? `与${who}交谈` + (st.private_event ? ` ✨${st.private_event}` : "") : `第 ${i + 1} 次见面`),
+    el("span", {class: "meta"}, [st.time || st.day_phase, st.scene || firstTurn.scene, title && "「" + title + "」"].filter(Boolean).join(" · ")),
+    s.end ? el("span", {class: "meta"}, `${s.end.turns} 轮 · ${END_REASONS[s.end.end_reason] || s.end.end_reason}`) : null));
+  s.turns.forEach((t, i) => box.append(renderTurn(t, i, openCalls)));
+  if (s.end || s.endCalls.length) {
+    const sum = s.endCalls.find(c => c.event === "llm" && c.task === "summary" && c.ok);
+    let memory = null;
+    if (sum) { try { memory = JSON.parse(sum.output).summary; } catch {} }
+    const signals = s.end ? (s.end.signals || []) : [];
+    box.append(el("div", {class: "end"},
+      el("div", {}, s.end ? `结束：${END_REASONS[s.end.end_reason] || s.end.end_reason}` : "（未正常结束）",
+         signals.length ? ` · 本次达成 ${signals.join("、")}` : ""),
+      memory ? el("div", {class: "memory"}, "记忆：" + memory) : null,
+      renderCalls(s.endCalls, openCalls)));
+  }
+  return box;
+}
+
+let DATA = null;
+function render() {
+  const main = document.getElementById("main");
+  if (!DATA) { main.replaceChildren(el("div", {class: "empty"}, "把 trace .jsonl 拖到这里，或点右上角「打开 jsonl…」")); return; }
+  document.getElementById("file").textContent = DATA.file;
+  document.title = "Trace · " + DATA.file;
+  renderStats(DATA.events);
+  const openCalls = document.getElementById("expandCalls").checked;
+  const meta = parse(DATA.events);
+  const nodes = meta.timeline
+    ? meta.timeline.filter(x => x.kind !== "action" || x.ev.kind !== "talk" && x.ev.kind !== "event").map((x, i) =>
+        x.kind === "session" ? renderSession(x.s, i, openCalls)
+        : x.kind === "ending" ? el("section", {class: "session"}, el("div", {class: "head"}, el("h2", {}, "结局：" + x.ev.title),
+            el("span", {class: "meta"}, `线索 ${x.ev.clues.length} · 好感 ${x.ev.affinity}（${x.ev.tier}）· 标记 ${x.ev.flags.join("、") || "无"}`)))
+        : el("div", {class: "tlabel", style: "margin:6px 4px 10px"},
+            `${ACTION_ICONS[x.ev.kind] || "·"} ${x.ev.time} · ${x.ev.text.replace(/\s*💡.*$/, "")}`))
+    : meta.sessions.map((s, i) => renderSession(s, i, openCalls));
+  if (meta.orphans.length) nodes.push(el("section", {class: "session"},
+    el("div", {class: "head"}, el("h2", {}, "未归属的事件"), el("span", {class: "meta"}, "游戏可能中途被打断")),
+    el("div", {class: "orphan"}, meta.orphans.map(renderEvent))));
+  main.replaceChildren(...(nodes.length ? nodes : [el("div", {class: "empty"}, "这个 trace 里没有对话事件")]));
+  applyFilter();
+}
+
+function applyFilter() {
+  const only = document.getElementById("onlyProblems").checked;
+  for (const n of document.querySelectorAll(".turn")) n.style.display = only && !n.dataset.problem ? "none" : "";
+}
+
+function loadText(name, text) {
+  const events = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (!line.trim()) return;
+    try { events.push(JSON.parse(line)); } catch { events.push({event: "bad_line", line: i + 1, raw: line.slice(0, 500)}); }
+  });
+  DATA = {file: name, events};
+  render();
+}
+
+document.getElementById("onlyProblems").addEventListener("change", applyFilter);
+document.getElementById("expandCalls").addEventListener("change", render);
+document.getElementById("openBtn").addEventListener("click", () => document.getElementById("fileInput").click());
+document.getElementById("fileInput").addEventListener("change", e => {
+  const f = e.target.files[0]; if (f) f.text().then(t => loadText(f.name, t));
+});
+document.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("drop"); });
+document.addEventListener("dragleave", () => document.body.classList.remove("drop"));
+document.addEventListener("drop", e => {
+  e.preventDefault(); document.body.classList.remove("drop");
+  const f = e.dataTransfer.files[0]; if (f) f.text().then(t => loadText(f.name, t));
+});
+
+DATA = EMBEDDED;
+render();
+</script>
+</body>
+</html>
