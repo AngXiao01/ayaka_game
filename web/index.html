@@ -41,6 +41,7 @@ header button, .side button { font: inherit; font-size: 12px; border: 1px solid 
 .inner { max-width: 760px; margin: 0 auto; }
 .narr { margin: 4px 0; }
 .narr.hint { color: var(--muted); font-size: 13px; }
+.narr.lead { color: var(--accent); font-size: 13px; margin: 2px 0; }
 .place { margin: 22px 0 6px; font-weight: 600; font-size: 17px; letter-spacing: .08em; }
 .statusline { margin: 18px 0 0; padding-top: 12px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 12px; }
 .title { text-align: center; margin: 26px 0 14px; font-size: 20px; letter-spacing: .2em; font-weight: 600; }
@@ -89,6 +90,13 @@ footer { border-top: 1px solid var(--line); background: var(--panel); padding: 1
 .bar i { display: block; height: 100%; background: var(--accent); }
 .caught { text-decoration: line-through; color: var(--muted); }
 .empty { color: var(--muted); font-size: 12px; }
+.card.next { border-color: var(--accent); }
+.card.next .lead { padding-left: 1.1em; text-indent: -1.1em; margin: 3px 0; }
+.check { display: inline-block; margin-right: 10px; font-size: 12px; }
+.check.ok { color: var(--muted); text-decoration: line-through; }
+.side details { margin-top: 18px; }
+.side summary { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .1em; cursor: pointer; }
+.gl { margin: 4px 0; font-size: 12px; } .gl b { color: var(--ink); margin-right: 4px; }
 .err { color: var(--bad); padding: 10px 0; }
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
@@ -112,7 +120,7 @@ footer { border-top: 1px solid var(--line); background: var(--panel); padding: 1
       <h1>伪信与雪见茶会</h1>
       <div class="status" id="status"></div>
       <label><input type="checkbox" id="dbg"> 调试信息</label>
-      <button id="sidebtn" type="button">线索 / 人物</button>
+      <button id="sidebtn" type="button">下一步 / 线索</button>
       <button id="restart" type="button">重新开始</button>
     </header>
     <div id="log"><div class="inner" id="inner"></div></div>
@@ -129,7 +137,7 @@ footer { border-top: 1px solid var(--line); background: var(--panel); padding: 1
 <script>
 const $ = id => document.getElementById(id);
 const PLAYER = "旅行者";
-let next = 0, waiting = false, lastOptsKey = "", busy = false;
+let next = 0, waiting = false, lastOptsKey = "", busy = false, glossaryOpen = false;
 
 function el(tag, cls, ...kids) {
   const n = document.createElement(tag);
@@ -161,8 +169,9 @@ function renderLine(l) {
   if (/^（不知不觉/.test(s)) return el("div", "time", s);
   if (/^(✦|📜|⚡)/.test(s)) return el("div", "event", s);
   if (/^(😣|……)/.test(s)) return el("div", "event bad", s);
-  if (/^(·|✗|🤥|📝)/.test(s)) return el("div", "debug", s);
+  if (/^\s+(·|✗|🤥|📝)/.test(t)) return el("div", "debug", s);      // 调试行都带缩进；线索本等列表的「·」不算
   if (/^提示：/.test(s)) return el("div", "narr hint", s);
+  if (/^(🧭|🎯)/.test(s)) return el("div", "narr lead", s);
   if (s.startsWith(PLAYER + "：")) return el("div", "msg player", el("div", "bubble", s.slice(PLAYER.length + 1)));
   const m = s.match(DIALOGUE);
   if (m) {
@@ -192,7 +201,7 @@ function renderOptions(st) {
     box.append(el("div", "typing", "对方正在想", el("span", null, "."), el("span", null, "."), el("span", null, ".")));
   }
   for (const o of st.options) {
-    const b = el("button", o.kind === "say" ? "say" : (["report", "propose", "event", "confront_menu"].includes(o.kind) ? "primary" : ""));
+    const b = el("button", o.kind === "say" ? "say" : (["ask", "report", "propose", "event", "confront_menu"].includes(o.kind) ? "primary" : ""));
     if (o.kind === "say") { b.append("「" + o.text + "」"); b.append(el("small", null, [o.tone, o.intent].filter(Boolean).join(" · "))); }
     else b.append(o.text);
     b.type = "button";
@@ -217,7 +226,18 @@ function renderSide(p) {
     el("div", "d", `此刻大概在：${x.where}`),
     el("div", "d", `好感 ${x.affinity}　信任 ${x.trust}`),
     el("div", "bar", (() => { const i = el("i"); i.style.width = x.affinity + "%"; return i; })())));
+  const nextSec = (p.leads.length || p.checklist.length) ? [el("h2", null, "下一步"), el("div", "card next",
+    p.checklist.length ? el("div", "d", "要查清的事：", ...p.checklist.map(c => el("span", "check" + (c.ok ? " ok" : ""), (c.ok ? "✔" : "✘") + c.label))) : null,
+    ...p.leads.map(x => el("div", "lead", "🧭 " + x)))] : [];
+  const glossary = p.glossary.length ? el("details", null, el("summary", null, "名词速查 · 怎么玩"),
+    ...p.how_to_play.map(x => el("div", "gl", x)),
+    ...p.glossary.map(x => el("div", "gl", el("b", null, x.term), x.desc))) : null;
+  if (glossary) {                       // 侧栏每次轮询都重画，记住展开状态
+    glossary.open = glossaryOpen;
+    glossary.addEventListener("toggle", () => { glossaryOpen = glossary.open; });
+  }
   side.replaceChildren(
+    ...nextSec,
     el("h2", null, "现在"),
     el("div", "card", el("div", "n", `${p.time} · ${p.location}`), el("div", "d", p.status.split("｜")[1] || ""),
        el("div", "d", p.act), el("div", "d", "提示：" + p.hint)),
@@ -226,6 +246,7 @@ function renderSide(p) {
       el("div", t.caught ? "caught" : "", `${t.npc}：「${t.said}」`), el("div", "d", t.time + (t.caught ? " · 已被拆穿" : "")))), "还没有记下的说法。"),
     ...sec("人物", people, ""),
     ...sec("调查日志", p.journal.map(j => el("div", "d", j)), "还没有记录。"),
+    ...(glossary ? [glossary] : []),
   );
 }
 

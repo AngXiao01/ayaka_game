@@ -128,6 +128,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         else:
             note = f"对方质疑你说过的「{said}」，可那是真话。你被冤枉了，按你的性格回应（委屈、生气、或者冷静地解释）。"
         parts.append(f"## 对质\n{note}")
+    if t.get("must_reveal"):
+        parts.append("## 这一轮你要说出口的事（对方已经满足了让你开口的条件，不要再回避、搪塞或说谎）\n"
+                     + _bullets(t["must_reveal"]))
     if ctx.canon:
         parts.append(f"## 你之前说过的设定（随口编的也算数，必须前后一致）\n{_bullets(ctx.canon)}")
     if ctx.history_summary:
@@ -174,6 +177,10 @@ def build_messages(system: str, ctx: TurnContext, player_text: Optional[str], pl
         hint = ctx.task.get("opening_hint") or "来见你"
         now = (f"# 现在\n场景开始：{ctx.player_name}{hint}。请你先开口——一两句就好，可以接着上次的话题、"
                "当下的时辰或眼前的事说起，不要用千篇一律的客套话。调用 respond，只输出 JSON。")
+    elif ctx.task.get("must_reveal"):
+        now = (f"# 对方刚才说\n{player_input_tag(player_text, player_intent)}\n\n"
+               "# 现在\n调用 respond：按你的性格和语气，把「这一轮你要说出口的事」说出来——具体、清楚，"
+               "可以多说几句（不超过四句）；action 一般留空。只输出 JSON。")
     else:
         now = (f"# 对方刚才说\n{player_input_tag(player_text, player_intent)}\n\n"
                f"# 现在\n决定下一步：需要信息就调用工具，否则调用 respond 回应对方。{length_hint(player_text, player_intent)}只输出 JSON。")
@@ -223,5 +230,6 @@ class NPCLLMAdapter:
                               "pending_signals": signal_ids, "flags": flags,
                               "lies_available": ctx.task.get("lies_available", []),
                               "confrontation": (ctx.task.get("confrontation") or {}).get("outcome"),
+                              "must_reveal": ctx.task.get("must_reveal", []),
                               "persona_details": [t for t, _ in details],
                               "context_tokens": estimate_tokens("".join(m["content"] for m in msgs))})

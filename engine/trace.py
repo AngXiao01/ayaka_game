@@ -35,7 +35,7 @@ class Tracer:
             "prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "latency_s": 0.0, "cost_usd": 0.0,
             "tool_calls": 0, "tool_errors": 0, "tool_cache_hits": 0,
             "loop_stops": {}, "forced_finishes": 0,
-            "signals_claimed": 0, "signals_accepted": 0, "signals_rejected": 0,
+            "signals_claimed": 0, "signals_accepted": 0, "signals_rejected": 0, "signals_by_action": 0,
             "injection_flags": 0, "compressions": 0, "canon_kept": 0, "canon_dropped": 0, "llm_latencies": [],
             "director_runs": 0, "director_applied": 0, "director_rejected": 0, "branch_proposals": 0,
             "scene_looks": 0,
@@ -90,6 +90,8 @@ class Tracer:
             st["signals_claimed"] += len(data.get("claimed", []))
             st["signals_accepted"] += len(data.get("accepted", []))
             st["signals_rejected"] += len(data.get("rejected", []))
+        elif event == "action_signal":
+            st["signals_by_action"] += len(data.get("accepted", []))
         elif event == "guard" and data.get("flags"):
             st["injection_flags"] += 1
         elif event == "compress":

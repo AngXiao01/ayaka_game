@@ -108,9 +108,15 @@ class DialogueSession:
     # ------------------------------------------------------------ 展示
 
     def _show_npc(self, r: NPCReply) -> None:
+        self._show_speech(r)
+        self._show_debug(r)
+
+    def _show_speech(self, r: NPCReply) -> None:
         act = f"（{r.action}）" if r.action else ""
         self.out(f"\n{self.npc.name}{act}：「{r.speech}」")
         self.transcript.append(f"{self.npc.name}{act}：「{r.speech}」")
+
+    def _show_debug(self, r: NPCReply) -> None:
         if self.cfg.debug:
             rel = self.npc.relationship
             loop = r.loop or {}
@@ -129,6 +135,9 @@ class DialogueSession:
         if degraded and self.cfg.debug:
             self.out("    · 选项生成失败，已用兜底选项")
         opts = list(says)
+        for s in g.askable():               # 关键问题：条件都满足了，问出口就由代码判定达成，不赌模型
+            opts.append(PlayerOption(s.ask["label"], "表达关心" if s.event else "推进任务", kind="ask",
+                                     meta={"signal": s.id}))
         unknown = [c for c in g.clues if c not in g.known.get(nid, [])]
         if unknown and not self.event:
             useful = g.useful_clues_for(nid)
@@ -162,7 +171,8 @@ class DialogueSession:
             if action.kind != "show_menu":
                 return action
             useful = set(g.useful_clues_for(nid))
-            sub = [PlayerOption(f"{g.quest.clue_name(c)}——{g.quest.clues[c]['desc'][:30]}…", "出示线索", kind="clue",
+            sub = [PlayerOption(f"{g.quest.clue_name(c)}——{g.quest.clues[c]['desc'][:30]}…"
+                                + ("  💡" if c in useful and self.cfg.hints else ""), "出示线索", kind="clue",
                                 meta={"clue": c, "useful": c in useful})
                    for c in g.clues if c not in g.known.get(nid, [])]
             sub.append(PlayerOption("算了，不拿出来了", "", kind="cancel"))
@@ -194,14 +204,18 @@ class DialogueSession:
         from core.player_agent import PlayerAction
         g = self.god
         claims = g.testimonies_of(self.npc.p.id)
-        sub = [PlayerOption(f"「{t['said']}」（{t['time']}）", "对质", kind="testimony",
-                            meta={"tid": t["id"], "useful": t["kind"] == "lie" and bool(set(t["contradicted_by"]) & set(g.clues))})
-               for t in claims] + [PlayerOption("算了", "", kind="cancel")]
+        tip = lambda on: "  💡" if on and self.cfg.hints else ""    # noqa: E731
+        sub = []
+        for t in claims:
+            useful = t["kind"] == "lie" and bool(set(t["contradicted_by"]) & set(g.clues))
+            sub.append(PlayerOption(f"「{t['said']}」（{t['time']}）{tip(useful)}", "对质", kind="testimony",
+                                    meta={"tid": t["id"], "useful": useful}))
+        sub.append(PlayerOption("算了", "", kind="cancel"))
         pick = self.player.choose(sub, ctx)
         if pick.kind != "testimony":
             return pick if pick.kind == "quit" else None
         t = next(x for x in claims if x["id"] == pick.meta["tid"])
-        ev = [PlayerOption(f"拿出「{g.quest.clue_name(c)}」", "对质", kind="evidence",
+        ev = [PlayerOption(f"拿出「{g.quest.clue_name(c)}」{tip(c in t['contradicted_by'])}", "对质", kind="evidence",
                            meta={"clue": c, "useful": c in t["contradicted_by"]}) for c in g.clues]
         ev.append(PlayerOption("不拿证据，直接说我不信", "对质", kind="evidence", meta={"clue": None, "useful": False}))
         ev.append(PlayerOption("算了", "", kind="cancel"))
@@ -214,16 +228,23 @@ class DialogueSession:
 
     def _settle(self, r: NPCReply, turn: int, *, opening: bool, player: Optional[dict] = None,
                 options: Optional[list] = None, flags: Optional[list[str]] = None,
-                context_lines: Optional[list[str]] = None) -> list[dict]:
+                context_lines: Optional[list[str]] = None, forced: Optional[list[str]] = None) -> list[dict]:
         g = self.god
+        forced = list(forced or [])
         self.npc.apply_reply(r)
         g.adjust_tension(r.tension_delta)
         if r.affinity_delta > 0 or r.trust_delta > 0:
             g.note_engagement()
-        review = self.reviewer.review(r.task_signals, opening=opening, injection_flags=flags or [],
+        # 玩家用明确的动作满足了条件：代码直接判定（和「提议」一样不交给模型揣测），其余的上报照常过审核
+        newly = g.apply_signals(forced, forced=True) if forced else []
+        if forced:
+            self._log("action_signal", npc=self.npc.p.id, action=(player or {}).get("kind"), forced=forced,
+                      accepted=[s["id"] for s in newly])
+        review = self.reviewer.review([x for x in r.task_signals if x not in forced], opening=opening,
+                                      injection_flags=flags or [],
                                       player_text=(player or {}).get("text", ""), npc_speech=r.speech,
                                       context_lines=context_lines or [], degraded=self.budget.degraded())
-        newly = g.apply_signals(review.accepted)
+        newly += g.apply_signals(review.accepted)
         for s_ in newly:
             if s_["clues"]:                  # 吐露线索的那句话记进证词本（和谎话同一格式）
                 g.add_testimony(self.npc.p.id, r.speech[:80], "truth")
@@ -272,6 +293,10 @@ class DialogueSession:
         self.out(f"\n—— 与{p.name}交谈 ——  {p.brief}  （{rel.tier()[0]}）")
         if self.event:
             self.out(f"\n✨【{self.event.title}】\n{self.event.premise}")
+        elif self.cfg.hints:
+            useful = g.useful_clues_for(p.id)
+            if useful:
+                self.out(f"提示：试试用「🔍 出示线索」把「{'」或「'.join(g.quest.clue_name(c) for c in useful)}」拿给{p.name}看。")
         self._log("session_start", npc=p.id, private_event=self.event.id if self.event else None, scene=self.scene_id,
                   day_phase=g.phase, time=g.time_label(), stage_id=g.act_id, stage_title=g.act.title,
                   relationship=rel.to_dict(), tension=g.tension, clues=list(g.clues), budget=self.budget.snapshot())
@@ -283,8 +308,9 @@ class DialogueSession:
             skills = self.npc.skills.route(None, "", g.act_id, False)
             opening = self.npc.opening(self._last_ctx, skills, allow_tools=not self.budget.degraded())
             self.wm.add({"speaker": "npc", "text": opening.speech, "reply": opening.to_dict()})
+            self._show_speech(opening)
             signals += [s["id"] for s in self._settle(opening, 0, opening=True)]
-            self._show_npc(opening)
+            self._show_debug(opening)
             degraded += opening.degraded
 
         end: Optional[DialogueEndReason] = None
@@ -338,7 +364,13 @@ class DialogueSession:
             return DialogueEndReason.PLAYER_QUIT, [], 0
 
         nid = self.npc.p.id
-        if action.kind == "clue":
+        before = g.available_ids(check_turns=False)
+        forced: list[str] = []
+        if action.kind == "ask":
+            s = g.quest.signal(action.meta["signal"])
+            text, intent = s.ask["text"], action.intent or "推进任务"
+            forced = [s.id]
+        elif action.kind == "clue":
             c = action.meta["clue"]
             g.mark_known(nid, [c])
             text, intent = f"（拿出线索「{g.quest.clue_name(c)}」给对方看）{g.quest.clues[c]['desc']}", "出示线索"
@@ -371,9 +403,19 @@ class DialogueSession:
             text, intent = "（起身告辞）今天就先聊到这里吧，我先告辞了。", "告别"
         else:
             text, intent = action.text, action.intent
-        ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
+        if action.kind in ("clue", "report", "propose", "confront"):
+            # 这个动作让哪些事此刻能谈了（出示了对方要看的证据 / 提出了方案），就由这个动作直接达成
+            after = g.available_ids(check_turns=False)
+            forced = [s.id for s in g.quest.signals if s.id in after
+                      and (s.id not in before or (action.kind == "report" and s.id in g.act.complete_when))]
+        forced = [sid for sid in forced if not g.missing_prereqs(sid)]
 
         guard = inspect_player_input(text, self.h.player_input_max_chars if action.kind == "say" else 2000)
+        if guard.suspicious:
+            forced = []
+        if g.conv is not None:
+            g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
+        ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
         self._log("guard", raw=text, text=guard.text, flags=guard.flags, truncated=guard.truncated)
         if guard.suspicious and self.cfg.debug:
             self.out(f"    · 输入防护：{'；'.join(guard.flags)}（本轮不计进展）")
@@ -386,7 +428,7 @@ class DialogueSession:
                 ctx = self._last_ctx = self.build_ctx(turn, query_text=guard.text)
                 if self.cfg.debug:
                     self.out(f"    · 分支：识别为{prop['label']}")
-        if action.kind in ("clue", "report", "propose", "confront"):
+        if action.kind in ("ask", "clue", "report", "propose", "confront"):
             self.out(f"\n{self.cfg.player_name}：{guard.text}")
         skills = self.npc.skills.route(intent, guard.text, g.act_id, guard.suspicious,
                                        has_locked=bool(ctx.task["locked_info"]))
@@ -397,14 +439,16 @@ class DialogueSession:
         self.wm.add({"speaker": "player", "text": guard.text, "intent": intent})
         self.wm.add({"speaker": "npc", "text": reply.speech, "reply": reply.to_dict()})
         self.transcript.append(f"{self.cfg.player_name}：「{guard.text}」")
+        self._show_speech(reply)                  # 先让对方把话说完，再显示获得的线索
         with self._span(agent="reviewer"):
             newly = self._settle(reply, turn, opening=False,
                                  player={"text": guard.text, "intent": intent, "kind": action.kind,
                                          "flags": guard.flags, "skills": [s.name for s in skills]},
-                                 options=options, flags=guard.flags, context_lines=context_lines)
-        self._show_npc(reply)
+                                 options=options, flags=guard.flags, context_lines=context_lines, forced=forced)
+        self._show_debug(reply)
         if g.conv:
             g.conv.pop("confrontation", None)
+            g.conv.pop("forced", None)
         for n in g.narrations:
             self.out("\n" + n)
         g.narrations.clear()

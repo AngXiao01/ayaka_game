@@ -13,13 +13,14 @@ def ids(g):
     return [d["id"] for d in g.pending_signals()]
 
 
-def test_reveal_needs_case_and_trust():
+def test_yohei_needs_to_see_the_commission():
     g = make_god(trust={"yohei": 20})
     g.begin_conversation("yohei")
     assert ids(g) == [] and g.locked_signals()[0][1]          # 不知道伪信的事：锁住
     g.give_clue("c_case")
-    assert "rv_yohei_letter" not in ids(g)                      # 信任不够
-    g.trust_lookup = lambda n: 30
+    assert "rv_yohei_letter" not in ids(g)                      # 没看到凭据，不知道对方的来路
+    assert g.useful_clues_for("yohei") == ["c_case"]
+    g.mark_known("yohei", ["c_case"])                           # 出示绫华的委托
     assert ids(g) == ["rv_yohei_letter"]
 
 

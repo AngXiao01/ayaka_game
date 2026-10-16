@@ -24,6 +24,7 @@ class Explorer:
         self.rel = relationships
         self.out = out
         self.hints = hints
+        self._shown_leads: Optional[tuple] = None
 
     # ------------------------------------------------------------ 查询
 
@@ -66,6 +67,79 @@ class Explorer:
     def _mark(self, text: str, on: bool, tip: str) -> str:
         return f"{text}  💡{tip}" if (self.hints and on) else text
 
+    # ------------------------------------------------------------ 下一步（给不熟悉设定的玩家：该找谁、去哪、出示什么）
+
+    def whereabouts(self, p: Personality) -> str:
+        """某人这一幕的作息，写成「木漏茶室·清晨、午后、黄昏」；人就在眼前时写「就在这里」。"""
+        g = self.god
+        if g.where(p) == g.location:
+            return "就在这里"
+        by: dict[str, list[str]] = {}
+        for ph in g.phases:
+            lid = p.location_at(ph, g.act_id)
+            if lid:
+                by.setdefault(lid, []).append(ph)
+        return "；".join(f"{self.world.name(lid)}·{'、'.join(phs)}" for lid, phs in by.items()) or "不知去向"
+
+    def lead_items(self) -> list[dict]:
+        """此刻有路可走的几件事，全由世界状态算出来（不调模型）：
+        谁那里有话可问（以及要不要先出示什么）、哪里有东西可查、关系够了会在哪里遇见谁。
+        每项 {key, text, here}：key 用来判断「下一步」变没变，here 表示就在眼前。"""
+        g, w, q = self.god, self.world, self.god.quest
+        if g.resolved or g.ending:
+            return []
+        out: list[dict] = []
+        for s in q.signals:
+            if not s.lead or s.event or s.id in g.achieved or g.missing_prereqs(s.id):
+                continue
+            if g.signal_status(s, s.npc, None, 99, check_turns=False, optimistic=True)[0] != "available":
+                continue
+            p = self.personas[s.npc]
+            text = s.lead
+            if s.requires_known_any and not set(s.requires_known_any) & set(g.known.get(s.npc, [])):
+                show = [q.clue_name(c) for c in s.requires_known_any if c in g.clues]
+                text += f"——交谈时出示「{'」或「'.join(show)}」"
+            if s.min_trust and self.rel(s.npc).trust < s.min_trust:
+                text += f"（{p.name}还不够信任你：信任 {self.rel(s.npc).trust}/{s.min_trust}，先客气地多聊几句）"
+            where = self.whereabouts(p)
+            out.append({"key": s.id, "text": f"{text}（{where}）", "here": where == "就在这里"})
+        for lid in w.locations:
+            if not w.unlocked(lid, g.clues):
+                continue
+            for o in w.objects(lid):
+                if o.get("lead") and self._grantable(lid, o):
+                    here = lid == g.location
+                    out.append({"key": o["id"], "text": f"{o['lead']}（{'就在这里' if here else w.name(lid)}）",
+                                "here": here})
+        return out + self._event_leads()
+
+    def leads(self) -> list[str]:
+        return [x["text"] for x in self.lead_items()]
+
+    def _event_leads(self) -> list[dict]:
+        g, out, waiting = self.god, [], []
+        for e in g.quest.events:
+            if e.id in g.events_done or (e.acts and g.act_id not in e.acts):
+                continue
+            aff = self.rel(e.npc).affinity
+            name = self.personas[e.npc].name
+            if aff >= e.affinity_min:
+                out.append({"key": e.id, "here": g.location == e.location and g.phase in e.phases,
+                            "text": f"{'、'.join(e.phases)}去{self.world.name(e.location)}走走，也许会遇见{name}"})
+            else:
+                waiting.append((e.affinity_min, name, aff))
+        if waiting and not out:
+            need, name, aff = min(waiting)
+            out.append({"key": f"affinity:{need}", "here": False,
+                        "text": f"和{name}多聊聊、真诚相待，关系更近时也许会有意外的相遇（好感 {aff}/{need}）"})
+        return out
+
+    def checklist_line(self) -> str:
+        items = self.god.checklist()
+        if not items:
+            return ""
+        return "🎯 要查清的事：" + "　".join(f"{'✔' if ok else '✘'}{label}" for label, ok in items)
+
     # ------------------------------------------------------------ 菜单
 
     def menu(self) -> list[PlayerOption]:
@@ -95,10 +169,14 @@ class Explorer:
             opts.append(PlayerOption(self._mark(label, useful, "那边也许有进展"), "移动", kind="move",
                                      meta={"dest": dest, "cost": cost, "useful": useful, "distance": dist[dest]}))
         opts.append(PlayerOption("在这里待一会儿（时间推进一个时段）", "等待", kind="wait"))
+        if self.hints:
+            opts.append(PlayerOption("🧭 下一步可以做什么", "查看", kind="view", meta={"view": "leads"}))
         opts.append(PlayerOption("翻看线索本", "查看", kind="view", meta={"view": "clues"}))
         opts.append(PlayerOption("证词本", "查看", kind="view", meta={"view": "testimony"}))
         opts.append(PlayerOption("人物与关系", "查看", kind="view", meta={"view": "people"}))
         opts.append(PlayerOption("调查日志", "查看", kind="view", meta={"view": "journal"}))
+        if g.quest.glossary:
+            opts.append(PlayerOption("名词速查（不熟悉稻妻的设定时看看）", "查看", kind="view", meta={"view": "glossary"}))
         opts.append(PlayerOption("保存并退出", "退出", kind="quit"))
         return opts
 
@@ -110,6 +188,15 @@ class Explorer:
         lines.append("这里的人：" + ("；".join(people) if people else "没有能说上话的人"))
         if self.hints:
             lines.append(f"提示：{g.act.hint}")
+            items = self.lead_items()
+            keys = (g.act_id, tuple(g.checklist()), tuple(x["key"] for x in items))
+            if keys != self._shown_leads:            # 下一步变了才整张列出来，没变就只提眼前的
+                self._shown_leads = keys
+                if self.checklist_line():
+                    lines.append(self.checklist_line())
+                lines += [f"🧭 {x['text']}" for x in items]
+            else:
+                lines += [f"🧭 {x['text']}" for x in items if x["here"]]
         return "\n".join(lines)
 
     # ------------------------------------------------------------ 动作
@@ -159,4 +246,10 @@ class Explorer:
                 rows.append(f"· {p.name}（{p.title}）{p.brief}\n  关系：{r.tier()[0]}（好感 {r.affinity}，信任 {r.trust}）"
                             f"｜此刻大概在：{self.world.name(where) if where else '不知去向'}")
             return "\n".join(rows)
+        if which == "leads":
+            rows = ["【下一步】", f"目标：{g.act.objective}"] + ([self.checklist_line()] if self.checklist_line() else [])
+            rows += [f"🧭 {x}" for x in self.leads()] or [f"提示：{g.act.hint}"]
+            return "\n".join(rows)
+        if which == "glossary":
+            return "【名词速查】\n" + "\n".join(f"· {k}：{v}" for k, v in g.quest.glossary.items())
         return "【调查日志】\n" + ("\n".join(g.journal) if g.journal else "还没有记录。")

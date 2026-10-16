@@ -169,9 +169,14 @@ class Game:
             where = p.location_at(g.phase, g.act_id)
             people.append({"name": p.name, "title": p.title, "brief": p.brief, "tier": r.tier()[0],
                            "affinity": r.affinity, "trust": r.trust, "where": e.world.name(where) if where else "不知去向"})
+        hints = e.explorer.hints
         return {
             "status": g.status_line(), "time": g.time_label(), "location": e.world.name(g.location),
             "act": f"{g.act.title}：{g.act.objective}", "hint": g.act.hint,
+            "leads": e.explorer.leads() if hints else [],
+            "checklist": [{"label": label, "ok": ok} for label, ok in g.checklist()] if hints else [],
+            "glossary": [{"term": k, "desc": v} for k, v in q.glossary.items()],
+            "how_to_play": [x for x in q.how_to_play if not x.startswith("【")],     # 去掉标题行
             "clues": [{"name": q.clue_name(c), "desc": q.clues[c]["desc"]} for c in g.clues],
             "clue_total": len(q.clues),
             "testimonies": [{"npc": e.personas[t["npc"]].name, "said": t["said"], "time": t["time"],

@@ -107,6 +107,8 @@ class AutoPlayer:
         by = lambda k: [o for o in options if o.kind == k]   # noqa: E731
         if by("report"):
             return by("report")[0]
+        if by("ask") and (ctx.turn > 1 or self.rng.random() < 0.5):   # 关键问题：问出口就有进展（偶尔先寒暄一句）
+            return by("ask")[0]
         for k in ("testimony", "evidence"):                     # 对质的二级菜单：挑有用的，没有就算了
             if by(k):
                 good = [o for o in by(k) if o.meta.get("useful")]

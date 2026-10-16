@@ -110,6 +110,9 @@ class MockBackend:
             reply.update(action="脸色发白", speech="……瞒不住了，我说实话就是。", emotion="担忧",
                          intent="坦白", task_signals=list(pending[:1]))
             return reply
+        if meta.get("must_reveal"):              # 玩家的动作已经满足了条件：照实说（进度由代码判定，不用上报）
+            reply.update(speech="……好，我把知道的都告诉您。", intent="说出实情", affinity_delta=1, trust_delta=1)
+            return reply
         if lies and not pending and not meta.get("opening") and intent in COOPERATIVE:
             lie = lies[0]
             reply.update(action="", speech=f"{lie['said']}。", emotion="平静", intent="搪塞",

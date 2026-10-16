@@ -32,6 +32,10 @@ class SignalDef:
     grants: list[str] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
     lock_hint: str = ""
+    # 给玩家的引导（不懂设定也能玩）：
+    lead: str = ""                              # 「下一步」里的一句：去找谁、做什么
+    ask: Optional[dict] = None                  # {label, text}：条件满足时对话里出现的关键问题按钮
+    reveal: str = ""                            # 由动作直接达成时，告诉 NPC 这一轮要说出口的事
 
 
 @dataclass
@@ -43,6 +47,7 @@ class ActDef:
     complete_when: list[str]
     next: Optional[str]
     narration: str = ""
+    checklist: list[dict] = field(default_factory=list)   # [{label, clues_any}]：这一幕要弄清的几件事
 
 
 @dataclass
@@ -95,6 +100,9 @@ class QuestDef:
     canon_guard_terms: list[str] = field(default_factory=list)  # 即兴设定里不许出现的案情关键词
     lies: list[LieDef] = field(default_factory=list)
     initial_tension: float = 0.3
+    primer: list[str] = field(default_factory=list)           # 开场前给不熟悉设定的玩家的背景速览
+    how_to_play: list[str] = field(default_factory=list)
+    glossary: dict[str, str] = field(default_factory=dict)    # 名词速查
 
     @classmethod
     def load(cls, path: Path) -> "QuestDef":
@@ -377,15 +385,27 @@ class GodEnv:
             return "locked", "时机未到，先多聊几句再说"
         return "available", ""
 
-    def _conv_signals(self, want: str) -> list[tuple[SignalDef, str]]:
+    def _conv_signals(self, want: str, check_turns: bool = True) -> list[tuple[SignalDef, str]]:
         if not self.conv:
             return []
         out = []
         for s in self.quest.signals:
-            st, why = self.signal_status(s, self.conv["npc"], self.conv["event"], self.conv["turns"])
+            st, why = self.signal_status(s, self.conv["npc"], self.conv["event"], self.conv["turns"], check_turns)
             if st == want:
                 out.append((s, why))
         return out
+
+    def available_ids(self, check_turns: bool = True) -> set[str]:
+        return {s.id for s, _ in self._conv_signals("available", check_turns)}
+
+    def askable(self) -> list[SignalDef]:
+        """当前对话里可以用「关键问题」按钮直接问出来的：条件都满足了、前置也达成了（不看聊了几轮）。"""
+        return [s for s, _ in self._conv_signals("available", check_turns=False)
+                if s.ask and not self.missing_prereqs(s.id)]
+
+    def checklist(self) -> list[tuple[str, bool]]:
+        """这一幕要弄清的几件事，各自弄清了没有（给玩家看的目标进度）。"""
+        return [(c["label"], bool(set(c.get("clues_any", [])) & set(self.clues))) for c in self.act.checklist]
 
     def pending_signals(self) -> list[dict]:
         return [{"id": s.id, "desc": s.desc, "requires": s.requires} for s, _ in self._conv_signals("available")]
@@ -429,13 +449,17 @@ class GodEnv:
                 pending.discard(i)
         return out
 
-    def apply_signals(self, ids: list[str]) -> list[dict]:
-        """只接受当前对话里此刻可达成的信号；返回新达成的（含获得的线索）。"""
-        available = {d["id"] for d in self.pending_signals()}
+    def apply_signals(self, ids: list[str], forced: bool = False) -> list[dict]:
+        """只接受当前对话里此刻可达成的信号；返回新达成的（含获得的线索）。
+        forced：玩家用明确的动作（关键问题、出示证据、汇报、提议）满足了条件，由代码直接判定达成——
+        不经审核，所以这里自己查前置信号；也不看聊了几轮（轮数门槛是防模型抢跑的，动作不存在抢跑）。"""
+        available = self.available_ids(check_turns=not forced)
         newly = []
         for sid in ids:
             s = self.quest.signal(sid)
             if s is None or sid not in available or sid in self.achieved or self._group_taken(s):
+                continue
+            if forced and self.missing_prereqs(sid):
                 continue
             self.achieved.append(sid)
             self.last_progress_slot = self.slot_index
@@ -528,6 +552,8 @@ class GodEnv:
         pending = self.pending_signals()
         locked = self.locked_signals()
         met = self.met.get(npc, 1)
+        forced = [self.quest.signal(sid) for sid in (self.conv or {}).get("forced", [])]
+        must_reveal = [s.reveal or s.desc for s in forced if s]
         if ev:
             opening = ev.premise
         elif met <= 1:
@@ -552,8 +578,10 @@ class GodEnv:
             "pending_signals": pending,
             "turns_in_stage": self.turns_in_stage,
             "first_meeting": met <= 1,
-            "lies_available": [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
-                               for x in self.lies_available(npc)],
+            "must_reveal": must_reveal,
+            # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
+            "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
+                                                      for x in self.lies_available(npc)],
             "lies_told": [{"said": t["said"], "truth": t["truth"]} for t in self.lies_told(npc)],
             "confrontation": (self.conv or {}).get("confrontation"),
             "today": persona.days.get(str(self.day), ""),

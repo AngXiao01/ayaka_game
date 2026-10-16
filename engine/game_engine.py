@@ -144,9 +144,14 @@ class GameEngine:
                 raise ValueError(f"信号 {s.id} 的前置信号不存在：{set(s.requires) - sig_ids}")
             if s.event and not q.event(s.event):
                 raise ValueError(f"信号 {s.id} 指向不存在的事件 {s.event}")
+            if s.ask is not None and not (s.ask.get("label") and s.ask.get("text")):
+                raise ValueError(f"信号 {s.id} 的 ask 要同时写 label 和 text")
         for a in q.acts:
             if set(a.complete_when) - sig_ids:
                 raise ValueError(f"{a.id} 的完成条件不存在：{set(a.complete_when) - sig_ids}")
+            for item in a.checklist:
+                if not item.get("label") or set(item.get("clues_any", [])) - set(q.clues):
+                    raise ValueError(f"{a.id} 的 checklist 项有误：{item}")
         for p in self.personas.values():
             for slot in p.schedule:
                 w.loc(slot["location"])
@@ -175,6 +180,9 @@ class GameEngine:
         if self.resumed:
             self.out(f"（读取存档：{self.god.status_line()}）")
         else:
+            for block in (self.quest.primer, self.quest.how_to_play):
+                if block:
+                    self.out("\n".join(block) + "\n")
             for para in self.quest.prologue:
                 self.out(para + "\n")
 
@@ -241,12 +249,14 @@ class GameEngine:
                 self.out("\n" + desc)
                 for c in gained:
                     self.out(f"    📜 获得线索「{self.quest.clue_name(c)}」")
+                show_panel = bool(gained)                  # 有了新线索，下一步也跟着变了
             elif action.kind in ("look", "say"):          # 地点层的自由输入：想查看什么
                 with self.tracer.span(agent="scene"):
                     desc, gained = self.scene.look(action.text, degraded=self.budget.degraded())
                 self.out("\n" + desc)
                 for c in gained:
                     self.out(f"    📜 获得线索「{self.quest.clue_name(c)}」")
+                show_panel = bool(gained)
             elif action.kind == "wait":
                 self.out("\n" + self.explorer.wait())
                 show_panel = True
@@ -282,7 +292,7 @@ class GameEngine:
         return (f"LLM 调用 {s['llm_calls']}｜JSON 修复 {s['json_repairs']}｜兜底 {s['fallbacks']}｜"
                 f"导演 {s['director_runs']} 次（执行 {s['director_applied']}，驳回 {s['director_rejected']}）｜"
                 f"错误 {s['llm_errors']}｜工具 {s['tool_calls']}（失败 {s['tool_errors']}，缓存 {s['tool_cache_hits']}）｜"
-                f"循环结束 {stops}｜进度 声称{s['signals_claimed']}/采纳{s['signals_accepted']}｜"
+                f"循环结束 {stops}｜进度 声称{s['signals_claimed']}/采纳{s['signals_accepted']}，动作直达{s['signals_by_action']}｜"
                 f"tokens {s['prompt_tokens']}+{s['completion_tokens']}（前缀缓存 {s['cache_hit_ratio']:.0%}）｜"
                 + (f"花费 ${s['cost_usd']:.3f}｜" if s["cost_usd"] else "") +
                 f"p50 {s['latency_p50']:.1f}s p95 {s['latency_p95']:.1f}s")
