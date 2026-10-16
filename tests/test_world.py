@@ -123,6 +123,7 @@ def test_manifest_needs_letter():
     ex = explorer(g)
     assert ex.examine("o_manifest")[1] == []
     g.clues.append("c_letter")
+    g.misses["o_manifest"] = 2                                   # 判定必成，这里只测规则
     assert ex.examine("o_manifest")[1] == ["c_paper"]
 
 

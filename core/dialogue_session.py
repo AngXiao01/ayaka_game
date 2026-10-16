@@ -16,6 +16,7 @@ from config.settings import Settings
 from core.budget import Budget
 from core.context import TurnContext
 from core.god_env import EventDef, GodEnv
+from core.dice import roll, tag
 from core.guard import inspect_player_input
 from core.npc_agent import NPCAgent, NPCReply
 from core.player_option_generator import PlayerOption, PlayerOptionGenerator
@@ -498,13 +499,18 @@ class DialogueSession:
             invite = {"accept": ok, "reason": why, "dest": dest}
             self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
         dispatch, believe = None, False
+        self._roll_line = None
         if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
             rel = self.npc.relationship
-            if g.believes(nid, guard.text, rel.affinity, rel.trust):
-                # 关系够深：委托人直接信了，跳过查证进入处置（结局会记得「没查实」）
-                believe = True
-                self._log("believe", npc=nid, affinity=rel.affinity, trust=rel.trust, text=guard.text)
-            else:
+            p = g.belief_chance(nid, guard.text, rel.affinity, rel.trust)
+            if p:
+                # 关系够深：掷一次，成了就直接信，跳过查证进入处置（结局会记得「没查实」）；没成就照常派人去查
+                believe, pct = roll(g, "belief", p)
+                self._roll_line = tag(pct, believe)
+                if not believe:
+                    g.misses["belief"] = g.day
+                self._log("believe", npc=nid, affinity=rel.affinity, trust=rel.trust, p=p, ok=believe, text=guard.text)
+            if not believe:
                 # 玩家直接说出了推测（比如玩过一遍、知道真相）：不当真也不置之不理——派人去查，查到了托人带话回来
                 hs = g.hypotheses_for(nid, guard.text)
                 if hs:
@@ -561,11 +567,15 @@ class DialogueSession:
                                                 "text": h["report"], "clues": h["clues"], "tag": h["id"]} for h in hs],
                                 [x for x in ("player", nid) if x != dsp["agent"]])
             who = "自己" if dsp["self"] else phys.name(dsp["agent"])
+            if getattr(self, "_roll_line", None):
+                self.out(f"    {self._roll_line}　{self.npc.name}犹豫了一下，还是想先查实再说。")
             self.out(f"    🔎 {self.npc.name}{'决定亲自' if dsp['self'] else '派' + who}去{dsp['location']}查一查，有消息会托人告诉你。")
             g.journal.append(f"{g.time_label()}　你说出了推测：{dsp['desc']}。{self.npc.name}{'亲自' if dsp['self'] else '让' + who}去{dsp['location']}查了")
             went = dsp["self"]
         if g.conv and g.conv.pop("believe", None):
             g.accept_on_trust()
+            if self._roll_line:
+                self.out(f"    {self._roll_line}")
             self.out(f"    🤝 {self.npc.name}没有等查证，选择了相信你。")
             g.journal.append(f"{g.time_label()}　{self.npc.name}凭着对你的信任，相信了你说的真相（没有查实）")
         if g.conv:

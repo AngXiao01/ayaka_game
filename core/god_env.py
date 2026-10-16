@@ -171,6 +171,9 @@ class GodEnv:
         self.achieved: list[str] = s.get("achieved", [])
         self.flags: list[str] = s.get("flags", [])
         self.examined: list[str] = s.get("examined", [])
+        self.seed = s.get("seed")                             # 概率判定的种子（存进档里，读档不能重掷）
+        self.rolls: list[dict] = s.get("rolls", [])
+        self.misses: dict[str, int] = s.get("misses", {})    # 某件事判定失败过几次（越试越容易）
         self.events_done: list[str] = s.get("events_done", [])
         self.met: dict[str, int] = s.get("met", {})
         self.tension: float = s.get("tension", quest.initial_tension)
@@ -503,15 +506,25 @@ class GodEnv:
         hs = self.hypotheses_for(npc, text)
         return hs[0] if hs else None
 
-    def believes(self, npc: str, text: str, affinity: int, trust: int) -> bool:
-        """委托人和玩家关系够深，玩家说出了「是谁做的」：她直接信，跳过查证进入处置（留下「没查实」的标记）。"""
+    def belief_chance(self, npc: str, text: str, affinity: int, trust: int) -> float:
+        """委托人和玩家关系够深、玩家说出了「是谁做的」：她有多大可能直接信（跳过查证进入处置，留下「没查实」的标记）。
+        好感、信任到了门槛才有机会，越高越可能；同一天被拒过就不再掷。返回 0 表示没有这个机会。"""
         b = self.quest.belief
         if not b or b["npc"] != npc or b["signal"] in self.achieved or b["signal"] not in self.act.complete_when:
-            return False
-        if affinity < b.get("min_affinity", 0) or trust < b.get("min_trust", 0):
-            return False
+            return 0.0
+        if self.misses.get("belief") == self.day:
+            return 0.0
+        lo_a, lo_t = b.get("min_affinity", 0), b.get("min_trust", 0)
+        if affinity < lo_a or trust < lo_t:
+            return 0.0
         said = {h["id"] for h in self.quest.hypotheses if self._says(h, text)}
-        return bool(said & set(b.get("needs_any", [])))
+        if not said & set(b.get("needs_any", [])):
+            return 0.0
+        c = {"base": 0.3, "per_point": 0.02, "max": 0.9, **b.get("chance", {})}
+        return min(c["max"], c["base"] + c["per_point"] * ((affinity - lo_a) + (trust - lo_t)))
+
+    def believes(self, npc: str, text: str, affinity: int, trust: int) -> bool:
+        return self.belief_chance(npc, text, affinity, trust) > 0
 
     def accept_on_trust(self) -> None:
         b = self.quest.belief
@@ -770,7 +783,8 @@ class GodEnv:
         return {"quest_id": self.quest.id, "minute": self.minute, "day": self.day, "phase_idx": self.phase_idx,
                 "location": self.location,
                 "act_id": self.act_id, "clues": self.clues, "known": self.known, "achieved": self.achieved,
-                "flags": self.flags, "examined": self.examined, "events_done": self.events_done, "met": self.met,
+                "flags": self.flags, "examined": self.examined,
+                "seed": self.seed, "rolls": self.rolls, "misses": self.misses, "events_done": self.events_done, "met": self.met,
                 "tension": self.tension, "session_count": self.session_count, "total_turns": self.total_turns,
                 "resolved": self.resolved, "ending": self.ending, "journal": self.journal,
                 "testimonies": self.testimonies, "director_slot": self.director_slot,

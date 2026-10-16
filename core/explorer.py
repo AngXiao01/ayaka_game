@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+from core.dice import roll, tag
 from core.god_env import GodEnv
 from core.player_option_generator import PlayerOption
 from core.world import World
@@ -285,9 +286,21 @@ class Explorer:
         if obj_id not in g.examined:
             g.examined.append(obj_id)
         gained = []
+        obj = next(o for o in self.world.objects(g.location) if o["id"] == obj_id)
+        if clue and clue not in g.clues and obj.get("check"):
+            # 概率判定：找不找得到。同行的人会帮忙，每失败一次下次更容易；失败只花时间
+            c = obj["check"]
+            p = c["p"] + sum(v for n, v in c.get("helpers", {}).items() if n in self.party) + 0.25 * g.misses.get(obj_id, 0)
+            ok, pct = roll(g, f"examine:{obj_id}", p)
+            helped = "、".join(self.personas[n].name for n in c.get("helpers", {}) if n in self.party)
+            line = tag(pct, ok) + (f"（{helped}帮你一起找）" if helped else "")
+            if not ok:
+                g.misses[obj_id] = g.misses.get(obj_id, 0) + 1
+                return f"{line}\n{c['fail']}", []
+            desc = f"{line}\n{desc}"
         if clue and g.give_clue(clue):
             gained.append(clue)
-            name = next(o["name"] for o in self.world.objects(g.location) if o["id"] == obj_id)
+            name = obj["name"]
             g.journal.append(f"{g.time_label()}·{self.world.name(g.location)}　查看{name}，发现线索「{g.quest.clue_name(clue)}」")
         return desc, gained
 

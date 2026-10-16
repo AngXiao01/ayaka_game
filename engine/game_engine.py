@@ -94,6 +94,8 @@ class GameEngine:
         self.resumed = bool(state)
         self.god = GodEnv(self.quest, self.world.phases, self.world.start, self.world.turns_per_phase,
                           state.get("world"), clock=self.world.clock())
+        if self.god.seed is None:
+            self.god.seed = g.seed if g.seed is not None else random.randrange(1 << 30)
         # 物理世界：谁在哪、跟谁同行、口信在路上——GodEnv 持有，位置以它为准
         self.god.physical = PhysicalWorld(self.world, self.personas, self.god, (state.get("world") or {}).get("physical"),
                                           player_name=g.player_name)
