@@ -98,7 +98,7 @@ class DialogueSession:
         last_player = next((e["text"] for e in reversed(self.wm.entries) if e["speaker"] == "player"), "")
         topic = query_text or last_player
         memories = [m for m in self.npc.recall(self.god.act.objective + topic, self.cfg.memory_top_k, self.god.total_turns)]
-        canon = self.npc.recall_canon(topic or self.god.act.objective, 6, self.god.total_turns)
+        canon = self.npc.recall_canon(topic or self.god.act.objective, 3, self.god.total_turns)
         memories = [m for m in memories if not any(m in c for c in canon)]
         handoff = self.npc.handoff()
         memories = [m for m in memories if m != handoff.get("summary")]
@@ -382,7 +382,7 @@ class DialogueSession:
         elif action.kind == "report":
             g.mark_known(nid, list(g.clues))
             text = "（把这几天查到的事一五一十地说出来）" + "；".join(
-                f"{g.quest.clue_name(c)}：{g.quest.clues[c]['desc']}" for c in g.clues)
+                f"{g.quest.clue_name(c)}：{g.quest.clues[c]['desc'].split('。')[0]}" for c in g.clues)
             intent = "汇报"
             ctx = self._last_ctx = self.build_ctx(turn)
         elif action.kind == "propose":

@@ -57,7 +57,7 @@ class SkillLibrary:
     def get(self, name: str) -> Skill | None:
         return self.skills.get(name)
 
-    def route(self, intent: str | None, text: str, stage_id: str, injection: bool, limit: int = 2,
+    def route(self, intent: str | None, text: str, stage_id: str, injection: bool, limit: int = 1,
               has_locked: bool = True) -> list[Skill]:
         """规则路由：确定性、零 token。"""
         hits: list[tuple[int, Skill]] = []

@@ -53,7 +53,7 @@ def test_index_mode_injects_details_and_offers_load_persona(tmp_path):
     steps = [e for e in events(eng) if e["event"] == "llm" and e["task"] == "npc_step"]
     assert "人物细节索引" in steps[-1]["messages"][0]["content"]
     assert "本轮相关的人物细节：人际" in steps[-1]["messages"][-1]["content"]
-    eng_full = engine(tmp_path / "full", [TALK_AYAKA, ("托马最近在忙什么？", "自由发言"), "q"])
+    eng_full = engine(tmp_path / "full", [TALK_AYAKA, ("托马最近在忙什么？", "自由发言"), "q"], persona_mode="full")
     assert "load_persona" not in eng_full.npcs["ayaka"].registry.names()
 
 
@@ -68,4 +68,4 @@ def test_handoff_after_reset_is_structured_and_grounded(tmp_path):
     assert "约好三天后在雪见茶会上碰面" in w["handoff_dropped"]["promises"]      # 对话里没说过，不算约定
     second = [e for e in ev if e["event"] == "llm" and e["task"] == "npc_step" and e["span"].get("session") == 2]
     last = second[0]["messages"][-1]["content"]
-    assert "上次见面的交接" in last and line in last
+    assert "## 上次见面" in last and line in last

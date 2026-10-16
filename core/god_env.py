@@ -610,7 +610,7 @@ class GodEnv:
             "tension": self.tension,
             "tension_label": self.tension_label(),
             "narrative_guidance": self.narrative_guidance(scene_public, task["pending_signals"])
-                                  + ([task["director_note"]] if task["director_note"] else []),
+                                  + ([task["director_note"]] if task["director_note"] and not task["must_reveal"] else []),
             "npc_task_detail": task,
         }
 

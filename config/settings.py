@@ -177,7 +177,7 @@ class HarnessSettings:
     director_max_actions: int = 2               # 导演每次最多几个动作
     branch_mode: str = "llm"                    # 分支（自由输入的处置方案 → 预设方案）：llm | rules | off
     scene_mode: str = "llm"                     # 场景（自由描述要查看的东西）：llm | rules | off
-    persona_mode: str = "full"                  # 人物卡：full 全量进 system | index 只放索引、细节按需注入
+    persona_mode: str = "index"                 # 人物卡：index 只放核心 + 索引、细节按话题注入 | full 全量进 system
 
 
 @dataclass
@@ -186,8 +186,8 @@ class GameSettings:
     quest_id: str = "ayaka_main"
     player_name: str = "旅行者"
     max_turns_per_session: int = 12
-    history_turns: int = 16                     # 工作记忆窗口：保留原文的最近轮数，更早的压成摘要
-    memory_top_k: int = 4                       # 自动注入的记忆条数，更多靠 recall_memory 按需检索
+    history_turns: int = 8                      # 工作记忆窗口：保留原文的最近轮数，更早的压成摘要
+    memory_top_k: int = 3                       # 自动注入的记忆条数，更多靠 recall_memory 按需检索
     options_mode: str = "llm"                   # llm | static
     hints: bool = True                          # 菜单里用 💡 标出可能有进展的人、物、地点
     debug: bool = False
@@ -271,8 +271,8 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         quest_id=_env("GAME_QUEST", "ayaka_main"),
         player_name=_env("PLAYER_NAME", "旅行者"),
         max_turns_per_session=_env_int("MAX_TURNS_PER_SESSION", 12),
-        history_turns=_env_int("HISTORY_TURNS", 16),
-        memory_top_k=_env_int("MEMORY_TOP_K", 4),
+        history_turns=_env_int("HISTORY_TURNS", 8),
+        memory_top_k=_env_int("MEMORY_TOP_K", 3),
         options_mode=_env("OPTIONS_MODE", "llm"),
         hints=_env_bool("GAME_HINTS", True),
         debug=_env_bool("GAME_DEBUG", False),
