@@ -39,6 +39,7 @@ def test_matching_object_goes_through_normal_rules(tmp_path):
     desc, gained = sc.look("看看码头的货单")
     assert gained == [] and "o_manifest" in g.examined           # 没有前置线索，照规则不给
     g.clues.append("c_letter")
+    g.misses["o_manifest"] = 2                                   # 判定必成，这里只测规则
     desc, gained = sc.look("再看看货单")
     assert gained == ["c_paper"]
 

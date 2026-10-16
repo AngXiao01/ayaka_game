@@ -16,6 +16,7 @@ from config.settings import Settings
 from core.budget import Budget
 from core.context import TurnContext
 from core.god_env import EventDef, GodEnv
+from core.dice import roll, tag
 from core.guard import inspect_player_input
 from core.npc_agent import NPCAgent, NPCReply
 from core.player_option_generator import PlayerOption, PlayerOptionGenerator
@@ -283,7 +284,7 @@ class DialogueSession:
                                       player_text=(player or {}).get("text", ""), npc_speech=r.speech,
                                       context_lines=context_lines or [], degraded=self.budget.degraded())
         newly += g.apply_signals(review.accepted)
-        for s_ in newly:
+        for s_ in [] if self.npc.p.role == "companion" else newly:
             if s_["clues"]:                  # 吐露线索的那句话记进证词本（和谎话同一格式）
                 g.add_testimony(self.npc.p.id, r.speech[:80], "truth")
         self._world_moves(r, flags or [])
@@ -497,17 +498,31 @@ class DialogueSession:
             dest_id, dest = self._place_name(guard.text)
             invite = {"accept": ok, "reason": why, "dest": dest}
             self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
-        dispatch = None
+        dispatch, believe = None, False
+        self._roll_line = None
         if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
-            # 玩家直接说出了推测（比如玩过一遍、知道真相）：不当真也不置之不理——派人去查，查到了托人带话回来
-            h = g.hypothesis_for(nid, guard.text)
-            if h:
-                agent = h["agent"] if h["agent"] in self.npc_names and h["agent"] not in phys.party else nid
-                dispatch = {"id": h["id"], "agent": agent, "self": agent == nid, "plan": h["plan"],
-                            "desc": h["desc"], "location": self.world.name(h["location"])}
-                self._log("dispatch", npc=nid, hypothesis=h["id"], agent=agent)
+            rel = self.npc.relationship
+            p, why = g.belief_chance(nid, guard.text, rel.affinity, rel.trust)
+            if p:
+                # 关系够深：掷一次，成了就直接信，跳过查证进入处置（结局会记得「没查实」）；没成就照常派人去查
+                believe, pct = roll(g, "belief", p)
+                self._roll_line = tag(pct, believe, why)
+                if not believe:
+                    g.note_belief_miss(nid, guard.text, rel.affinity, rel.trust)
+                self._log("believe", npc=nid, affinity=rel.affinity, trust=rel.trust, p=p, ok=believe, text=guard.text)
+            if not believe:
+                # 玩家直接说出了推测（比如玩过一遍、知道真相）：不当真也不置之不理——派人去查，查到了托人带话回来
+                hs = g.hypotheses_for(nid, guard.text)
+                if hs:
+                    agent = hs[0]["agent"]
+                    agent = agent if agent in self.npc_names and agent not in phys.party else nid
+                    dispatch = {"ids": [h["id"] for h in hs], "agent": agent, "self": agent == nid,
+                                "plan": "；".join(h["plan"] for h in hs), "desc": "；".join(h["desc"] for h in hs),
+                                "location": "、".join(self.world.name(h["location"]) for h in hs)}
+                    self._log("dispatch", npc=nid, hypotheses=dispatch["ids"], agent=agent)
         if g.conv is not None:
             g.conv["dispatch"] = dispatch
+            g.conv["believe"] = believe
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
             g.conv["invite"] = invite
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party
@@ -546,14 +561,23 @@ class DialogueSession:
         went = False
         dsp = g.conv.pop("dispatch", None) if g.conv else None
         if dsp and phys is not None:
-            h = next(x for x in g.quest.hypotheses if x["id"] == dsp["id"])
-            g.flags.append(f"dispatched:{h['id']}")
-            phys.dispatch(dsp["agent"], h["location"], h.get("search_minutes", 30),
-                          [x for x in ("player", nid) if x != dsp["agent"]], h["report"], h["clues"], h["id"])
+            hs = [next(x for x in g.quest.hypotheses if x["id"] == i) for i in dsp["ids"]]
+            g.flags += [f"dispatched:{h['id']}" for h in hs]
+            phys.dispatch_chain(dsp["agent"], [{"location": h["location"], "search_minutes": h.get("search_minutes", 30),
+                                                "text": h["report"], "clues": h["clues"], "tag": h["id"]} for h in hs],
+                                [x for x in ("player", nid) if x != dsp["agent"]])
             who = "自己" if dsp["self"] else phys.name(dsp["agent"])
+            if getattr(self, "_roll_line", None):
+                self.out(f"    {self._roll_line}　{self.npc.name}犹豫了一下，还是想先查实再说。（拿出更多证据、或过些时候再跟她说，她可能会改主意）")
             self.out(f"    🔎 {self.npc.name}{'决定亲自' if dsp['self'] else '派' + who}去{dsp['location']}查一查，有消息会托人告诉你。")
-            g.journal.append(f"{g.time_label()}　你说出了推测：{h['desc']}。{self.npc.name}{'亲自' if dsp['self'] else '让' + who}去{dsp['location']}查了")
+            g.journal.append(f"{g.time_label()}　你说出了推测：{dsp['desc']}。{self.npc.name}{'亲自' if dsp['self'] else '让' + who}去{dsp['location']}查了")
             went = dsp["self"]
+        if g.conv and g.conv.pop("believe", None):
+            g.accept_on_trust()
+            if self._roll_line:
+                self.out(f"    {self._roll_line}")
+            self.out(f"    🤝 {self.npc.name}没有等查证，选择了相信你。")
+            g.journal.append(f"{g.time_label()}　{self.npc.name}凭着对你的信任，相信了你说的真相（没有查实）")
         if g.conv:
             g.conv.pop("confrontation", None)
             g.conv.pop("forced", None)

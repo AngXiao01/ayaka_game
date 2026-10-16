@@ -94,6 +94,8 @@ class GameEngine:
         self.resumed = bool(state)
         self.god = GodEnv(self.quest, self.world.phases, self.world.start, self.world.turns_per_phase,
                           state.get("world"), clock=self.world.clock())
+        if self.god.seed is None:
+            self.god.seed = g.seed if g.seed is not None else random.randrange(1 << 30)
         # 物理世界：谁在哪、跟谁同行、口信在路上——GodEnv 持有，位置以它为准
         self.god.physical = PhysicalWorld(self.world, self.personas, self.god, (state.get("world") or {}).get("physical"),
                                           player_name=g.player_name)
@@ -354,7 +356,9 @@ class GameEngine:
         result.ending = e.id
         tier = self.companion.relationship.tier()[0]
         late = "deadline_passed" in g.flags and not e.when.get("deadline_passed")
+        unverified = g.quest.belief.get("flag") in g.flags and not e.when.get("deadline_passed")
         self.out(f"\n════ 结局：{e.title} ════\n\n" + (self.quest.late_note + "\n\n" if late and self.quest.late_note else "")
+                 + (self.quest.unverified_note + "\n\n" if unverified and self.quest.unverified_note else "")
                  + f"{e.text}\n")
         if self.quest.epilogue_by_tier.get(tier):
             self.out(self.quest.epilogue_by_tier[tier] + "\n")

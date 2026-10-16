@@ -246,17 +246,49 @@ class PhysicalWorld:
 
     # ------------------------------------------------------------ 时间推进时结算
 
+    SNAG_P = 0.2                                        # 跑腿路上被耽搁的概率
+    SNAGS = ["路上被熟人拉住说了好一阵话", "到了才发现要找的人不在，等了一会儿", "半路下起雨，找地方避了避"]
+
+    def _snag(self, agent: str, tag: str) -> tuple[int, str]:
+        """概率判定：这趟差事会不会被耽搁。耽搁只多花时间，不会让事情办砸。"""
+        from core.dice import roll
+        late, _ = roll(self.god, f"snag:{agent}:{tag}", self.SNAG_P + (0.15 if self.god.phase in ("黄昏", "夜晚") else 0))
+        if not late:
+            return 0, ""
+        i = sum(map(ord, tag)) % len(self.SNAGS)
+        return 30 + 15 * (i % 3), f"（{self.SNAGS[i]}，晚了些）"
+
     def dispatch(self, agent: str, location: str, search_minutes: int, report_to: list[str], text: str,
                  clues: list[str], tag: str) -> dict:
         """派 agent 去 location 查一件事：走过去、查 search_minutes 分钟，然后托人把结果带给 report_to。"""
         g = self.god
         plan = self.set_plan(agent, location, 0, "errand", reason=tag)
-        done = plan["arrive"] + search_minutes
+        extra, note = self._snag(agent, tag)
+        done = plan["arrive"] + search_minutes + extra
+        text = note + text
         plan["until"] = done + 30                       # 查完再待一会儿才回去
         e = {"agent": agent, "location": location, "done": done, "report_to": report_to, "text": text,
              "clues": clues, "tag": tag, "reported": False, "sent": g.minute}
         self.errands.append(e)
         return e
+
+    def dispatch_chain(self, agent: str, stops: list[dict], report_to: list[str]) -> list[dict]:
+        """派 agent 依次跑几个地方查事（stops: {location, search_minutes, text, clues, tag}），每查完一处就托人回话。"""
+        if len(stops) == 1:
+            s = stops[0]
+            return [self.dispatch(agent, s["location"], s["search_minutes"], report_to, s["text"], s["clues"], s["tag"])]
+        g, here, t, out = self.god, self.where(agent), self.god.minute, []
+        for s in stops:
+            extra, note = self._snag(agent, s["tag"])
+            t += self.world.travel_minutes(here, s["location"]) + s["search_minutes"] + extra
+            here = s["location"]
+            e = {"agent": agent, "location": here, "done": t, "report_to": report_to, "text": note + s["text"],
+                 "clues": s["clues"], "tag": s["tag"], "reported": False, "sent": g.minute}
+            self.errands.append(e)
+            out.append(e)
+        self.plans[agent] = {"kind": "errand", "location": here, "arrive": t - stops[-1]["search_minutes"],
+                             "until": t + 30, "reason": "、".join(s["tag"] for s in stops)}
+        return out
 
     def tick(self) -> list[str]:
         """时间往前走之后调用：过期的计划失效、同行者到点告辞、同处一地的人互相看见、到点的口信送达。

@@ -108,6 +108,8 @@ class QuestDef:
     public_premise: str = ""                                  # 城里人都知道的版本（不知道绫华托人查访的 NPC 用这个）
     after_hint: str = ""                                      # 结局之后继续玩时的一句提示
     hypotheses: list[dict] = field(default_factory=list)      # 玩家直接说出的推测 → 谁会派人去查、查到什么
+    belief: dict = field(default_factory=dict)                # 关系够深时，委托人直接信玩家说出的真相（跳过查证）
+    unverified_note: str = ""                                 # 凭信任拍板、没查实就处置时，结局前加的一段
     late_note: str = ""                                       # 截止时间过了才解决时，结局前面加的一段
 
     @classmethod
@@ -169,6 +171,9 @@ class GodEnv:
         self.achieved: list[str] = s.get("achieved", [])
         self.flags: list[str] = s.get("flags", [])
         self.examined: list[str] = s.get("examined", [])
+        self.seed = s.get("seed")                             # 概率判定的种子（存进档里，读档不能重掷）
+        self.rolls: list[dict] = s.get("rolls", [])
+        self.misses: dict[str, int] = s.get("misses", {})    # 某件事判定失败过几次（越试越容易）
         self.events_done: list[str] = s.get("events_done", [])
         self.met: dict[str, int] = s.get("met", {})
         self.tension: float = s.get("tension", quest.initial_tension)
@@ -487,16 +492,75 @@ class GodEnv:
                 out.append(s.id)
         return out
 
+    @staticmethod
+    def _says(h: dict, text: str) -> bool:
+        return all(any(k in text for k in grp) for grp in h["terms"])
+
+    def hypotheses_for(self, npc: str, text: str) -> list[dict]:
+        """玩家对 npc 说出的推测（每组至少一个词在话里），而且这件事还没查清、也还没派人去查。一句话可以说中好几件。"""
+        return [h for h in self.quest.hypotheses
+                if npc in h["listeners"] and f"dispatched:{h['id']}" not in self.flags
+                and not set(h["clues"]) <= set(self.clues) and self._says(h, text)]
+
     def hypothesis_for(self, npc: str, text: str) -> Optional[dict]:
-        """玩家对 npc 说出了某个推测（每组至少一个词在话里），而且这件事还没查清、也还没派人去查。"""
-        for h in self.quest.hypotheses:
-            if npc not in h["listeners"] or f"dispatched:{h['id']}" in self.flags:
-                continue
-            if set(h["clues"]) <= set(self.clues):
-                continue
-            if all(any(k in text for k in grp) for grp in h["terms"]):
-                return h
-        return None
+        hs = self.hypotheses_for(npc, text)
+        return hs[0] if hs else None
+
+    def belief_chance(self, npc: str, text: str, affinity: int, trust: int) -> tuple[float, list[str]]:
+        """委托人和玩家关系够深、玩家说出了「是谁做的」：她有多大可能直接信（跳过查证进入处置，留下「没查实」的标记）。
+        不是死概率：关系、她手上的证据、说得多具体、上次被婉拒后有没有拿出新东西，都会改变成功率。
+        返回 (成功率, 各项加减的说明)；0 表示没有这个机会。"""
+        b = self.quest.belief
+        if not b or b["npc"] != npc or b["signal"] in self.achieved or b["signal"] not in self.act.complete_when:
+            return 0.0, []
+        lo_a, lo_t = b.get("min_affinity", 0), b.get("min_trust", 0)
+        if affinity < lo_a or trust < lo_t:
+            return 0.0, []
+        said = [h for h in self.quest.hypotheses if self._says(h, text)]
+        if not {h["id"] for h in said} & set(b.get("needs_any", [])):
+            return 0.0, []
+        c = {"base": 0.3, "per_point": 0.02, "per_clue": 0.1, "per_detail": 0.05, "max": 0.9, **b.get("chance", {})}
+        parts: list[tuple[str, float]] = []
+        bond = affinity - lo_a + trust - lo_t
+        parts.append(("交情", c["base"] + c["per_point"] * bond))
+        support = {x for h in self.quest.hypotheses for x in h["clues"]} | set(self.quest.signal(b["signal"]).requires_clues)
+        ev = len(support & set(self.known.get(npc, [])))
+        if ev:
+            parts.append((f"她见过的证据×{ev}", c["per_clue"] * ev))
+        if len(said) > 1:
+            parts.append(("说得具体", c["per_detail"] * (len(said) - 1)))
+        last = self.misses.get("belief")
+        if isinstance(last, dict):
+            fresh = ev > last["ev"] or bond > last["bond"]
+            if fresh:
+                parts.append(("这次拿出了新东西", 0.1))
+            elif self.minute - last["minute"] < 120:
+                parts.append((f"刚被婉拒又说一遍", -0.15 * last["n"]))
+            else:
+                parts.append(("隔了些时候再提", 0.0))
+        p = max(0.05, min(c["max"], sum(v for _, v in parts)))
+        return p, [f"{k}{v:+.0%}" for k, v in parts if v]
+
+    def note_belief_miss(self, npc: str, text: str, affinity: int, trust: int) -> None:
+        """婉拒了也可以再试：记下这次的底子，下次有没有新东西决定成功率往哪边走。"""
+        b = self.quest.belief
+        support = {x for h in self.quest.hypotheses for x in h["clues"]} | set(self.quest.signal(b["signal"]).requires_clues)
+        prev = self.misses.get("belief")
+        self.misses["belief"] = {"n": (prev["n"] + 1) if isinstance(prev, dict) else 1, "minute": self.minute,
+                                 "ev": len(support & set(self.known.get(npc, []))),
+                                 "bond": affinity - b.get("min_affinity", 0) + trust - b.get("min_trust", 0)}
+
+    def believes(self, npc: str, text: str, affinity: int, trust: int) -> bool:
+        return self.belief_chance(npc, text, affinity, trust)[0] > 0
+
+    def accept_on_trust(self) -> None:
+        b = self.quest.belief
+        self.achieved.append(b["signal"])
+        if b.get("flag") and b["flag"] not in self.flags:
+            self.flags.append(b["flag"])
+        self.last_progress_slot = self.slot_index
+        if b["signal"] in self.act.complete_when:
+            self._complete_act()
 
     def checklist(self) -> list[tuple[str, bool]]:
         """这一幕要弄清的几件事，各自弄清了没有（给玩家看的目标进度）。"""
@@ -700,6 +764,7 @@ class GodEnv:
             "invite": (self.conv or {}).get("invite"),          # 对方邀你同行：代码判定的答应 / 婉拒
             "dismiss": bool((self.conv or {}).get("dismiss")),  # 对方请你先回去
             "dispatch": (self.conv or {}).get("dispatch"),      # 对方说出了推测：你决定派人去查
+            "believe": bool((self.conv or {}).get("believe")),  # 关系够深：你直接信了对方说的真相
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
             "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],
@@ -745,7 +810,8 @@ class GodEnv:
         return {"quest_id": self.quest.id, "minute": self.minute, "day": self.day, "phase_idx": self.phase_idx,
                 "location": self.location,
                 "act_id": self.act_id, "clues": self.clues, "known": self.known, "achieved": self.achieved,
-                "flags": self.flags, "examined": self.examined, "events_done": self.events_done, "met": self.met,
+                "flags": self.flags, "examined": self.examined,
+                "seed": self.seed, "rolls": self.rolls, "misses": self.misses, "events_done": self.events_done, "met": self.met,
                 "tension": self.tension, "session_count": self.session_count, "total_turns": self.total_turns,
                 "resolved": self.resolved, "ending": self.ending, "journal": self.journal,
                 "testimonies": self.testimonies, "director_slot": self.director_slot,
