@@ -108,6 +108,8 @@ class QuestDef:
     public_premise: str = ""                                  # 城里人都知道的版本（不知道绫华托人查访的 NPC 用这个）
     after_hint: str = ""                                      # 结局之后继续玩时的一句提示
     hypotheses: list[dict] = field(default_factory=list)      # 玩家直接说出的推测 → 谁会派人去查、查到什么
+    belief: dict = field(default_factory=dict)                # 关系够深时，委托人直接信玩家说出的真相（跳过查证）
+    unverified_note: str = ""                                 # 凭信任拍板、没查实就处置时，结局前加的一段
     late_note: str = ""                                       # 截止时间过了才解决时，结局前面加的一段
 
     @classmethod
@@ -487,16 +489,38 @@ class GodEnv:
                 out.append(s.id)
         return out
 
+    @staticmethod
+    def _says(h: dict, text: str) -> bool:
+        return all(any(k in text for k in grp) for grp in h["terms"])
+
+    def hypotheses_for(self, npc: str, text: str) -> list[dict]:
+        """玩家对 npc 说出的推测（每组至少一个词在话里），而且这件事还没查清、也还没派人去查。一句话可以说中好几件。"""
+        return [h for h in self.quest.hypotheses
+                if npc in h["listeners"] and f"dispatched:{h['id']}" not in self.flags
+                and not set(h["clues"]) <= set(self.clues) and self._says(h, text)]
+
     def hypothesis_for(self, npc: str, text: str) -> Optional[dict]:
-        """玩家对 npc 说出了某个推测（每组至少一个词在话里），而且这件事还没查清、也还没派人去查。"""
-        for h in self.quest.hypotheses:
-            if npc not in h["listeners"] or f"dispatched:{h['id']}" in self.flags:
-                continue
-            if set(h["clues"]) <= set(self.clues):
-                continue
-            if all(any(k in text for k in grp) for grp in h["terms"]):
-                return h
-        return None
+        hs = self.hypotheses_for(npc, text)
+        return hs[0] if hs else None
+
+    def believes(self, npc: str, text: str, affinity: int, trust: int) -> bool:
+        """委托人和玩家关系够深，玩家说出了「是谁做的」：她直接信，跳过查证进入处置（留下「没查实」的标记）。"""
+        b = self.quest.belief
+        if not b or b["npc"] != npc or b["signal"] in self.achieved or b["signal"] not in self.act.complete_when:
+            return False
+        if affinity < b.get("min_affinity", 0) or trust < b.get("min_trust", 0):
+            return False
+        said = {h["id"] for h in self.quest.hypotheses if self._says(h, text)}
+        return bool(said & set(b.get("needs_any", [])))
+
+    def accept_on_trust(self) -> None:
+        b = self.quest.belief
+        self.achieved.append(b["signal"])
+        if b.get("flag") and b["flag"] not in self.flags:
+            self.flags.append(b["flag"])
+        self.last_progress_slot = self.slot_index
+        if b["signal"] in self.act.complete_when:
+            self._complete_act()
 
     def checklist(self) -> list[tuple[str, bool]]:
         """这一幕要弄清的几件事，各自弄清了没有（给玩家看的目标进度）。"""
@@ -700,6 +724,7 @@ class GodEnv:
             "invite": (self.conv or {}).get("invite"),          # 对方邀你同行：代码判定的答应 / 婉拒
             "dismiss": bool((self.conv or {}).get("dismiss")),  # 对方请你先回去
             "dispatch": (self.conv or {}).get("dispatch"),      # 对方说出了推测：你决定派人去查
+            "believe": bool((self.conv or {}).get("believe")),  # 关系够深：你直接信了对方说的真相
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
             "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],

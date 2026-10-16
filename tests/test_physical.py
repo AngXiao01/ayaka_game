@@ -183,3 +183,30 @@ def test_dispatched_agent_is_really_away():
     assert not got
     g.pass_time(45)
     assert got and got[0]["clues"] == ["c_seal_rubbing"]
+
+
+def test_one_sentence_sends_thoma_along_several_stops(tmp_path):
+    # 一句话说中洋纸和印坊：托马先去志村屋取信，再去印坊，两处的证据都送回来
+    eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
+                         [{"kind": "talk", "npc": "ayaka"}, ("伪信用的是洋纸，是辰巳印坊的小吉做的。", "自由发言"),
+                          {"kind": "leave"}, {"kind": "wait"}, {"kind": "wait"}, "q"])
+    g = eng.god
+    assert {"dispatched:h_letter", "dispatched:h_workshop"} <= set(g.flags)
+    assert {"c_letter", "c_workshop", "c_seal_rubbing"} <= set(g.clues)
+
+
+def test_trusted_player_skips_the_investigation(tmp_path):
+    # 好感、信任够高：绫华直接信，进入处置，留下「没查实」的标记
+    eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
+                         [{"kind": "talk", "npc": "ayaka"}, ("伪信是辰巳印坊的学徒小吉做的，我很确定。", "自由发言"), "q"],
+                         rels={"ayaka": {"affinity": 60, "trust": 45}})
+    g = eng.god
+    assert "unverified" in g.flags and g.act_id == "act3"
+    assert any("选择了相信你" in line for line in out)
+
+
+def test_low_trust_still_dispatches(tmp_path):
+    eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
+                         [{"kind": "talk", "npc": "ayaka"}, ("伪信是辰巳印坊的学徒小吉做的。", "自由发言"), "q"],
+                         rels={"ayaka": {"affinity": 40, "trust": 20}})
+    assert "unverified" not in eng.god.flags and "dispatched:h_workshop" in eng.god.flags

@@ -354,7 +354,9 @@ class GameEngine:
         result.ending = e.id
         tier = self.companion.relationship.tier()[0]
         late = "deadline_passed" in g.flags and not e.when.get("deadline_passed")
+        unverified = g.quest.belief.get("flag") in g.flags and not e.when.get("deadline_passed")
         self.out(f"\n════ 结局：{e.title} ════\n\n" + (self.quest.late_note + "\n\n" if late and self.quest.late_note else "")
+                 + (self.quest.unverified_note + "\n\n" if unverified and self.quest.unverified_note else "")
                  + f"{e.text}\n")
         if self.quest.epilogue_by_tier.get(tier):
             self.out(self.quest.epilogue_by_tier[tier] + "\n")

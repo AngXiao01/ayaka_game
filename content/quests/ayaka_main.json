@@ -793,6 +793,46 @@
       ],
       "plan": "让托马去离岛码头找那个搬运工问问",
       "report": "去离岛码头问过了：一个叫宗次的搬运工承认，是辰巳印坊的学徒小吉托他往花见坂送的信，他只拿了跑腿钱。"
+    },
+    {
+      "id": "h_letter",
+      "desc": "伪信用的是外国运来的雪白洋纸",
+      "terms": [
+        [
+          "洋纸",
+          "雪白",
+          "白纸",
+          "印泥"
+        ],
+        [
+          "伪信",
+          "信",
+          "纸"
+        ]
+      ],
+      "listeners": [
+        "ayaka",
+        "thoma"
+      ],
+      "agent": "thoma",
+      "location": "shimura_shop",
+      "search_minutes": 20,
+      "clues": [
+        "c_letter"
+      ],
+      "plan": "让托马去志村屋，把那封伪信借来看看",
+      "report": "去志村屋看过那封伪信了：纸是雪白的洋纸，比社奉行公文用的米色和纸白得多，落款的印泥新得发亮。账房先生说可以先放在他那儿作证。"
     }
-  ]
+  ],
+  "belief": {
+    "npc": "ayaka",
+    "min_affinity": 55,
+    "min_trust": 40,
+    "needs_any": [
+      "h_workshop"
+    ],
+    "signal": "reported_findings",
+    "flag": "unverified"
+  },
+  "unverified_note": "伪信的事，绫华是凭着对你的信任拍板的——没有等托马查实。好在你说的都是真的。"
 }

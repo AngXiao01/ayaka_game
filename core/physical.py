@@ -258,6 +258,23 @@ class PhysicalWorld:
         self.errands.append(e)
         return e
 
+    def dispatch_chain(self, agent: str, stops: list[dict], report_to: list[str]) -> list[dict]:
+        """派 agent 依次跑几个地方查事（stops: {location, search_minutes, text, clues, tag}），每查完一处就托人回话。"""
+        if len(stops) == 1:
+            s = stops[0]
+            return [self.dispatch(agent, s["location"], s["search_minutes"], report_to, s["text"], s["clues"], s["tag"])]
+        g, here, t, out = self.god, self.where(agent), self.god.minute, []
+        for s in stops:
+            t += self.world.travel_minutes(here, s["location"]) + s["search_minutes"]
+            here = s["location"]
+            e = {"agent": agent, "location": here, "done": t, "report_to": report_to, "text": s["text"],
+                 "clues": s["clues"], "tag": s["tag"], "reported": False, "sent": g.minute}
+            self.errands.append(e)
+            out.append(e)
+        self.plans[agent] = {"kind": "errand", "location": here, "arrive": t - stops[-1]["search_minutes"],
+                             "until": t + 30, "reason": "、".join(s["tag"] for s in stops)}
+        return out
+
     def tick(self) -> list[str]:
         """时间往前走之后调用：过期的计划失效、同行者到点告辞、同处一地的人互相看见、到点的口信送达。
         返回玩家看得到的事。"""
