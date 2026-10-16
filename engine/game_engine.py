@@ -144,7 +144,7 @@ class GameEngine:
             DirectorLLMAdapter(r.backend("director"), r.params("director"), t, min(rep, 1)),
             mode=h.director_mode, max_actions=h.director_max_actions, tracer=t)
         # 便宜的分支判定（Jev）：这句话是哪个动词、说中了哪条推测、是不是在威胁……没开或出错时一律退回关键词规则
-        self.decider = decider or make_decider(settings, backend.name, t)
+        self.decider = decider or make_decider(settings, backend.name, t, (r.backend("branch"), r.params("branch")))
         self.god.decider = self.decider
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
                                   mode=h.branch_mode, tracer=t, decider=self.decider)

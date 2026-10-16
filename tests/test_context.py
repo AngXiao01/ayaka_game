@@ -44,10 +44,16 @@ def run(tmp_path, script, decider=None):
     return eng
 
 
-def test_going_overseas_mid_case_is_noticed(tmp_path):
+def test_npc_judges_fit_before_speaking(tmp_path):
+    # 接不接得上由 NPC 模型自己判（fit 放在回复的第一个字段，先判后说），不再用代码匹配地名
+    from llm.schemas import npc_reply_schema, validate_npc_reply
+    assert list(npc_reply_schema([])["properties"])[0] == "fit"
+    assert validate_npc_reply({"speech": "嗯？", "fit": "毫不相干"}, [])["fit"] == "毫不相干"
+    assert validate_npc_reply({"speech": "嗯。"}, [])["fit"] == "接得上"
     eng = run(tmp_path, [{"kind": "talk", "npc": "ayaka"}, ("好的，那我先去璃月了", "自由发言"), "q"])
-    p = npc_prompts(eng)[-1]
-    assert "这话有点不对劲" in p and "璃月" in p and "七八天" in p
+    ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
+    system = next(e["messages"][0]["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step")
+    assert "毫不相干" in system and '"fit"' in system and "read" in system
 
 
 def test_abrupt_topic_jump_judged_by_jev(tmp_path):

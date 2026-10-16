@@ -146,23 +146,10 @@ class DialogueSession:
             loop = r.loop or {}
             tools = f" | 工具 {'→'.join(loop['tools'])}" if loop.get("tools") else ""
             forced = f" | 被 {loop['forced_by']} 收敛" if loop.get("forced_by") else ""
-            self.out(f"    · {r.emotion} | 好感 {r.affinity_delta:+d}→{rel.affinity} 信任 {r.trust_delta:+d}→{rel.trust}"
+            self.out(f"    · {r.emotion}{'' if r.fit in ('接得上', '换了话题') else ' | 觉得突兀：' + r.fit} | 好感 {r.affinity_delta:+d}→{rel.affinity} 信任 {r.trust_delta:+d}→{rel.trust}"
                      f"{tools}{forced}{' | 兜底' if r.degraded else ''}")
 
     # ------------------------------------------------------------ 选项
-
-    def _incongruity(self, text: str) -> list[str]:
-        """代码能看出来的「不对劲」：说要去海外的国度（坐船要好些天）——正查着案子、离茶会只剩几天，谁听了都会愣一下。"""
-        far = self.world.cfg.get("far_places", {})
-        going = re.search(r"(去|回|出发|动身|启程|坐船|前往|走一趟)", text)
-        out = []
-        for name, desc in far.items():
-            if name in text and going:
-                g = self.god
-                left = max(0, g.quest.deadline["day"] - g.day)
-                out.append(f"对方说要去{name}。{desc}可眼下离{g.quest.deadline['label']}只剩 {left} 天"
-                           + ("，委托还没有着落" if not g.resolved else "") + "。")
-        return out
 
     def _actions(self) -> list[tuple[str, PlayerOption, str, str]]:
         """此刻能做的事：(编号, 按钮, 给选项 agent 看的说明, 台词上标的小字)。选项 agent 可以把其中一件「顺带」进一句台词里。"""
@@ -543,9 +530,18 @@ class DialogueSession:
                 forced = [s.id for s in g.quest.signals
                           if s.id in after and s.id not in before and not g.missing_prereqs(s.id)]
                 self._log("mention", npc=nid, clues=told, forced=forced)
-        phys, invite = g.physical, None
+        phys, invite, felt = g.physical, None, {}
+        if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
+            # 一句自由发言只判一次（Jev 或大模型）：语气、接不接得上、是不是在邀请、说中了哪几条推测。
+            # 判定器没开或出错时 felt 为空，下面各处退回关键词规则
+            open_hs = [] if g.hypotheses_for(nid, guard.text) else \
+                [h for h in g.quest.hypotheses if nid in h["listeners"]
+                 and f"dispatched:{h['id']}" not in g.flags and not set(h["clues"]) <= set(g.clues)]
+            last_line = next((h["text"] for h in reversed(ctx.history) if h["speaker"] == "npc"), "")
+            felt = judge.turn(g, self.npc.name, guard.text, open_hs, last_line, g.act.objective or "") or {}
+        asked_out = felt["invite"] if "invite" in felt else bool(INVITE_RE.search(guard.text))
         if (phys is not None and not self.event and not guard.suspicious and nid not in phys.party and self.npc.p.outing
-                and (action.kind == "invite" or (action.kind == "say" and INVITE_RE.search(guard.text)))):
+                and (action.kind == "invite" or (action.kind == "say" and asked_out))):
             # 同行答不答应由代码按好感和对方此刻有没有空判定，模型只负责用自己的口吻说出来
             ok, why = phys.can_join(nid, self.npc.relationship.affinity)
             dest_id, dest = self._place_name(guard.text)
@@ -556,13 +552,7 @@ class DialogueSession:
         if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
             rel = self.npc.relationship
             # 便宜的判定（Jev）：语气、说中了哪几条推测。没开或拿不准时为 None，下面照旧只看关键词
-            open_hs = [] if g.hypotheses_for(nid, guard.text) else \
-                [h for h in g.quest.hypotheses if nid in h["listeners"]
-                 and f"dispatched:{h['id']}" not in g.flags and not set(h["clues"]) <= set(g.clues)]
-            last_line = next((h["text"] for h in reversed(ctx.history) if h["speaker"] == "npc"), "")
-            felt = judge.turn(g, self.npc.name, guard.text, open_hs, last_line, g.act.objective or "") or {}
-            odd = self._incongruity(guard.text)
-            if felt.get("abrupt") and not odd:
+            if felt.get("abrupt"):                      # Jev 的第二意见；NPC 自己也会在回复里判一次（fit）
                 odd.append("对方这话来得有点突然，和刚才聊的、眼下要做的事接不上。")
             if odd:
                 self._log("incongruous", npc=nid, notes=odd, text=guard.text)

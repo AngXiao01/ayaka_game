@@ -32,6 +32,7 @@ CANON_GROUNDING = 0.4       # 即兴设定要能在她这句台词里找到依�
 @dataclass
 class NPCReply:
     speech: str
+    fit: str = "接得上"                                       # 对方这句话接不接得上（NPC 自己判的，见 FITS）
     action: str = ""
     emotion: str = "平静"
     intent: str = ""

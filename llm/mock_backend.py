@@ -87,7 +87,7 @@ class MockBackend:
         intent = meta.get("player_intent")
         text = meta.get("player_text") or ""
         pending = meta.get("pending_signals") or []
-        reply = {"action": "", "speech": "", "emotion": "平静", "intent": "回应",
+        reply = {"fit": "接得上", "action": "", "speech": "", "emotion": "平静", "intent": "回应",
                  "affinity_delta": 0, "trust_delta": 0, "tension_delta": 0.0,
                  "task_signals": [], "wants_to_end": False, "new_facts": [], "lies": []}
         if self.misbehave == "overclaim":

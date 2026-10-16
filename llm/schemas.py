@@ -64,11 +64,15 @@ def _str_list(v: Any) -> list[str]:
 
 # ---------------------------------------------------------------- NPC 回复
 
+FITS = ["接得上", "换了话题", "有点跳", "毫不相干"]   # 对方这句话和眼下的谈话、处境接不接得上（NPC 自己判）
+
 def npc_reply_schema(signal_ids: list[str], lie_ids: Optional[list[str]] = None) -> dict:
     item = {"type": "string", "enum": signal_ids} if signal_ids else {"type": "string"}
     return {
         "type": "object",
         "properties": {
+            # 放在最前面：先判断对方这句话接不接得上，再决定怎么说（模型按顺序生成，先判后说）
+            "fit": {"type": "string", "enum": FITS},
             "action": {"type": "string"},
             "speech": {"type": "string"},
             "emotion": {"type": "string", "enum": EMOTIONS},
@@ -93,7 +97,7 @@ def npc_reply_schema(signal_ids: list[str], lie_ids: Optional[list[str]] = None)
                 "required": ["to", "text"]}},
             "go_to": {"type": "string"},
         },
-        "required": ["action", "speech", "emotion", "intent", "affinity_delta", "trust_delta",
+        "required": ["fit", "action", "speech", "emotion", "intent", "affinity_delta", "trust_delta",
                      "tension_delta", "task_signals", "wants_to_end", "new_facts", "lies"],
     }
 
@@ -114,7 +118,9 @@ def validate_npc_reply(obj: Any, signal_ids: list[str], lie_ids: Optional[list[s
     for s in _str_list(obj.get("task_signals")):
         if s in signal_ids and s not in signals:
             signals.append(s)
+    fit = _str(obj.get("fit"))
     return {
+        "fit": fit if fit in FITS else FITS[0],
         "action": action,
         "speech": speech,
         "emotion": emotion if emotion in EMOTIONS else "平静",

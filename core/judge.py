@@ -71,7 +71,10 @@ def turn(god: Any, npc_name: str, text: str, hyps: list[dict], last_line: str = 
                      "criteria": ["没有推断，或者只是泛泛地猜", "说出了具体的人或事", "具体到人、做了什么、怎么知道的"]},
         "abrupt": {"type": "noul", "instructions": "玩家这句话是不是来得很突兀：和对方刚说的话、眼下的处境接不上，换了谁听了都会愣一下？",
                    "criteria": {"true": "话题或打算突然跳开，跟刚才聊的、眼下要做的事对不上（比如正查着案子忽然说要出远门）",
-                                "false": "顺着刚才的话说，或者是自然的转换话题、告别、寒暄"}}}
+                                "false": "顺着刚才的话说，或者是自然的转换话题、告别、寒暄"}},
+        "invite": {"type": "noul", "instructions": "玩家是不是在邀请对方现在和自己一起去某处、一起走走？",
+                   "criteria": {"true": "玩家请对方此刻同行、陪自己去哪儿（哪怕说得委婉）",
+                                "false": "没有邀请；或者只是约以后、问对方要不要去、提到别人一起"}}}
     for h in hyps:
         qs[h["id"]] = {"type": "noul", "instructions": f"玩家是不是在明确断言：{h['desc']}？",
                        "criteria": {"true": f"玩家把「{h['desc']}」当成判断说了出来（哪怕换了说法）",
@@ -83,4 +86,5 @@ def turn(god: Any, npc_name: str, text: str, hyps: list[dict], last_line: str = 
     th, sp, ab = out.get("threat"), out.get("specific"), out.get("abrupt")
     return {"threat": bool(th and th.yes(SURE)), "specific": sp.answer if sp else 0,
             "abrupt": bool(ab and ab.yes(SURE)),
+            **({"invite": out["invite"].yes(SURE)} if "invite" in out else {}),
             "hypotheses": [h for h in hyps if h["id"] in out and out[h["id"]].yes(SURE)]}
