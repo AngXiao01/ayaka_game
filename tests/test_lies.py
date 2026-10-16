@@ -11,16 +11,16 @@ from tests.helpers import make_god
 
 def test_confront_outcomes_are_rule_based():
     g = make_god()
-    lie = g.add_testimony("soji", "我没往城里送过什么信", "lie", truth="送过", lie_id="soji_denial",
+    lie = g.add_testimony("soji", "那晚我早睡了，谁也没见", "lie", truth="见过小吉", lie_id="soji_denial",
                           contradicted_by=["c_messenger"])
     assert g.confront(lie["id"], "c_letter", 20)["outcome"] == "unproven"
     assert g.confront(lie["id"], None, 90)["outcome"] == "unproven"        # 有据可查的谎，光凭信任撬不开
     assert g.confront(lie["id"], "c_messenger", 20)["outcome"] == "caught"
     assert lie["caught"] and "caught:soji_denial" in g.flags and g.testimonies_of("soji") == []
-    white = g.add_testimony("yohei", "掌柜从没想过付钱", "lie", truth="差点付了")
+    white = g.add_testimony("yohei", "门窗都锁得好好的", "lie", truth="后窗忘了关")
     assert g.confront(white["id"], None, 20)["outcome"] == "unproven"
     assert g.confront(white["id"], None, 45)["outcome"] == "caught"       # 临时的谎：够信任就心虚认了
-    true = g.add_testimony("aen", "送信的是个戴斗笠的年轻人", "truth")
+    true = g.add_testimony("aen", "那晚看见小吉抱着布包往离岛去了", "truth")
     assert g.confront(true["id"], "c_letter", 50)["outcome"] == "truth"
 
 
@@ -40,14 +40,14 @@ def start_at_ritou(tmp_path, name):
 
 def test_lie_then_caught_unlocks_confession(tmp_path):
     start_at_ritou(tmp_path, "lie")
-    script = [{"kind": "talk", "npc": "soji"}, ("前些天你往花见坂送过信吧？", "推进任务"), ("真的没送过？", "试探"),
+    script = [{"kind": "talk", "npc": "soji"}, ("丢东西那晚，小吉来找过你吧？", "推进任务"), ("真的谁也没见？", "试探"),
               {"kind": "confront_menu"}, {"kind": "testimony"}, {"kind": "evidence", "clue": "c_messenger"},
-              ("那是谁让你送的？", "推进任务"), "q"]
+              ("那他找你帮什么忙？", "推进任务"), "q"]
     out = []
     eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(script), out=out.append, save_name="lie")
     eng.run()
     g = eng.god
-    assert g.testimonies[0]["said"] == "我没往城里送过什么信，我就是个扛货的" and g.testimonies[0]["caught"]
+    assert g.testimonies[0]["said"] == "小吉？那晚我早睡了，谁也没见" and g.testimonies[0]["caught"]
     assert "c_soji" in g.clues                                   # 拆穿之后撬开了嘴
     assert any("拆穿了宗次的谎" in j for j in g.journal) and any("拆穿" in o for o in out)
     ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
@@ -61,7 +61,7 @@ def test_lie_then_caught_unlocks_confession(tmp_path):
 def test_false_accusation_costs_trust(tmp_path):
     start_at_ritou(tmp_path, "acc")
     eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(["q"]), out=lambda s: None, save_name="acc")
-    eng.god.add_testimony("aen", "送信的是个戴斗笠的年轻人", "truth")
+    eng.god.add_testimony("aen", "那晚看见小吉抱着布包往离岛去了", "truth")
     eng.god.location = "komore_teahouse"
     eng.god.minute = eng.god.phase_start(2, 1) + 30
     trust0 = eng.npcs["aen"].relationship.trust

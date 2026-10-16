@@ -197,6 +197,7 @@ class GodEnv:
         self.narrations: list[str] = []             # 待播放的剧情旁白
         self.notices: list[str] = []                # 时间推进时世界里发生的、玩家看得到的事（同行者告辞等）
         self.agenda_state: dict[str, dict] = s.get("agenda_state", {})
+        self.decider = None                         # 便宜的分支判定（llm/decider.py），引擎装配；None = 只用关键词
         self.agendas = None                         # Agendas：NPC 自己的打算，随时间结算
         self.tracer_log = None
         self.physical = None                        # PhysicalWorld：谁在哪、跟谁在一起（引擎装配；单测里可以没有）
@@ -575,7 +576,8 @@ class GodEnv:
         hs = self.hypotheses_for(npc, text)
         return hs[0] if hs else None
 
-    def belief_chance(self, npc: str, text: str, affinity: int, trust: int) -> tuple[float, list[str]]:
+    def belief_chance(self, npc: str, text: str, affinity: int, trust: int, extra: set = frozenset(),
+                      specific: int = 0) -> tuple[float, list[str]]:
         """委托人和玩家关系够深、玩家说出了「是谁做的」：她有多大可能直接信（跳过查证进入处置，留下「没查实」的标记）。
         不是死概率：关系、她手上的证据、说得多具体、上次被婉拒后有没有拿出新东西，都会改变成功率。
         返回 (成功率, 各项加减的说明)；0 表示没有这个机会。"""
@@ -585,7 +587,7 @@ class GodEnv:
         lo_a, lo_t = b.get("min_affinity", 0), b.get("min_trust", 0)
         if affinity < lo_a or trust < lo_t:
             return 0.0, []
-        said = [h for h in self.quest.hypotheses if self._says(h, text)]
+        said = [h for h in self.quest.hypotheses if self._says(h, text) or h["id"] in extra]   # extra：Jev 判出来的
         if not {h["id"] for h in said} & set(b.get("needs_any", [])):
             return 0.0, []
         c = {"base": 0.3, "per_point": 0.02, "per_clue": 0.1, "per_detail": 0.05, "max": 0.9, **b.get("chance", {})}
@@ -598,6 +600,8 @@ class GodEnv:
             parts.append((f"她见过的证据×{ev}", c["per_clue"] * ev))
         if len(said) > 1:
             parts.append(("说得具体", c["per_detail"] * (len(said) - 1)))
+        if specific:
+            parts.append(("说得有根有据", 0.05 * specific))
         last = self.misses.get("belief")
         if isinstance(last, dict):
             fresh = ev > last["ev"] or bond > last["bond"]
@@ -834,7 +838,8 @@ class GodEnv:
             "dismiss": bool((self.conv or {}).get("dismiss")),  # 对方请你先回去
             "dispatch": (self.conv or {}).get("dispatch"),      # 对方说出了推测：你决定派人去查
             "believe": bool((self.conv or {}).get("believe")),
-            "press": (self.conv or {}).get("press"),            # 对方硬问了一件事：代码掷过骰，告诉你松不松口  # 关系够深：你直接信了对方说的真相
+            "press": (self.conv or {}).get("press"),
+            "threatened": bool((self.conv or {}).get("threatened")),            # 对方硬问了一件事：代码掷过骰，告诉你松不松口  # 关系够深：你直接信了对方说的真相
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
             "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],

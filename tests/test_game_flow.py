@@ -31,7 +31,11 @@ def test_cooperative_run_reaches_good_ending(tmp_path):
     assert save["world"]["ending"] == res.ending and "aen" in save["relationships"]
     assert (tmp_path / "data/memories/t/ayaka.jsonl").is_file()
     tasks = {json.loads(l).get("task") for l in eng.tracer.path.read_text().splitlines()}
-    assert {"npc_step", "player_options", "summary", "review"} <= tasks
+    assert {"npc_step", "player_options", "summary"} <= tasks
+    # 新案情这一局的进展全部来自动作直达（关键问题、出示、汇报、提议），模型没有自行上报信号，
+    # 所以审核员不会被调用；审核员本身由 test_reviewer.py 覆盖
+    st = eng.tracer.stats
+    assert st["signals_by_action"] >= 5 and st["signals_claimed"] == 0 and "review" not in tasks
 
 
 def test_resume_from_save_keeps_world_and_memory(tmp_path):

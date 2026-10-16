@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from core import judge
 from core.dice import roll, tag
 
 
@@ -18,10 +19,16 @@ class ActionResolver:
 
     def parse(self, text: str) -> Optional[tuple[str, Optional[str]]]:
         """返回 (动词, 对象 NPC)；不是自由行动就返回 None。"""
-        for verb, v in self.spec.get("verbs", {}).items():
+        verbs = self.spec.get("verbs", {})
+        for verb, v in verbs.items():
             if any(k in text for k in v["keywords"]):
                 return verb, self._target(text)
-        return None
+        # 关键词没对上：问便宜的 Jev（说法绕一点也能认出来），拿不准就交回场景描写
+        people = {n: f"{self.personas[n].name}（{self.personas[n].title}）" for n in self._present()}
+        j = judge.action(self.god, text, verbs, people)
+        if not j or j[0] == judge.NONE:
+            return None
+        return j[0], j[1] or self._target(text)
 
     def _present(self) -> list[str]:
         return [n for n in self.ex.npcs_here() if n not in self.ex.party]
@@ -113,12 +120,13 @@ class ActionResolver:
         if "reported_tenryou" in g.flags:
             return "你已经去过天领奉行所了，他们说会处理。", []
         g.pass_time(v["minutes"])
-        if not set(self.spec.get("report_needs_any", [])) & set(g.clues):
+        needs = set(self.spec.get("report_needs_any", []))
+        if needs and not needs & set(g.clues):
             return self.spec["report_refused"], []
         self._set("reported_tenryou")
         if "ayaka" in self.ex.party:
             self._set("reported_tenryou_ayaka")
-        g.journal.append(f"{g.time_label()}　把伪信的事告发到了天领奉行所")
+        g.journal.append(f"{g.time_label()}　去天领奉行所报了案")
         return self.spec["report_text"], []
 
     def _warn(self, v: dict, target: str, text: str) -> tuple[str, list[str]]:

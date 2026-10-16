@@ -16,6 +16,7 @@ from config.settings import Settings
 from core.budget import Budget
 from core.context import TurnContext
 from core.god_env import EventDef, GodEnv
+from core import judge
 from core.dice import roll, tag
 from core.guard import inspect_player_input
 from core.npc_agent import NPCAgent, NPCReply
@@ -514,11 +515,26 @@ class DialogueSession:
             dest_id, dest = self._place_name(guard.text)
             invite = {"accept": ok, "reason": why, "dest": dest}
             self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
-        dispatch, believe = None, False
+        dispatch, believe, threatened = None, False, False
         self._roll_line = None
         if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
             rel = self.npc.relationship
-            p, why = g.belief_chance(nid, guard.text, rel.affinity, rel.trust)
+            # 便宜的判定（Jev）：语气、说中了哪几条推测。没开或拿不准时为 None，下面照旧只看关键词
+            open_hs = [] if g.hypotheses_for(nid, guard.text) else \
+                [h for h in g.quest.hypotheses if nid in h["listeners"]
+                 and f"dispatched:{h['id']}" not in g.flags and not set(h["clues"]) <= set(g.clues)]
+            felt = judge.turn(g, self.npc.name, guard.text, open_hs) or {}
+            if felt.get("threat"):
+                threatened = True
+                if f"alerted:{nid}" not in g.flags:
+                    g.flags.append(f"alerted:{nid}")         # 被威胁的人会戒备，也可能去报信
+                g.tension = min(1.0, g.tension + 0.05)
+                self._log("threat", npc=nid, text=guard.text)
+            judged = felt.get("hypotheses", [])
+            if judged:
+                self._log("hypotheses_judged", npc=nid, ids=[h["id"] for h in judged], text=guard.text)
+            p, why = g.belief_chance(nid, guard.text, rel.affinity, rel.trust, extra={h["id"] for h in judged},
+                                     specific=felt.get("specific", 0))
             if p:
                 # 关系够深：掷一次，成了就直接信，跳过查证进入处置（结局会记得「没查实」）；没成就照常派人去查
                 believe, pct = roll(g, "belief", p)
@@ -528,7 +544,7 @@ class DialogueSession:
                 self._log("believe", npc=nid, affinity=rel.affinity, trust=rel.trust, p=p, ok=believe, text=guard.text)
             if not believe:
                 # 玩家直接说出了推测（比如玩过一遍、知道真相）：不当真也不置之不理——派人去查，查到了托人带话回来
-                hs = g.hypotheses_for(nid, guard.text)
+                hs = g.hypotheses_for(nid, guard.text) or judged
                 if hs:
                     agent = hs[0]["agent"]
                     agent = agent if agent in self.npc_names and agent not in phys.party else nid
@@ -540,6 +556,7 @@ class DialogueSession:
             g.conv["dispatch"] = dispatch
             g.conv["believe"] = believe
             g.conv["press"] = press
+            g.conv["threatened"] = threatened
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
             g.conv["invite"] = invite
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party

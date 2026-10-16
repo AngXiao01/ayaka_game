@@ -78,7 +78,7 @@ def test_messages_take_time_by_distance():
     g, phys, _ = world({"act_id": "act2", "phase_idx": 1, "location": "ritou", "clues": ["c_workshop"]})
     got = []
     phys.on_deliver = got.append
-    msg = phys.send("soji", "kokichi", "有人在查送信的事，你小心。")
+    msg = phys.send("soji", "kokichi", "有人在查茶碗的事，你小心。")
     assert msg["deliver"] - msg["sent"] == 60                 # 离岛到花见坂要一个钟头
     g.pass_time(30)
     assert got == [] and phys.peek_inbox("kokichi") == []
@@ -108,7 +108,7 @@ def test_npc_view_present_and_mentioned():
 
 def test_absent_after_story_flag():
     g, phys, _ = world({"act_id": "act3", "location": "print_workshop", "flags": ["expose"]})
-    assert phys.where("kokichi") is None                     # 被送官了，不在印坊
+    assert phys.where("kokichi") is None                     # 去神里家当面认错了，不在印坊
 
 
 def settings(tmp_path):
@@ -160,14 +160,14 @@ def test_deadline_is_an_event_not_game_over(tmp_path):
 def test_stating_the_truth_sends_someone_to_check(tmp_path):
     # 玩家玩过一遍，直接说出真相：绫华不当真，但会派托马去查；托马走过去、查完、托人带话，证据到手
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("伪信是辰巳印坊的学徒小吉做的，我很确定。", "自由发言"),
+                         [{"kind": "talk", "npc": "ayaka"}, ("茶碗是印坊的小吉拿走的，他把碗磕坏了，我很确定。", "自由发言"),
                           {"kind": "leave"}, {"kind": "wait"}, "q"])
     g, phys = eng.god, eng.god.physical
     assert any("派托马去辰巳印坊" in line for line in out)
     assert {"c_workshop", "c_seal_rubbing"} <= set(g.clues)
     assert any("托马托人带话" in line for line in out)
     assert "dispatched:h_workshop" in g.flags
-    assert g.hypothesis_for("ayaka", "就是小吉做的伪信") is None          # 同一件事不会派第二次
+    assert g.hypothesis_for("ayaka", "就是小吉拿走的茶碗") is None          # 同一件事不会派第二次
 
 
 def test_dispatched_agent_is_really_away():
@@ -186,19 +186,19 @@ def test_dispatched_agent_is_really_away():
 
 
 def test_one_sentence_sends_thoma_along_several_stops(tmp_path):
-    # 一句话说中洋纸和印坊：托马先去志村屋取信，再去印坊，两处的证据都送回来
+    # 一句话说中狸猫和印坊：托马先去镇守之森找狸窝，再去印坊，两处的证据都送回来
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("伪信用的是洋纸，是辰巳印坊的小吉做的。", "自由发言"),
+                         [{"kind": "talk", "npc": "ayaka"}, ("花见坂那些东西是狸猫叼走的，茶碗是印坊的小吉拿走的。", "自由发言"),
                           {"kind": "leave"}, {"kind": "wait"}, {"kind": "wait"}, "q"])
     g = eng.god
     assert {"dispatched:h_letter", "dispatched:h_workshop"} <= set(g.flags)
-    assert {"c_letter", "c_workshop", "c_seal_rubbing"} <= set(g.clues)
+    assert {"c_date", "c_tanuki", "c_workshop", "c_seal_rubbing"} <= set(g.clues)
 
 
 def test_trusted_player_skips_the_investigation(tmp_path):
     # 好感、信任够高：绫华直接信，进入处置，留下「没查实」的标记
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("伪信是辰巳印坊的学徒小吉做的，我很确定。", "自由发言"), "q"],
+                         [{"kind": "talk", "npc": "ayaka"}, ("茶碗是印坊的小吉拿走的，他把碗磕坏了，我很确定。", "自由发言"), "q"],
                          rels={"ayaka": {"affinity": 60, "trust": 45}})
     g = eng.god
     assert "unverified" in g.flags and g.act_id == "act3"
@@ -207,6 +207,6 @@ def test_trusted_player_skips_the_investigation(tmp_path):
 
 def test_low_trust_still_dispatches(tmp_path):
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("伪信是辰巳印坊的学徒小吉做的。", "自由发言"), "q"],
+                         [{"kind": "talk", "npc": "ayaka"}, ("茶碗是印坊的小吉拿走的，他把碗磕坏了。", "自由发言"), "q"],
                          rels={"ayaka": {"affinity": 40, "trust": 20}})
     assert "unverified" not in eng.god.flags and "dispatched:h_workshop" in eng.god.flags

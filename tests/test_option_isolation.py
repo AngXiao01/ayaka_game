@@ -13,7 +13,7 @@ from models.relationship import Relationship
 from tests.helpers import ROOT, WORLD, make_god
 
 PERSONAS = Personality.load_all(ROOT / "content/npcs")
-SECRETS = ["小吉", "辰巳", "母亲病", "药钱", "印样"]
+SECRETS = ["小吉", "辰巳", "缺了口", "金缮匠", "布包"]
 
 
 def explorer(g):
@@ -35,7 +35,7 @@ def test_option_request_carries_no_npc_secrets(tmp_path):
     opts = [e for e in reqs if e["event"] == "llm" and e["task"] == "player_options"]
     assert opts
     text = "".join(m["content"] for e in opts for m in e["messages"])
-    assert not [t for t in SECRETS if t in text]                 # 宗次心里的「是小吉托我送的」没给出去
+    assert not [t for t in SECRETS if t in text]                 # 宗次心里的「小吉抱着缺口的茶碗来找我」没给出去
     npc = next(e for e in reqs if e["event"] == "llm" and e["task"] == "npc_step")
     assert "小吉" in npc["messages"][-1]["content"]               # NPC 自己当然知道
 
@@ -49,7 +49,7 @@ def test_player_view_grows_with_what_the_player_learns():
     assert pv["directions"] == []                                 # 手上没有能让他开口的东西
     g.clues.append("c_messenger")
     pv = explorer(g).player_view("soji")
-    assert pv["directions"] == ["把「送信人」的事说给对方听，看对方什么反应"]
+    assert pv["directions"] == ["把「深夜的布包」的事说给对方听，看对方什么反应"]
     g.clues.append("c_soji")
     assert "小吉" in explorer(g).player_view("soji")["known_text"]
 
@@ -66,19 +66,19 @@ def test_spoiler_and_ooc_options_are_dropped():
     ctx = TurnContext(player_name="旅行者", scene={}, world={}, relationship={},
                       history=[{"speaker": "npc", "text": "我、我就是个扛货的。", "reply": {"action": ""}}],
                       player_view={"known_text": "宗次 离岛的搬运工", "spoiler_terms": ["小吉", "宗次", "辰巳"]})
-    gen = PlayerOptionGenerator(Stub(["是小吉托你送的信吧？", "这个剧情选项好怪", "宗次，你在码头干了多久？",
+    gen = PlayerOptionGenerator(Stub(["是小吉找你帮忙补茶碗的吧？", "这个剧情选项好怪", "宗次，你在码头干了多久？",
                                       "扛货累不累？要不要吃个饭团？"]))
     opts, _ = gen.generate(ctx, "宗次", [])
     assert [o.text for o in opts] == ["宗次，你在码头干了多久？", "扛货累不累？要不要吃个饭团？"]
-    ctx.history.append({"speaker": "npc", "text": "是小吉……小吉托我送的。", "reply": {"action": ""}})
+    ctx.history.append({"speaker": "npc", "text": "是小吉……小吉找我帮的忙。", "reply": {"action": ""}})
     opts, _ = gen.generate(ctx, "宗次", [])
-    assert "是小吉托你送的信吧？" in [o.text for o in opts]       # 对方亲口说了，玩家就知道了
+    assert "是小吉找你帮忙补茶碗的吧？" in [o.text for o in opts]       # 对方亲口说了，玩家就知道了
 
 
 def test_npcs_only_know_the_commission_after_being_told():
     g = make_god({"act_id": "act2", "clues": ["c_case", "c_shops"]})
     g.begin_conversation("yohei")
-    assert "暗中查访" not in g.world_state_summary(PERSONAS["yohei"], 20)["premise"]
+    assert "悄悄查清" not in g.world_state_summary(PERSONAS["yohei"], 20)["premise"]
     g.mark_known("yohei", ["c_case"])
-    assert "暗中查访" in g.world_state_summary(PERSONAS["yohei"], 20)["premise"]
-    assert "暗中查访" in g.world_state_summary(PERSONAS["ayaka"], 20)["premise"]
+    assert "悄悄查清" in g.world_state_summary(PERSONAS["yohei"], 20)["premise"]
+    assert "悄悄查清" in g.world_state_summary(PERSONAS["ayaka"], 20)["premise"]

@@ -161,8 +161,10 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
             "你答应了。用你的语气答应下来，可以说说想去哪、要注意些什么。" if inv["accept"]
             else f"这次你婉拒了：{inv['reason']}。用你的语气说，别生硬，可以约下次。"))
     if t.get("believe"):
-        parts.append("## 对方说出了伪信的真相\n还没有查实，但你信得过对方——你选择相信。说出你的信任（也可以带点不安），"
-                     "然后表示接下来想和对方一起商量，该怎么处置伪造者。")
+        parts.append("## 对方说出了案子的真相\n还没有查实，但你信得过对方——你选择相信。说出你的信任（也可以带点不安），"
+                     "然后表示接下来想和对方一起商量该怎么收场。")
+    if t.get("threatened"):
+        parts.append("## 对方在威胁你\n你被吓到了，也起了戒心：话会变少、更想躲开，不会因为被吓就把藏着的事说出来。")
     pr = t.get("press")
     if pr and not pr["ok"]:                        # 硬问没问出来：代码掷过骰，这次不松口
         parts.append(f"## 对方在逼问：{pr['desc']}\n这次你没有松口。用你的方式回避——岔开话题、推说不知道、"

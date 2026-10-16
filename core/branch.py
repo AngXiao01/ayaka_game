@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from core import judge
 from core.god_env import GodEnv
 from llm.base import LLMError
 from models.retrieval import coverage
@@ -30,7 +31,7 @@ def rules_classify(text: str, proposals: list[dict]) -> dict:
 
 
 class BranchAgent:
-    def __init__(self, god: GodEnv, adapter: Any = None, mode: str = "llm", tracer: Any = None):
+    def __init__(self, god: GodEnv, adapter: Any = None, mode: str = "llm", tracer: Any = None, decider: Any = None):
         self.god = god
         self.adapter = adapter
         self.mode = mode
@@ -44,6 +45,16 @@ class BranchAgent:
         if suspicious:
             self._log("skip", text, None, False, "输入防护命中，这一轮不判")
             return None
+        j = judge.proposal(self.god, npc_id, text, props)       # 先问便宜的 Jev：有把握就不用再调大模型
+        if j:
+            flag, p = j
+            prop = next((x for x in props if x["flag"] == flag), None)
+            if prop and p >= judge.SURE:
+                self._log("jev", text, {"proposal": flag, "p": p}, True, f"Jev 判定（把握 {p:.0%}）")
+                return prop
+            if flag == judge.NONE and p >= judge.SURE_NOT:
+                self._log("jev", text, {"proposal": flag, "p": p}, False, f"Jev 判定没有提出方案（把握 {p:.0%}）")
+                return None
         used, out = ("rules" if degraded else self.mode), None
         if used == "llm" and self.adapter is not None:
             try:

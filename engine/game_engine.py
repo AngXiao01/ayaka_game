@@ -35,6 +35,7 @@ from core.world import World
 from engine.trace import Tracer
 from llm.base import LLMBackend
 from llm.branch_llm_adapter import BranchLLMAdapter
+from llm.decider import Decider, make_decider
 from llm.director_llm_adapter import DirectorLLMAdapter
 from llm.npc_llm_adapter import NPCLLMAdapter
 from llm.player_option_llm_adapter import PlayerOptionLLMAdapter
@@ -66,7 +67,7 @@ class GameResult:
 class GameEngine:
     def __init__(self, settings: Settings, backend: LLMBackend, player: Any,
                  out: Callable[[str], None] = print, save_name: str = "default", new_game: bool = False,
-                 trace: bool = True, router: Optional[ModelRouter] = None):
+                 trace: bool = True, router: Optional[ModelRouter] = None, decider: Optional[Decider] = None):
         self.settings = settings
         g, h, lp = settings.game, settings.harness, settings.llm
         self.backend = backend
@@ -138,8 +139,11 @@ class GameEngine:
             lambda nid: (self.npcs[nid].relationship.affinity, self.npcs[nid].relationship.trust),
             DirectorLLMAdapter(r.backend("director"), r.params("director"), t, min(rep, 1)),
             mode=h.director_mode, max_actions=h.director_max_actions, tracer=t)
+        # 便宜的分支判定（Jev）：这句话是哪个动词、说中了哪条推测、是不是在威胁……没开或出错时一律退回关键词规则
+        self.decider = decider or make_decider(settings, backend.name, t)
+        self.god.decider = self.decider
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
-                                  mode=h.branch_mode, tracer=t)
+                                  mode=h.branch_mode, tracer=t, decider=self.decider)
         self.scene = SceneAgent(self.god, self.world, self.explorer, self.world_canon, self.quest.canon_guard_terms,
                                 SceneLLMAdapter(r.backend("scene"), r.params("scene"), t, min(rep, 1)),
                                 mode=h.scene_mode, tracer=t)
@@ -358,7 +362,7 @@ class GameEngine:
         if e:
             self.out(f"\n════ {self.quest.deadline['label']} · {e.title} ════\n\n{e.text}\n")
         self.out("（主线还没有结束：真相还可以接着查下去。）")
-        g.journal.append(f"{g.time_label()}　{self.quest.deadline['label']}已经过去了，伪信的事还没有查清")
+        g.journal.append(f"{g.time_label()}　{self.quest.deadline['label']}已经过去了，案子还没有查清")
         self.tracer.log("deadline_event", time=g.time_label())
 
     def _after_ending(self) -> None:

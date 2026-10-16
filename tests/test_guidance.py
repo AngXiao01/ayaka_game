@@ -53,11 +53,11 @@ def test_ask_buttons_progress_act1_without_reviewer(tmp_path):
     assert g.act_id == "act2" and {"c_case", "c_shops"} <= set(g.clues)
     assert eng.tracer.stats["signals_by_action"] == 2 and eng.tracer.stats["signals_accepted"] == 0
     npc_reqs = [e for e in events(eng) if e["event"] == "llm" and e["task"] == "npc_step"]
-    assert any("这一轮你要说出口的事" in e["messages"][-1]["content"] and "暗中查访" in e["messages"][-1]["content"]
+    assert any("这一轮你要说出口的事" in e["messages"][-1]["content"] and "悄悄查清" in e["messages"][-1]["content"]
                for e in npc_reqs)
     # 先显示对方说的话，再显示获得的线索
     accept = next(i for i, line in enumerate(out) if "这件事就交给我吧" in line)
-    clue = next(i for i, line in enumerate(out) if "获得线索「伪信事件」" in line)
+    clue = next(i for i, line in enumerate(out) if "获得线索「失窃的委托」" in line)
     assert any(line.startswith("\n神里绫华") for line in out[accept:clue])
 
 
@@ -107,16 +107,16 @@ def test_leads_follow_the_investigation():
     g.act_id, g.clues, g.achieved = "act2", ["c_case", "c_shops"], ["asked_purpose", "accepted_commission"]
     leads = ex.leads()
     assert any("阿缘" in x and "木漏茶室·清晨、午后、黄昏" in x for x in leads)
-    assert any("与平" in x and "出示「伪信事件」" in x for x in leads)
+    assert any("与平" in x and "出示「失窃的委托」" in x for x in leads)
     assert ex.checklist_line().count("✘") == 3
     g.clues += ["c_messenger", "c_letter"]
     leads = ex.leads()
-    assert any("离岛码头找找" in x and "出示「送信人」" in x and "离岛·午后、黄昏、夜晚" in x for x in leads)
-    assert any("货单" in x for x in leads)
+    assert any("离岛码头找找" in x and "出示「深夜的布包」" in x and "离岛·午后、黄昏、夜晚" in x for x in leads)
+    assert any("璃月商船" in x for x in leads)
     assert ex.checklist_line().count("✔") == 2
     g.clues.append("c_soji")
     leads = ex.leads()
-    assert any("向绫华汇报" in x for x in leads) and any("出示「宗次的供述」" in x for x in leads)
+    assert any("向绫华汇报" in x for x in leads) and any("出示「宗次的话」" in x for x in leads)
 
 
 def test_event_leads_show_affinity_progress():
@@ -127,7 +127,9 @@ def test_event_leads_show_affinity_progress():
 
 def test_soji_testimony_unlocks_workshop():
     assert WORLD.unlocked("print_workshop", ["c_soji"])
-    assert not WORLD.unlocked("print_workshop", ["c_messenger"])
+    assert WORLD.unlocked("print_workshop", ["c_messenger"])          # 阿缘看见的是「印坊的学徒小吉」，也能找过去
+    assert not WORLD.unlocked("print_workshop", ["c_letter", "c_date"])   # 狸猫那条线指不到印坊
+    assert not WORLD.unlocked("print_workshop", [])
 
 
 def test_primer_and_glossary(tmp_path):
