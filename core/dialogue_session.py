@@ -151,19 +151,53 @@ class DialogueSession:
 
     # ------------------------------------------------------------ 选项
 
+    def _actions(self) -> list[tuple[str, PlayerOption, str, str]]:
+        """此刻能做的事：(编号, 按钮, 给选项 agent 看的说明, 台词上标的小字)。选项 agent 可以把其中一件「顺带」进一句台词里。"""
+        g, nid = self.god, self.npc.p.id
+        acts: list[tuple[str, PlayerOption, str, str]] = []
+        for s in g.askable():               # 关键问题：条件都满足了，问出口就由代码判定达成，不赌模型
+            label = s.ask["label"]
+            acts.append((f"ask:{s.id}", PlayerOption(label, "表达关心" if s.event else "推进任务", kind="ask",
+                                                     meta={"signal": s.id}),
+                         f"问出这个问题：{label.lstrip('❓💬🤝 ')}", label[:1] + " 关键问题"))
+        if any(s["id"] in g.act.complete_when and s["id"] == "reported_findings" for s in g.pending_signals()):
+            acts.append(("report", PlayerOption(f"📣 把调查到的一切告诉{self.npc.name}", "汇报", kind="report"),
+                         f"把查到的事一五一十告诉{self.npc.name}", "📣 汇报"))
+        if not self.event:
+            for prop in g.proposals_for(nid):
+                chosen = prop["flag"] in g.flags
+                acts.append((f"propose:{prop['flag']}",
+                             PlayerOption(prop["label"] + ("（已提出）" if chosen else ""), "推进任务", kind="propose",
+                                          meta={"flag": prop["flag"], "chosen": chosen}),
+                             f"提出主张：{prop['label'].replace('⚖️ 提议：', '')}", "⚖️ 提议"))
+        phys = g.physical
+        together = phys is not None and nid in phys.party
+        if phys is not None and not self.event:
+            if together:
+                acts.append(("dismiss", PlayerOption(f"👋 请{self.npc.name}先回去", "告别", kind="dismiss"),
+                             f"请{self.npc.name}先回去", "👋 请对方先回去"))
+            elif self.npc.p.outing and not (g.conv or {}).get("invite_declined"):
+                acts.append(("invite", PlayerOption(f"🚶 邀{self.npc.name}一起走走", "邀请", kind="invite"),
+                             f"邀{self.npc.name}一起出去走走", "🚶 邀请同行"))
+        acts.append(("leave", PlayerOption("🚶 先聊到这儿，接着走吧" if together else "🚪 起身告辞", "告别", kind="leave"),
+                     "结束这次谈话，离开" if not together else "先不聊了，接着赶路", "🚪 告辞" if not together else "🚶 接着走"))
+        return acts
+
     def _options(self, ctx: TurnContext) -> list[PlayerOption]:
         g, nid = self.god, self.npc.p.id
+        acts = self._actions()
         if self.player_view is not None:
             ctx.player_view = self.player_view(nid, self.event.id if self.event else None)
+            ctx.player_view["actions"] = [{"id": i, "desc": d, "kind": o.kind, "meta": o.meta, "tag": t}
+                                          for i, o, d, t in acts]
         with self._span(agent="options"):
             says, degraded = self.option_gen.generate(ctx, self.npc.name, self.npc.p.fallback_options,
                                                       force_static=self.budget.degraded())
         if degraded and self.cfg.debug:
             self.out("    · 选项生成失败，已用兜底选项")
+        covered = {o.meta.get("act") for o in says if o.meta.get("line")}
         opts = list(says)
-        for s in g.askable():               # 关键问题：条件都满足了，问出口就由代码判定达成，不赌模型
-            opts.append(PlayerOption(s.ask["label"], "表达关心" if s.event else "推进任务", kind="ask",
-                                     meta={"signal": s.id}))
+        tail = [o for i, o, _, _ in acts if i not in covered]    # 台词已经带上了这件事，就不再另给一个按钮
         if not self.event:                   # 软锁：条件不够也能硬问，由代码掷骰定松不松口
             for s, p, _ in g.pressable(nid):
                 opts.append(PlayerOption(f"🎲 {s.ask['label']}（硬问，约 {round(p * 100)}%）", "推进任务", kind="press",
@@ -178,22 +212,8 @@ class DialogueSession:
             useful = any(t["kind"] == "lie" and set(t["contradicted_by"]) & set(g.clues) for t in claims)
             opts.append(PlayerOption("⚠ 对质：指出对方话里的破绽……" + ("  💡" if useful and self.cfg.hints else ""),
                                      "对质", kind="confront_menu", meta={"useful": useful}))
-        if any(s["id"] in g.act.complete_when and s["id"] == "reported_findings" for s in g.pending_signals()):
-            opts.append(PlayerOption(f"📣 把调查到的一切告诉{self.npc.name}", "汇报", kind="report"))
-        if not self.event:
-            for prop in g.proposals_for(nid):
-                chosen = prop["flag"] in g.flags
-                opts.append(PlayerOption(prop["label"] + ("（已提出）" if chosen else ""), "推进任务", kind="propose",
-                                         meta={"flag": prop["flag"], "chosen": chosen}))
-        phys = g.physical
-        if phys is not None and not self.event:
-            if nid in phys.party:
-                opts.append(PlayerOption(f"👋 请{self.npc.name}先回去", "告别", kind="dismiss"))
-            elif self.npc.p.outing:
-                opts.append(PlayerOption(f"🚶 邀{self.npc.name}一起走走", "邀请", kind="invite"))
-        together = phys is not None and nid in phys.party
-        opts.append(PlayerOption("🚶 先聊到这儿，接着走吧" if together else "🚪 起身告辞", "告别", kind="leave"))
-        return opts
+        asks = [o for o in tail if o.kind == "ask"]
+        return [*opts[:len(says)], *asks, *opts[len(says):], *[o for o in tail if o.kind != "ask"]]
 
     def _resolve_action(self, ctx: TurnContext, options: list[PlayerOption]):
         """处理二级菜单（出示线索），返回最终动作。"""
@@ -436,7 +456,7 @@ class DialogueSession:
         press = None
         if action.kind == "ask":
             s = g.quest.signal(action.meta["signal"])
-            text, intent = s.ask["text"], action.intent or "推进任务"
+            text, intent = (action.text if action.meta.get("line") else s.ask["text"]), action.intent or "推进任务"
             forced = [s.id]
         elif action.kind == "press":
             s = g.quest.signal(action.meta["signal"])
@@ -456,14 +476,14 @@ class DialogueSession:
             ctx = self._last_ctx = self.build_ctx(turn)          # 出示之后对方知道的事变了，重建情境
         elif action.kind == "report":
             g.mark_known(nid, list(g.clues))
-            text = "（把这几天查到的事一五一十地说出来）" + "；".join(
+            text = (action.text if action.meta.get("line") else "") + "（把这几天查到的事一五一十地说出来）" + "；".join(
                 f"{g.quest.clue_name(c)}：{g.quest.clues[c]['desc'].split('。')[0]}" for c in g.clues)
             intent = "汇报"
             ctx = self._last_ctx = self.build_ctx(turn)
         elif action.kind == "propose":
             prop = next(p for p in g.quest.proposals if p["flag"] == action.meta["flag"])
             g.propose(prop["flag"])
-            text, intent = prop["text"], "推进任务"
+            text, intent = (action.text if action.meta.get("line") else prop["text"]), "推进任务"
             ctx = self._last_ctx = self.build_ctx(turn)
         elif action.kind == "confront":
             t = next(x for x in g.testimonies if x["id"] == action.meta["tid"])
@@ -482,10 +502,13 @@ class DialogueSession:
             together = g.physical is not None and nid in g.physical.party
             text, intent = (("先聊到这儿吧，我们接着走。", "闲聊") if together
                             else ("（起身告辞）今天就先聊到这里吧，我先告辞了。", "告别"))
+            if action.meta.get("line"):
+                text = action.text
         elif action.kind == "invite":
-            text, intent = "难得有空，要不要和我一起出去走走？", "邀请"
+            text, intent = (action.text if action.meta.get("line") else "难得有空，要不要和我一起出去走走？"), "邀请"
         elif action.kind == "dismiss":
-            text, intent = "今天就到这儿吧，你先回去歇着，改天再一起走走。", "告别"
+            text, intent = (action.text if action.meta.get("line")
+                            else "今天就到这儿吧，你先回去歇着，改天再一起走走。"), "告别"
         else:
             text, intent = action.text, action.intent
         if action.kind in ("clue", "report", "propose", "confront"):
@@ -573,7 +596,8 @@ class DialogueSession:
                 ctx = self._last_ctx = self.build_ctx(turn, query_text=guard.text)
                 if self.cfg.debug:
                     self.out(f"    · 分支：识别为{prop['label']}")
-        if action.kind in ("ask", "press", "clue", "report", "propose", "confront", "invite", "dismiss"):
+        if action.kind in ("ask", "press", "clue", "report", "propose", "confront", "invite", "dismiss") \
+                or action.meta.get("line"):
             self.out(f"\n{self.cfg.player_name}：{guard.text}")
         if press:
             self.out(f"    {press['line']}")
@@ -624,6 +648,7 @@ class DialogueSession:
                 self.out(f"    🚶 {self.npc.name}和你同行了" + (f"（说好去{inv['dest']}）" if inv["dest"] else "")
                          + "。之后走到哪儿，都可以直接和对方说话。")
             elif inv:
+                g.conv["invite_declined"] = True        # 刚被婉拒：这次谈话里不再摆出「邀请」按钮（打字邀请仍然可以）
                 self.out(f"    （{self.npc.name}这次没有答应同行。）")
         if phys is not None:
             phys.take_inbox(nid)                       # 别人带来的话，这一轮已经在情境里给过了

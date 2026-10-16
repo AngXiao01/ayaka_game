@@ -27,10 +27,11 @@ SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地�
 7. 只用{player}已经知道的事：「{player}已经知道的事」里列的线索，和对话里对方亲口说过的话。{player}还没听说过的人名、地点、案情细节一律不提，也不要替{player}猜出答案——{player}只能问，不能先知道。
    不要编造{player}做过、看到过的事（没去过的地方、没见过的东西、别人没说过的话）。提到案子时，只能引用线索本里的内容，或者提出疑问。
 8. 不出戏：每句都是{player}在稻妻当面说出口的话。不提「游戏」「玩家」「剧情」「任务」「选项」「系统」这类说法；不提这个故事里没有出场的同伴（比如派蒙）；不搬出与眼前无关的原作剧情。
+10. 「现在可以做的事」里的事，选项可以顺带做：一句话本身就是在做其中一件（告辞、邀对方同行、问那个关键问题、汇报、提出方案），就在这句上写 "act": 对应的编号，这句话会直接起作用；只是聊天就不写 act。每件事最多一句，不要硬凑。告别的话一定要带上告辞的编号。
 9. 有分寸：对初次见面或还不熟的人礼貌克制；亲昵、调情或带私人感情的话，只在对方是神里绫华、且关系到了「友好」以上时才用，最多一句。
 
 只输出一个 JSON 对象，不要任何其他文字，不要代码块：
-{{"options": [{{"text": "……", "intent": "打听情报", "tone": "好奇"}}, …]}}"""
+{{"options": [{{"text": "……", "intent": "打听情报", "tone": "好奇"}}, {{"text": "……", "intent": "告别", "tone": "温和", "act": "leave"}}, …]}}"""
 
 
 def _render_history(ctx: TurnContext, npc_name: str, last_n: int = 8) -> str:
@@ -70,6 +71,9 @@ class PlayerOptionLLMAdapter:
 
 # {npc_name}对{player}的态度
 {ctx.relationship['tier']}（好感 {ctx.relationship['affinity']}，信任 {ctx.relationship['trust']}）
+
+# 现在可以做的事（编号: 说明）
+{chr(10).join(f"- {a['id']}: {a['desc']}" for a in pv.get('actions', [])) or '（无）'}
 
 # 最近的对话
 {_render_history(ctx, npc_name)}

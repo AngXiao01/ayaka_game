@@ -32,6 +32,8 @@ def render_option(i: int, o: PlayerOption) -> str:
     if o.kind == "say":
         tag = "·".join(x for x in (o.tone, o.intent) if x)
         return f"  {i}. 「{o.text}」  〔{tag}〕"
+    if o.meta.get("line"):
+        return f"  {i}. 「{o.text}」  〔{o.tone + '·' if o.tone else ''}→ {o.meta.get('act_label', '')}〕"
     return f"  {i}. {o.text}"
 
 
