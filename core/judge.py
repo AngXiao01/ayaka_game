@@ -88,3 +88,18 @@ def turn(god: Any, npc_name: str, text: str, hyps: list[dict], last_line: str = 
             "abrupt": bool(ab and ab.yes(SURE)),
             **({"invite": out["invite"].yes(SURE)} if "invite" in out else {}),
             "hypotheses": [h for h in hyps if h["id"] in out and out[h["id"]].yes(SURE)]}
+
+
+def unbacked(god: Any, footprint: str, texts: list[str]) -> Optional[set[int]]:
+    """选项里哪几句替玩家编了没有的经历（说自己去过没去过的地方、亲眼见过没见过的东西）。返回要丢掉的下标。"""
+    d = _decider(god)
+    if not d or not texts or not footprint:
+        return None
+    qs = {f"o{i}": {"type": "noul", "instructions": f"这句话「{t}」是不是声称说话的人亲自去过、见过或做过某件事，而足迹里并没有？",
+                    "criteria": {"true": "说了「刚去了」「我看见」「我查过」之类亲身经历，足迹里却没有这件事",
+                                 "false": "没有声称亲身经历，或者经历和足迹对得上；「听说」「据说」「想去」都不算"}}
+          for i, t in enumerate(texts)}
+    out = d.decide("unbacked", {"speaker_footprint": footprint}, qs)
+    if not out:
+        return None
+    return {i for i in range(len(texts)) if f"o{i}" in out and out[f"o{i}"].yes(SURE)}

@@ -60,7 +60,7 @@ def test_abrupt_topic_jump_judged_by_jev(tmp_path):
     d = ScriptedDecider({"turn": {"abrupt": (True, 0.9), "threat": (False, 0.9), "specific": (0, 1.0)}})
     eng = run(tmp_path, [{"kind": "talk", "npc": "ayaka"}, ("对了，我其实很会做烤鱼。", "自由发言"), "q"], d)
     assert "接不上" in npc_prompts(eng)[-1]
-    state = d.calls[-1][1]
+    state = next(c[1] for c in reversed(d.calls) if c[0] == "turn")
     assert state["listener_just_said"] and state["situation"]            # Jev 看得到上一句和眼下的处境
 
 
@@ -74,3 +74,37 @@ def test_options_never_parrot_the_npc():
                                 "reply": {"action": ""}}])
     opts, _ = PlayerOptionGenerator(Stub()).generate(ctx, "绫华", [])
     assert [o.text for o in opts] == ["等等，我说错了，我是想去离岛码头。"]
+
+
+def test_footprint_separates_hearsay_from_experience():
+    g, phys, ex, _ = living({"act_id": "act2", "clues": ["c_case", "c_shops"], "location": "kamisato_estate"})
+    fp = ex.footprint()
+    assert "去过：神里屋敷" in fp and "木漏茶室" in fp.split("还没去过：")[1].split("\n")[0]
+    ex.move("hanamizaka")
+    assert "花见坂" in ex.footprint().split("\n")[0]
+
+
+def test_options_claiming_unbacked_visits_are_dropped(tmp_path):
+    class Stub:
+        def generate(self, ctx, npc, n):
+            assert "还没去过" in ctx.player_view["footprint"]               # 选项 agent 看得到足迹
+            return [{"text": "刚去了木漏茶室，听说那晚连油豆腐和茶筅都丢了。", "intent": "打听情报", "tone": "直率"},
+                    {"text": "听说木漏茶室也丢了东西？", "intent": "打听情报", "tone": "好奇"}]
+    d = ScriptedDecider({"unbacked": {"o0": (True, 0.9), "o1": (False, 0.9)}})
+    save = tmp_path / "data/saves/c.json"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(json.dumps({"world": {"act_id": "act2", "phase_idx": 1, "clues": ["c_case", "c_shops"]}}))
+    seen = []
+
+    class Spy(ScriptedPlayer):
+        def choose(self, opts, c):
+            if c is not None:
+                seen.append([o.text for o in opts if o.kind == "say"])
+            return super().choose(opts, c)
+
+    eng = GameEngine(settings(tmp_path), MockBackend(seed=0), Spy([{"kind": "talk", "npc": "ayaka"}, "q"]),
+                     out=lambda s: None, save_name="c", decider=d)
+    eng.option_gen.adapter = Stub()
+    eng.run()
+    assert seen[0] == ["听说木漏茶室也丢了东西？"]
+    assert "木漏茶室" in d.calls[-1][1]["speaker_footprint"]

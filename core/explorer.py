@@ -182,7 +182,20 @@ class Explorer:
             parts.append(q.event(event).premise)
         terms = list(dict.fromkeys(q.spoiler_terms + [p.name for p in self.personas.values()]))
         return {"clues": [f"{q.clue_name(c)}：{q.clues[c]['desc']}" for c in g.clues],
-                "directions": directions, "known_text": "\n".join(parts), "spoiler_terms": terms}
+                "directions": directions, "known_text": "\n".join(parts), "spoiler_terms": terms,
+                "footprint": self.footprint()}
+
+    def footprint(self) -> str:
+        """玩家亲身经历过什么：去过哪、和谁说过话、查看过什么。线索本里「听说」的事不等于亲眼见过。"""
+        g, w = self.god, self.world
+        been = list(dict.fromkeys([*g.visited, g.location]))
+        not_yet = [w.name(l) for l in w.locations if l not in been and w.unlocked(l, g.clues)]
+        talked = [self.personas[n].name for n in g.met if n in self.personas]
+        seen = [o["name"] + "（" + w.name(lid) + "）" for lid in w.locations for o in w.objects(lid) if o["id"] in g.examined]
+        return "\n".join([f"去过：{'、'.join(w.name(l) for l in been)}",
+                          f"还没去过：{'、'.join(not_yet) or '（无）'}",
+                          f"说过话的人：{'、'.join(talked) or '（还没有）'}",
+                          f"亲手查看过：{'、'.join(seen) or '（还没有）'}"])
 
     def player_whereabouts(self, npc: str) -> str:
         """玩家以为某人在哪：亲眼看到的、听人说的；都没有就按平常的作息猜。不看真相。"""
@@ -274,6 +287,8 @@ class Explorer:
         if self.god.physical is not None:
             self.god.physical.depart(dest)             # 留在原地的人看见你们往哪儿去了
         self.god.location = dest
+        if dest not in self.god.visited:
+            self.god.visited.append(dest)
         self.god.pass_time(cost)
         with_ = "、".join(self.personas[n].name for n in self.party)
         return (f"你{'和' + with_ + '一起' if with_ else ''}来到了{self.world.name(dest)}"
