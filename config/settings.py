@@ -178,6 +178,11 @@ class HarnessSettings:
     branch_mode: str = "llm"                    # 分支（自由输入的处置方案 → 预设方案）：llm | rules | off
     scene_mode: str = "llm"                     # 场景（自由描述要查看的东西）：llm | rules | off
     persona_mode: str = "index"                 # 人物卡：index 只放核心 + 索引、细节按话题注入 | full 全量进 system
+    # 便宜的分支判定（OpenRouter Decisions API / Jev，只算输入 token）：auto = 用 OpenRouter 且有 key 时开 | jev | off
+    decider_mode: str = "auto"
+    decider_model: str = "typesafe/jev-1.13"
+    decider_url: str = "https://openrouter.ai/api/alpha/decisions"
+    decider_timeout_s: float = 8.0
 
 
 @dataclass
@@ -265,6 +270,10 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         branch_mode=_env("BRANCH_MODE", h.branch_mode),
         scene_mode=_env("SCENE_MODE", h.scene_mode),
         persona_mode=_env("PERSONA_MODE", h.persona_mode),
+        decider_mode=_env("DECIDER_MODE", h.decider_mode).lower(),
+        decider_model=_env("DECIDER_MODEL", h.decider_model),
+        decider_url=_env("DECIDER_URL", h.decider_url),
+        decider_timeout_s=_env_float("DECIDER_TIMEOUT_S", h.decider_timeout_s),
     )
     seed = _env("GAME_SEED", "")
     game = GameSettings(

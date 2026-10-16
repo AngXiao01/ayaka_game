@@ -16,7 +16,7 @@ def ids(g):
 def test_yohei_needs_to_see_the_commission():
     g = make_god(trust={"yohei": 20})
     g.begin_conversation("yohei")
-    assert ids(g) == [] and g.locked_signals()[0][1]          # 不知道伪信的事：锁住
+    assert ids(g) == [] and g.locked_signals()[0][1]          # 不知道失窃的事：锁住
     g.give_clue("c_case")
     assert "rv_yohei_letter" not in ids(g)                      # 没看到凭据，不知道对方的来路
     assert g.useful_clues_for("yohei") == ["c_case"]
@@ -26,13 +26,13 @@ def test_yohei_needs_to_see_the_commission():
 
 def test_showing_clue_unlocks_thoma():
     g = make_god()
-    g.clues = ["c_case", "c_letter"]
+    g.clues = ["c_case", "c_messenger"]
     g.begin_conversation("thoma")
-    assert ids(g) == [] and g.useful_clues_for("thoma") == ["c_letter"]
-    g.mark_known("thoma", ["c_letter"])
+    assert ids(g) == [] and g.useful_clues_for("thoma") == ["c_messenger"]
+    g.mark_known("thoma", ["c_messenger"])                      # 那晚小吉抱着布包：托马想起他在茶室等过
     assert ids(g) == ["rv_thoma_workshop"]
     newly = g.apply_signals(["rv_thoma_workshop"])
-    assert newly[0]["clues"] == ["外托的请柬"] and "c_workshop" in g.known["thoma"]
+    assert newly[0]["clues"] == ["茶室里等过的人"] and "c_workshop" in g.known["thoma"]
 
 
 def test_act_progression_and_exclusive_decision():
@@ -42,7 +42,7 @@ def test_act_progression_and_exclusive_decision():
     g.apply_signals(["asked_purpose", "accepted_commission"])
     assert g.act_id == "act2" and {"c_case", "c_shops"} <= set(g.clues) and g.narrations
     g.clues += ["c_messenger", "c_letter", "c_date"]
-    assert "reported_findings" not in ids(g)                    # 还没查到伪造者，不能结案
+    assert "reported_findings" not in ids(g)                    # 还没弄清「初雪」的下落，不能结案
     g.clues += ["c_workshop", "c_seal_rubbing"]
     assert "reported_findings" in ids(g)
     g.apply_signals(["reported_findings"])
@@ -118,11 +118,13 @@ def test_menu_and_actions():
     assert gained == ["c_seal_rubbing"] and g.journal
 
 
-def test_manifest_needs_letter():
+def test_manifest_needs_messenger():
     g = make_god({"location": "ritou"})
     ex = explorer(g)
-    assert ex.examine("o_manifest")[1] == []
+    assert ex.examine("o_manifest")[1] == []                    # 不知道小吉那晚往离岛去，找不到是哪艘船
     g.clues.append("c_letter")
+    assert ex.examine("o_manifest")[1] == []                    # 狸猫那条线的线索帮不上忙
+    g.clues.append("c_messenger")
     g.misses["o_manifest"] = 2                                   # 判定必成，这里只测规则
     assert ex.examine("o_manifest")[1] == ["c_paper"]
 
@@ -130,10 +132,10 @@ def test_manifest_needs_letter():
 def test_option_generator_drops_repeats():
     class Stub:
         def generate(self, ctx, npc, n):
-            return [{"text": "您知道送信的人长什么样吗？", "intent": "打听情报", "tone": "直率"},
+            return [{"text": "那晚您看见的人长什么样？", "intent": "打听情报", "tone": "直率"},
                     {"text": "这茶真香。", "intent": "闲聊", "tone": "温和"},
                     {"text": "今天天气不错呢。", "intent": "闲聊", "tone": "俏皮"}]
     ctx = TurnContext(player_name="旅行者", scene={}, world={}, relationship={},
-                      history=[{"speaker": "player", "text": "您知道送信的人长什么样吗"}])
+                      history=[{"speaker": "player", "text": "那晚您看见的人长什么样"}])
     opts, _ = PlayerOptionGenerator(Stub()).generate(ctx, "阿缘", [])
     assert [o.text for o in opts] == ["这茶真香。", "今天天气不错呢。"] and opts[0].tone == "温和"

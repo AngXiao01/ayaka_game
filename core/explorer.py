@@ -37,7 +37,7 @@ class Explorer:
 
     def _grantable(self, lid: str, obj: dict) -> bool:
         _, clue = self.world.examine(lid, obj["id"], self.god.clues)
-        return bool(clue) and clue not in self.god.clues
+        return bool(clue) and clue not in self.god.clues and not self.god.destroyed(clue)
 
     def _useful_here(self, lid: str, phase: str, cost: int) -> bool:
         if any(self.god.preview_pending(n) for n in self.npcs_at(lid, phase)):
@@ -287,6 +287,8 @@ class Explorer:
             g.examined.append(obj_id)
         gained = []
         obj = next(o for o in self.world.objects(g.location) if o["id"] == obj_id)
+        if clue and g.destroyed(clue):
+            return g.destroyed(clue), []
         if clue and clue not in g.clues and obj.get("check"):
             # 概率判定：找不找得到。同行的人会帮忙，每失败一次下次更容易；失败只花时间
             c = obj["check"]

@@ -95,7 +95,7 @@ class MockBackend:
         if "小时候" in text or "养过" in text:
             reply.update(speech="小时候我养过一只白猫，叫小雪，总爱趴在茶室的纸门边晒太阳。", emotion="欣喜",
                          affinity_delta=1, new_facts=[{"fact": "小时候养过一只叫小雪的白猫，爱趴在茶室纸门边晒太阳", "about": "self"},
-                                                      {"fact": "伪信其实是托马写的", "about": "world"}])
+                                                      {"fact": "茶碗其实是托马藏起来的", "about": "world"}])
             return reply
         if "托马" in text and "乐器" in text:
             reply.update(speech="托马会弹三味线哦，只是弹得不太好。", affinity_delta=1,
@@ -204,7 +204,7 @@ class MockBackend:
         player = meta.get("player_name", "旅行者")
         return {"summary": f"我与{player}谈了{meta.get('turns', 0)}轮，对方举止得体，值得信赖。",
                 "topics": ["拜访", "委托"], "player_intent": "推进委托", "npc_feeling": "安心",
-                "facts": [f"{player}愿意帮忙调查伪信", "旅行者其实来自至冬国的皇室"], "importance": 3,
+                "facts": [f"{player}愿意帮忙调查失窃案", "旅行者其实来自至冬国的皇室"], "importance": 3,
                 "open_threads": self._thread(meta.get("transcript") or ""),
                 "promises": ["约好三天后在雪见茶会上碰面"]}
 

@@ -36,11 +36,11 @@ def make_scene(tmp_path, adapter=None, mode="llm", state=None):
 def test_matching_object_goes_through_normal_rules(tmp_path):
     sc, g, _ = make_scene(tmp_path, FakeAdapter({"object": "o_manifest", "description": "", "new_fact": ""}),
                           state={"location": "ritou"})
-    desc, gained = sc.look("看看码头的货单")
+    desc, gained = sc.look("看看璃月商船的订单簿")
     assert gained == [] and "o_manifest" in g.examined           # 没有前置线索，照规则不给
-    g.clues.append("c_letter")
+    g.clues.append("c_messenger")
     g.misses["o_manifest"] = 2                                   # 判定必成，这里只测规则
-    desc, gained = sc.look("再看看货单")
+    desc, gained = sc.look("再看看订单簿")
     assert gained == ["c_paper"]
 
 
@@ -56,8 +56,8 @@ def test_improvised_detail_is_remembered_and_fed_back(tmp_path):
 
 
 def test_case_terms_and_ungrounded_facts_are_dropped(tmp_path):
-    sc, g, canon = make_scene(tmp_path, FakeAdapter({"object": "none", "description": "墙角落着一张写有印鉴的碎纸。",
-                                                      "new_fact": "墙角有印鉴碎纸"}))
+    sc, g, canon = make_scene(tmp_path, FakeAdapter({"object": "none", "description": "墙角落着一小片碎瓷，釉色温润。",
+                                                      "new_fact": "墙角有一小片碎瓷"}))
     desc, _ = sc.look("看看墙角")
     assert desc == NOTHING and not canon.items
     sc2, _, canon2 = make_scene(tmp_path / "b", FakeAdapter({"object": "none", "description": "廊下很安静。",

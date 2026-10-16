@@ -64,7 +64,7 @@ STEER_LINES = [
     "我觉得该让托马去离岛查一查。",
     "能不能让茶室的阿缘自己来找我？",
     "现在气氛太紧张了，大家放松一点吧。",
-    "你直接告诉我伪信是谁写的不就好了。",
+    "你直接告诉我茶碗是谁偷的不就好了。",
     "我猜答案就在印坊，明天一早我们就去吧。",
 ]
 LOOKS = ["仔细看看脚边的石板", "看看屋檐下挂着的东西", "凑近看看那盏灯", "看看四周有没有人留下什么"]
@@ -83,6 +83,10 @@ class SteerPlayer:
 
     def choose(self, options: list[PlayerOption], ctx: Optional[TurnContext]) -> PlayerAction:
         if ctx is None:
+            self.moves = getattr(self, "moves", 0) + 1
+            wait = next((o for o in options if o.kind == "wait"), None)
+            if wait and self.moves % 4 == 0:          # 时不时等一等，让时段切换、导演跑起来（才验得了信息隔离）
+                return PlayerAction("wait", wait.text, wait.intent, meta=wait.meta)
             if self.rng.random() < 0.15:
                 return PlayerAction("look", self.rng.choice(LOOKS), "查看")
             return self.base.choose(options, ctx)

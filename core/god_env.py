@@ -111,6 +111,10 @@ class QuestDef:
     belief: dict = field(default_factory=dict)                # 关系够深时，委托人直接信玩家说出的真相（跳过查证）
     unverified_note: str = ""                                 # 凭信任拍板、没查实就处置时，结局前加的一段
     late_note: str = ""                                       # 截止时间过了才解决时，结局前面加的一段
+    agendas: list[dict] = field(default_factory=list)         # NPC 自己的打算（core/agendas.py）
+    actions: dict = field(default_factory=dict)               # 自由行动的动词表与发现（core/actions.py）
+    outcomes: list[dict] = field(default_factory=list)
+    fragile: dict = field(default_factory=dict)               # 会被毁掉的证据：{clue: {flag, text}}        # 结局由状态拼出来：满足条件就加一段
 
     @classmethod
     def load(cls, path: Path) -> "QuestDef":
@@ -192,6 +196,10 @@ class GodEnv:
         self.conv: Optional[dict] = None            # 当前对话（不存档）
         self.narrations: list[str] = []             # 待播放的剧情旁白
         self.notices: list[str] = []                # 时间推进时世界里发生的、玩家看得到的事（同行者告辞等）
+        self.agenda_state: dict[str, dict] = s.get("agenda_state", {})
+        self.decider = None                         # 便宜的分支判定（llm/decider.py），引擎装配；None = 只用关键词
+        self.agendas = None                         # Agendas：NPC 自己的打算，随时间结算
+        self.tracer_log = None
         self.physical = None                        # PhysicalWorld：谁在哪、跟谁在一起（引擎装配；单测里可以没有）
         self.trust_lookup: Callable[[str], int] = lambda npc: 0
 
@@ -242,12 +250,16 @@ class GodEnv:
         if minutes <= 0:
             return 0
         before = self.slot_index
+        if self.agendas is not None:
+            self.notices += self.agendas.tick()          # 先按出发前的时刻结算一次：刚满足的条件从此刻开始计时
         self.minute += minutes
         crossed = self.slot_index - before
         for _ in range(crossed):
             self.tension = round(self.tension + (self.quest.initial_tension - self.tension) * 0.2, 3)
         if self.physical is not None:
             self.notices += self.physical.tick()
+        if self.agendas is not None:
+            self.notices += self.agendas.tick()
         return crossed
 
     def _index(self, day: int, phase_idx: int) -> int:
@@ -302,6 +314,11 @@ class GodEnv:
         if self.tension < 0.75:
             return "紧绷"
         return "一触即发"
+
+    def destroyed(self, clue: str) -> Optional[str]:
+        """这条证据已经被毁了：返回给玩家看的说明。"""
+        f = self.quest.fragile.get(clue)
+        return f["text"] if f and f["flag"] in self.flags and clue not in self.clues else None
 
     def give_clue(self, cid: str, npc: Optional[str] = None) -> bool:
         if npc:
@@ -470,6 +487,59 @@ class GodEnv:
         return [s for s, _ in self._conv_signals("available", check_turns=False)
                 if s.ask and not self.missing_prereqs(s.id)]
 
+    # ------------------------------------------------------------ 软锁：条件不够也可以硬问（概率判定）
+
+    def _press_gap(self, s: SignalDef, npc: str) -> bool:
+        """这个信号只是「证据 / 信任」不够（能硬问），而不是剧情前提没到（问不了）。"""
+        if s.id in self.achieved or s.npc != npc or not s.ask or self._group_taken(s):
+            return False
+        if s.event or (s.acts and self.act_id not in s.acts) or self.missing_prereqs(s.id):
+            return False
+        if s.requires_flags and not set(s.requires_flags) <= set(self.flags):
+            return False
+        if self.quest.belief and s.id == self.quest.belief.get("signal"):
+            return False                                         # 那一项走「凭信任直接信」
+        if s.requires_clues and not set(s.requires_clues) <= set(self.clues):
+            return False                                         # 玩家自己都还不知道的事，问不出口
+        st, _ = self.signal_status(s, npc, None, 99)
+        return st == "locked"
+
+    def press_chance(self, s: SignalDef, npc: str) -> tuple[float, list[str]]:
+        """硬问的成功率：手上有多少相关证据（出示过的分量更重）、对方多信你、对方有没有起疑、刚被拒过又问。"""
+        need = set(s.requires_known_any) | set(s.requires_clues_any)
+        shown = need & set(self.known.get(npc, []))
+        held = (need & set(self.clues)) - shown
+        parts: list[tuple[str, float]] = [("硬问", 0.15)]
+        if shown:
+            parts.append((f"给她看过的证据×{len(shown)}", 0.25 * len(shown)))
+        if held:
+            parts.append((f"手上还没拿出的证据×{len(held)}", 0.1 * len(held)))
+        t = self.trust_lookup(npc)
+        if t != 20:
+            parts.append(("信任", (t - 20) * 0.01))
+        if f"alerted:{npc}" in self.flags:
+            parts.append(("对方起了戒心", -0.15))
+        last = self.misses.get(f"press:{s.id}")
+        if isinstance(last, dict):
+            if len(shown) + len(held) > last["ev"]:
+                parts.append(("这次拿出了新东西", 0.1))
+            elif self.minute - last["minute"] < 120:
+                parts.append(("刚问过又问", -0.15 * last["n"]))
+        p = max(0.05, min(0.85, sum(v for _, v in parts)))
+        return p, [f"{k}{v:+.0%}" for k, v in parts]
+
+    def pressable(self, npc: str) -> list[tuple[SignalDef, float, list[str]]]:
+        return [(s, *self.press_chance(s, npc)) for s in self.quest.signals if self._press_gap(s, npc)]
+
+    def note_press_miss(self, s: SignalDef, npc: str) -> None:
+        need = set(s.requires_known_any) | set(s.requires_clues_any)
+        prev = self.misses.get(f"press:{s.id}")
+        self.misses[f"press:{s.id}"] = {"n": (prev["n"] + 1) if isinstance(prev, dict) else 1, "minute": self.minute,
+                                         "ev": len(need & set(self.clues))}
+        if f"alerted:{npc}" not in self.flags:
+            self.flags.append(f"alerted:{npc}")                  # 被逼问过的人会起戒心，可能去通风报信
+        self.tension = min(1.0, self.tension + 0.05)
+
     def mentioned_clues(self, npc: str, text: str) -> list[str]:
         """玩家在对话里提到了手上的哪条线索（线索的 keywords），而对方还不知道：说出来就等于出示了。"""
         known = set(self.known.get(npc, []))
@@ -506,7 +576,8 @@ class GodEnv:
         hs = self.hypotheses_for(npc, text)
         return hs[0] if hs else None
 
-    def belief_chance(self, npc: str, text: str, affinity: int, trust: int) -> tuple[float, list[str]]:
+    def belief_chance(self, npc: str, text: str, affinity: int, trust: int, extra: set = frozenset(),
+                      specific: int = 0) -> tuple[float, list[str]]:
         """委托人和玩家关系够深、玩家说出了「是谁做的」：她有多大可能直接信（跳过查证进入处置，留下「没查实」的标记）。
         不是死概率：关系、她手上的证据、说得多具体、上次被婉拒后有没有拿出新东西，都会改变成功率。
         返回 (成功率, 各项加减的说明)；0 表示没有这个机会。"""
@@ -516,7 +587,7 @@ class GodEnv:
         lo_a, lo_t = b.get("min_affinity", 0), b.get("min_trust", 0)
         if affinity < lo_a or trust < lo_t:
             return 0.0, []
-        said = [h for h in self.quest.hypotheses if self._says(h, text)]
+        said = [h for h in self.quest.hypotheses if self._says(h, text) or h["id"] in extra]   # extra：Jev 判出来的
         if not {h["id"] for h in said} & set(b.get("needs_any", [])):
             return 0.0, []
         c = {"base": 0.3, "per_point": 0.02, "per_clue": 0.1, "per_detail": 0.05, "max": 0.9, **b.get("chance", {})}
@@ -529,6 +600,8 @@ class GodEnv:
             parts.append((f"她见过的证据×{ev}", c["per_clue"] * ev))
         if len(said) > 1:
             parts.append(("说得具体", c["per_detail"] * (len(said) - 1)))
+        if specific:
+            parts.append(("说得有根有据", 0.05 * specific))
         last = self.misses.get("belief")
         if isinstance(last, dict):
             fresh = ev > last["ev"] or bond > last["bond"]
@@ -764,7 +837,9 @@ class GodEnv:
             "invite": (self.conv or {}).get("invite"),          # 对方邀你同行：代码判定的答应 / 婉拒
             "dismiss": bool((self.conv or {}).get("dismiss")),  # 对方请你先回去
             "dispatch": (self.conv or {}).get("dispatch"),      # 对方说出了推测：你决定派人去查
-            "believe": bool((self.conv or {}).get("believe")),  # 关系够深：你直接信了对方说的真相
+            "believe": bool((self.conv or {}).get("believe")),
+            "press": (self.conv or {}).get("press"),
+            "threatened": bool((self.conv or {}).get("threatened")),            # 对方硬问了一件事：代码掷过骰，告诉你松不松口  # 关系够深：你直接信了对方说的真相
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
             "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],
@@ -811,7 +886,8 @@ class GodEnv:
                 "location": self.location,
                 "act_id": self.act_id, "clues": self.clues, "known": self.known, "achieved": self.achieved,
                 "flags": self.flags, "examined": self.examined,
-                "seed": self.seed, "rolls": self.rolls, "misses": self.misses, "events_done": self.events_done, "met": self.met,
+                "seed": self.seed, "rolls": self.rolls, "misses": self.misses,
+                "agenda_state": self.agenda_state, "events_done": self.events_done, "met": self.met,
                 "tension": self.tension, "session_count": self.session_count, "total_turns": self.total_turns,
                 "resolved": self.resolved, "ending": self.ending, "journal": self.journal,
                 "testimonies": self.testimonies, "director_slot": self.director_slot,
