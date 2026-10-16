@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -21,6 +22,11 @@ from core.player_option_generator import PlayerOption, PlayerOptionGenerator
 from core.reviewer import SignalReviewer
 from core.working_memory import WorkingMemory
 from core.world import World
+
+
+# 打字邀请同行：「一起去茶会吧」「要不要去镇守之森转转」「和你一起」
+INVITE_RE = re.compile(r"一起去|一起走|一起出去|一起逛|陪我去|陪我走|陪我逛|跟我来|跟我走|和我一起|和你一起|出门走走|"
+                       r"去.{0,6}?(?:走走|转转|逛逛)")
 
 
 class DialogueEndReason(str, Enum):
@@ -98,14 +104,27 @@ class DialogueSession:
         last_player = next((e["text"] for e in reversed(self.wm.entries) if e["speaker"] == "player"), "")
         topic = query_text or last_player
         memories = [m for m in self.npc.recall(self.god.act.objective + topic, self.cfg.memory_top_k, self.god.total_turns)]
-        canon = self.npc.recall_canon(topic or self.god.act.objective, 6, self.god.total_turns)
+        canon = self.npc.recall_canon(topic or self.god.act.objective, 3, self.god.total_turns)
         memories = [m for m in memories if not any(m in c for c in canon)]
         handoff = self.npc.handoff()
         memories = [m for m in memories if m != handoff.get("summary")]
+        place = self.god.physical.npc_view(p.id, topic) if self.god.physical is not None else {}
         return TurnContext(player_name=self.cfg.player_name, scene=scene, world=world,
                            relationship=self.npc.relationship.summary(), memories=memories,
                            history=list(self.wm.entries), history_summary=self.wm.summary, turn=turn, canon=canon,
-                           handoff=handoff)
+                           handoff=handoff, place=place)
+
+    def _flush_notices(self) -> None:
+        for line in self.god.notices:
+            self.out("\n" + line)
+        self.god.notices.clear()
+
+    def _place_name(self, text: str) -> tuple[str, str]:
+        """话里提到的地方：(地点 id, 名字)。"""
+        for lid, loc in self.world.locations.items():
+            if loc["name"] in (text or ""):
+                return lid, loc["name"]
+        return "", ""
 
     # ------------------------------------------------------------ 展示
 
@@ -159,7 +178,14 @@ class DialogueSession:
                 chosen = prop["flag"] in g.flags
                 opts.append(PlayerOption(prop["label"] + ("（已提出）" if chosen else ""), "推进任务", kind="propose",
                                          meta={"flag": prop["flag"], "chosen": chosen}))
-        opts.append(PlayerOption("🚪 起身告辞", "告别", kind="leave"))
+        phys = g.physical
+        if phys is not None and not self.event:
+            if nid in phys.party:
+                opts.append(PlayerOption(f"👋 请{self.npc.name}先回去", "告别", kind="dismiss"))
+            elif self.npc.p.outing:
+                opts.append(PlayerOption(f"🚶 邀{self.npc.name}一起走走", "邀请", kind="invite"))
+        together = phys is not None and nid in phys.party
+        opts.append(PlayerOption("🚶 先聊到这儿，接着走吧" if together else "🚪 起身告辞", "告别", kind="leave"))
         return opts
 
     def _resolve_action(self, ctx: TurnContext, options: list[PlayerOption]):
@@ -244,6 +270,13 @@ class DialogueSession:
         if forced:
             self._log("action_signal", npc=self.npc.p.id, action=(player or {}).get("kind"), forced=forced,
                       accepted=[s["id"] for s in newly])
+        # NPC 自己说出口了（不管有没有上报、条件满没满足），玩家听到了就算：线索本和剧情不能对不上
+        heard = [] if flags else g.spoken_signals(r.speech + r.action, (player or {}).get("text", ""))
+        if heard:
+            got = g.apply_signals(heard, heard=True)
+            newly += got
+            self._log("heard_signal", npc=self.npc.p.id, heard=heard, accepted=[s["id"] for s in got])
+            forced = forced + heard
         review = self.reviewer.review([x for x in r.task_signals if x not in forced], opening=opening,
                                       injection_flags=flags or [],
                                       player_text=(player or {}).get("text", ""), npc_speech=r.speech,
@@ -252,6 +285,7 @@ class DialogueSession:
         for s_ in newly:
             if s_["clues"]:                  # 吐露线索的那句话记进证词本（和谎话同一格式）
                 g.add_testimony(self.npc.p.id, r.speech[:80], "truth")
+        self._world_moves(r, flags or [])
         lies = self.npc.record_lies(r, g, g.total_turns)
         if self.cfg.debug:
             for k in lies["kept"]:
@@ -279,6 +313,26 @@ class DialogueSession:
                   turns_in_stage=g.turns_in_stage, turns_since_progress=g.turns_since_progress,
                   budget=self.budget.snapshot())
         return newly
+
+    def _world_moves(self, r: NPCReply, flags: list[str]) -> None:
+        """NPC 在回复里说要托人带话（tell）、说完要去别处（go_to）：代码校验后落到物理世界。"""
+        phys, nid = self.god.physical, self.npc.p.id
+        if phys is None or flags:
+            return
+        for t in r.tell[:1]:
+            to = phys.resolve(t["to"])
+            if to and to != nid:
+                msg = phys.send(nid, to, t["text"], kind="note")
+                self._log("message", action="sent", **{k: msg[k] for k in ("id", "from", "to", "kind", "text")},
+                          deliver=msg["deliver"])
+                if self.cfg.debug:
+                    self.out(f"    📨 {self.npc.name}托人给{phys.name(to)}带话：{t['text']}")
+        if r.go_to and r.wants_to_end and not self.event and nid not in phys.party and self.npc.p.outing:
+            dest, name = self._place_name(r.go_to)
+            if dest and dest != phys.where(nid):
+                phys.set_plan(nid, dest, self.god.next_phase_start(), "go", reason=r.go_to)
+                self.out(f"    （{self.npc.name}说完，往{name}去了。）")
+                self._log("npc_move", npc=nid, dest=dest)
 
     # ------------------------------------------------------------ 主循环
 
@@ -315,6 +369,8 @@ class DialogueSession:
             self._show_speech(opening)
             signals += [s["id"] for s in self._settle(opening, 0, opening=True)]
             self._show_debug(opening)
+            if g.physical is not None:
+                g.physical.take_inbox(p.id)
             degraded += opening.degraded
 
         end: Optional[DialogueEndReason] = None
@@ -382,7 +438,7 @@ class DialogueSession:
         elif action.kind == "report":
             g.mark_known(nid, list(g.clues))
             text = "（把这几天查到的事一五一十地说出来）" + "；".join(
-                f"{g.quest.clue_name(c)}：{g.quest.clues[c]['desc']}" for c in g.clues)
+                f"{g.quest.clue_name(c)}：{g.quest.clues[c]['desc'].split('。')[0]}" for c in g.clues)
             intent = "汇报"
             ctx = self._last_ctx = self.build_ctx(turn)
         elif action.kind == "propose":
@@ -404,7 +460,13 @@ class DialogueSession:
             self._apply_confrontation(res)
             ctx = self._last_ctx = self.build_ctx(turn, query_text=t["said"])
         elif action.kind == "leave":
-            text, intent = "（起身告辞）今天就先聊到这里吧，我先告辞了。", "告别"
+            together = g.physical is not None and nid in g.physical.party
+            text, intent = (("先聊到这儿吧，我们接着走。", "闲聊") if together
+                            else ("（起身告辞）今天就先聊到这里吧，我先告辞了。", "告别"))
+        elif action.kind == "invite":
+            text, intent = "难得有空，要不要和我一起出去走走？", "邀请"
+        elif action.kind == "dismiss":
+            text, intent = "今天就到这儿吧，你先回去歇着，改天再一起走走。", "告别"
         else:
             text, intent = action.text, action.intent
         if action.kind in ("clue", "report", "propose", "confront"):
@@ -417,8 +479,27 @@ class DialogueSession:
         guard = inspect_player_input(text, self.h.player_input_max_chars if action.kind == "say" else 2000)
         if guard.suspicious:
             forced = []
+        elif action.kind == "say":
+            # 打字说出手上线索的内容，和点「出示线索」一样：对方知道了，因此能开口的事就由这句话直接达成
+            told = g.mentioned_clues(nid, guard.text)
+            if told:
+                g.mark_known(nid, told)
+                after = g.available_ids(check_turns=False)
+                forced = [s.id for s in g.quest.signals
+                          if s.id in after and s.id not in before and not g.missing_prereqs(s.id)]
+                self._log("mention", npc=nid, clues=told, forced=forced)
+        phys, invite = g.physical, None
+        if (phys is not None and not self.event and not guard.suspicious and nid not in phys.party and self.npc.p.outing
+                and (action.kind == "invite" or (action.kind == "say" and INVITE_RE.search(guard.text)))):
+            # 同行答不答应由代码按好感和对方此刻有没有空判定，模型只负责用自己的口吻说出来
+            ok, why = phys.can_join(nid, self.npc.relationship.affinity)
+            dest_id, dest = self._place_name(guard.text)
+            invite = {"accept": ok, "reason": why, "dest": dest}
+            self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
         if g.conv is not None:
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
+            g.conv["invite"] = invite
+            g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
         self._log("guard", raw=text, text=guard.text, flags=guard.flags, truncated=guard.truncated)
         if guard.suspicious and self.cfg.debug:
@@ -432,7 +513,7 @@ class DialogueSession:
                 ctx = self._last_ctx = self.build_ctx(turn, query_text=guard.text)
                 if self.cfg.debug:
                     self.out(f"    · 分支：识别为{prop['label']}")
-        if action.kind in ("ask", "clue", "report", "propose", "confront"):
+        if action.kind in ("ask", "clue", "report", "propose", "confront", "invite", "dismiss"):
             self.out(f"\n{self.cfg.player_name}：{guard.text}")
         skills = self.npc.skills.route(intent, guard.text, g.act_id, guard.suspicious,
                                        has_locked=bool(ctx.task["locked_info"]))
@@ -450,22 +531,37 @@ class DialogueSession:
                                          "flags": guard.flags, "skills": [s.name for s in skills]},
                                  options=options, flags=guard.flags, context_lines=context_lines, forced=forced)
         self._show_debug(reply)
+        dismissed = bool(g.conv and g.conv.get("dismiss"))
         if g.conv:
             g.conv.pop("confrontation", None)
             g.conv.pop("forced", None)
+            g.conv.pop("dismiss", None)
+            inv = g.conv.pop("invite", None)
+            if inv and inv["accept"] and phys is not None:
+                phys.join(nid, inv["dest"])
+                self.out(f"    🚶 {self.npc.name}和你同行了" + (f"（说好去{inv['dest']}）" if inv["dest"] else "")
+                         + "。之后走到哪儿，都可以直接和对方说话。")
+            elif inv:
+                self.out(f"    （{self.npc.name}这次没有答应同行。）")
+        if phys is not None:
+            phys.take_inbox(nid)                       # 别人带来的话，这一轮已经在情境里给过了
+            if dismissed:
+                home = phys.leave(nid)
+                self.out(f"    👋 {self.npc.name}往{self.world.name(home) if home else '回'}去了。")
         for n in g.narrations:
             self.out("\n" + n)
         g.narrations.clear()
         ids = [s["id"] for s in newly]
         deg = int(reply.degraded)
 
+        self._flush_notices()
         if g.resolved:
             return DialogueEndReason.RESOLVED, ids, deg
-        if action.kind == "leave":
+        if action.kind == "leave" or dismissed:
             return DialogueEndReason.PLAYER_LEFT, ids, deg
         if reply.wants_to_end:
             return DialogueEndReason.NPC_ENDED, ids, deg
-        if g.conversation_turn():
+        if g.conversation_turn(spend_time=self.event is None):
             self.out(f"\n    （不知不觉，已是{g.time_label()}）")
             if g.deadline_reached():
                 return DialogueEndReason.DEADLINE, ids, deg

@@ -64,6 +64,7 @@ class HumanPlayer:
 
 class AutoPlayer:
     """cooperative：像认真的玩家一样查案；chaotic：随机乱选（含冒犯），用来压测稳定性。"""
+    stops_at_ending = True          # 无人值守：到结局就停，不进后日谈
 
     def __init__(self, style: str = "cooperative", seed: Optional[int] = None,
                  out: Callable[[str], None] = print, farewell_after: int = 6):

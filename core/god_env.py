@@ -36,6 +36,7 @@ class SignalDef:
     lead: str = ""                              # 「下一步」里的一句：去找谁、做什么
     ask: Optional[dict] = None                  # {label, text}：条件满足时对话里出现的关键问题按钮
     reveal: str = ""                            # 由动作直接达成时，告诉 NPC 这一轮要说出口的事
+    evidence: list[list[str]] = field(default_factory=list)   # NPC 自己说出口就算数：每组至少一个词出现在 NPC 的话里
 
 
 @dataclass
@@ -105,6 +106,8 @@ class QuestDef:
     glossary: dict[str, str] = field(default_factory=dict)    # 名词速查
     spoiler_terms: list[str] = field(default_factory=list)    # 玩家没听说过就不该出现在玩家台词选项里的词
     public_premise: str = ""                                  # 城里人都知道的版本（不知道绫华托人查访的 NPC 用这个）
+    after_hint: str = ""                                      # 结局之后继续玩时的一句提示
+    late_note: str = ""                                       # 截止时间过了才解决时，结局前面加的一段
 
     @classmethod
     def load(cls, path: Path) -> "QuestDef":
@@ -136,15 +139,28 @@ def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+DEFAULT_CLOCK = {"phase_starts": [360, 660, 1020, 1170], "minutes_per_turn": 2, "start_time": None}
+
+
 class GodEnv:
     def __init__(self, quest: QuestDef, phases: list[str], start: dict, turns_per_phase: int = 6,
-                 state: Optional[dict] = None):
+                 state: Optional[dict] = None, clock: Optional[dict] = None):
         self.quest = quest
         self.phases = phases
-        self.turns_per_phase = max(1, turns_per_phase)
+        self.turns_per_phase = max(1, turns_per_phase)       # 旧接口，时间改按分钟算后不再使用
+        c = {**DEFAULT_CLOCK, **(clock or {})}
+        self.day_start: int = c["phase_starts"][0]          # 一天从第一个时段开始算（清晨 06:00）
+        self.phase_offsets: list[int] = [x - self.day_start for x in c["phase_starts"]]
+        self.minutes_per_turn: int = c["minutes_per_turn"]
         s = state or {}
-        self.day: int = s.get("day", start["day"])
-        self.phase_idx: int = s.get("phase_idx", start["phase"])
+        if "minute" in s:
+            self.minute: int = s["minute"]
+        elif "day" in s or "phase_idx" in s:              # 旧存档只记到时段
+            self.minute = self.phase_start(s.get("day", start["day"]), s.get("phase_idx", start["phase"])) + 30
+        else:
+            t0 = c.get("start_time")
+            self.minute = self.phase_start(start["day"], start["phase"]) + (
+                max(0, t0 - c["phase_starts"][start["phase"]]) if t0 is not None else 0)
         self.location: str = s.get("location", start["location"])
         self.act_id: str = s.get("act_id", quest.acts[0].id)
         self.clues: list[str] = s.get("clues", [])
@@ -169,9 +185,29 @@ class GodEnv:
         self.rumors: list[dict] = s.get("rumors", [])
         self.conv: Optional[dict] = None            # 当前对话（不存档）
         self.narrations: list[str] = []             # 待播放的剧情旁白
+        self.notices: list[str] = []                # 时间推进时世界里发生的、玩家看得到的事（同行者告辞等）
+        self.physical = None                        # PhysicalWorld：谁在哪、跟谁在一起（引擎装配；单测里可以没有）
         self.trust_lookup: Callable[[str], int] = lambda npc: 0
 
-    # ------------------------------------------------------------ 时间
+    # ------------------------------------------------------------ 时间（按分钟走；时段由钟点推出来）
+
+    def phase_start(self, day: int, phase_idx: int) -> int:
+        """第 day 天第 phase_idx 个时段开始的那一分钟（从第 1 天 00:00 起算）。"""
+        return self.day_start + (day - 1) * 1440 + self.phase_offsets[phase_idx]
+
+    def _split(self, minute: int) -> tuple[int, int]:
+        rel = minute - self.day_start
+        day, in_day = rel // 1440 + 1, rel % 1440
+        idx = max(i for i, off in enumerate(self.phase_offsets) if off <= in_day)
+        return day, idx
+
+    @property
+    def day(self) -> int:
+        return self._split(self.minute)[0]
+
+    @property
+    def phase_idx(self) -> int:
+        return self._split(self.minute)[1]
 
     @property
     def phase(self) -> str:
@@ -181,8 +217,32 @@ class GodEnv:
     def day_phase(self) -> str:
         return self.phase
 
+    def phase_at(self, minute: int) -> str:
+        return self.phases[self._split(minute)[1]]
+
+    def clock_label(self, minute: Optional[int] = None) -> str:
+        m = (self.minute if minute is None else minute) % 1440
+        return f"{m // 60:02d}:{m % 60:02d}"
+
     def time_label(self) -> str:
         return f"第{self.day}天·{self.phase}"
+
+    def next_phase_start(self) -> int:
+        day, idx = self._split(self.minute)
+        return self.phase_start(day + 1, 0) if idx + 1 >= len(self.phases) else self.phase_start(day, idx + 1)
+
+    def pass_time(self, minutes: int) -> int:
+        """时间往前走 minutes 分钟；返回跨过了几个时段。物理世界跟着结算（到点的口信、同行者告辞……）。"""
+        if minutes <= 0:
+            return 0
+        before = self.slot_index
+        self.minute += minutes
+        crossed = self.slot_index - before
+        for _ in range(crossed):
+            self.tension = round(self.tension + (self.quest.initial_tension - self.tension) * 0.2, 3)
+        if self.physical is not None:
+            self.notices += self.physical.tick()
+        return crossed
 
     def _index(self, day: int, phase_idx: int) -> int:
         return (day - 1) * len(self.phases) + phase_idx
@@ -207,12 +267,13 @@ class GodEnv:
         return self.day + idx // len(self.phases), self.phases[idx % len(self.phases)]
 
     def advance(self, n: int = 1) -> None:
+        """跳到 n 个时段之后的开头（等待 / 休息）。"""
+        target = self.minute
         for _ in range(n):
-            self.phase_idx += 1
-            if self.phase_idx >= len(self.phases):
-                self.phase_idx = 0
-                self.day += 1
-            self.tension = round(self.tension + (self.quest.initial_tension - self.tension) * 0.2, 3)
+            saved, self.minute = self.minute, target
+            target = self.next_phase_start()
+            self.minute = saved
+        self.pass_time(target - self.minute)
 
     # ------------------------------------------------------------ 主线
 
@@ -321,16 +382,14 @@ class GodEnv:
     def end_conversation(self) -> None:
         self.conv = None
 
-    def conversation_turn(self) -> bool:
-        """一轮对话结束时调用；返回这一轮是否让时间往前走了一个时段。"""
+    def conversation_turn(self, spend_time: bool = True) -> bool:
+        """一轮对话结束时调用；说一轮话只花几分钟（minutes_per_turn）。返回这一轮是否跨进了新的时段。
+        spend_time=False：私人时光占着那个时段本身，聊多久都不再额外花时间。"""
         self.total_turns += 1
         if self.conv:
             self.conv["turns"] += 1
             self.conv["turns_since_progress"] += 1
-        if self.total_turns % self.turns_per_phase == 0:
-            self.advance(1)
-            return True
-        return False
+        return bool(spend_time and self.pass_time(self.minutes_per_turn))
 
     @property
     def turns_in_stage(self) -> int:
@@ -405,6 +464,28 @@ class GodEnv:
         return [s for s, _ in self._conv_signals("available", check_turns=False)
                 if s.ask and not self.missing_prereqs(s.id)]
 
+    def mentioned_clues(self, npc: str, text: str) -> list[str]:
+        """玩家在对话里提到了手上的哪条线索（线索的 keywords），而对方还不知道：说出来就等于出示了。"""
+        known = set(self.known.get(npc, []))
+        return [c for c in self.clues if c not in known
+                and any(k and k in text for k in self.quest.clues[c].get("keywords", []))]
+
+    def spoken_signals(self, speech: str, player_text: str = "") -> list[str]:
+        """NPC 这句话里自己说出了哪件事（信号的 evidence：每组至少一个词在 NPC 的话里、且不是玩家刚说过的）。
+        只看当前对话里没有被隐藏的信号（别人的、别的幕的、私人时光以外的都不算）。"""
+        if not self.conv:
+            return []
+        out = []
+        for s in self.quest.signals:
+            if not s.evidence or s.id in self.achieved or self.missing_prereqs(s.id):
+                continue
+            st, _ = self.signal_status(s, self.conv["npc"], self.conv["event"], self.conv["turns"], check_turns=False)
+            if st == "hidden":
+                continue
+            if all(any(k in speech and k not in player_text for k in group) for group in s.evidence):
+                out.append(s.id)
+        return out
+
     def checklist(self) -> list[tuple[str, bool]]:
         """这一幕要弄清的几件事，各自弄清了没有（给玩家看的目标进度）。"""
         return [(c["label"], bool(set(c.get("clues_any", [])) & set(self.clues))) for c in self.act.checklist]
@@ -451,11 +532,16 @@ class GodEnv:
                 pending.discard(i)
         return out
 
-    def apply_signals(self, ids: list[str], forced: bool = False) -> list[dict]:
+    def apply_signals(self, ids: list[str], forced: bool = False, heard: bool = False) -> list[dict]:
         """只接受当前对话里此刻可达成的信号；返回新达成的（含获得的线索）。
         forced：玩家用明确的动作（关键问题、出示证据、汇报、提议）满足了条件，由代码直接判定达成——
-        不经审核，所以这里自己查前置信号；也不看聊了几轮（轮数门槛是防模型抢跑的，动作不存在抢跑）。"""
+        不经审核，所以这里自己查前置信号；也不看聊了几轮（轮数门槛是防模型抢跑的，动作不存在抢跑）。
+        heard：NPC 已经亲口说出来了（spoken_signals），玩家听到了就算——条件没满足（locked）也认，
+        不然剧情里说过的事线索本里没有，前后对不上。"""
+        forced = forced or heard
         available = self.available_ids(check_turns=not forced)
+        if heard:
+            available |= {s.id for s, _ in self._conv_signals("locked", check_turns=False)}
         newly = []
         for sid in ids:
             s = self.quest.signal(sid)
@@ -489,7 +575,10 @@ class GodEnv:
     # ------------------------------------------------------------ 导演层（只改节奏：谁在哪、谁想提什么、传闻、气氛）
 
     def where(self, persona, phase: Optional[str] = None) -> Optional[str]:
-        """某个 NPC 此刻（或当天某个时段）在哪：导演的临时安排只在它生效的那个时段内有效。"""
+        """某个 NPC 此刻（或当天某个时段）在哪。有物理世界时以它为准（作息 + 同行 + 计划）；
+        单测里没有物理世界时按作息 + 导演的临时安排（只在生效的那个时段内有效）。"""
+        if self.physical is not None:
+            return self.physical.where(persona.id, phase)
         ov = self.npc_overrides.get(persona.id)
         if ov and ov.get("slot") == self.slot_index and (phase is None or phase == self.phase):
             return ov["location"]
@@ -500,6 +589,8 @@ class GodEnv:
 
     def set_override(self, npc: str, location: str) -> None:
         self.npc_overrides[npc] = {"location": location, "slot": self.slot_index}
+        if self.physical is not None:            # 导演的安排也是一种计划：这个时段结束就回到作息
+            self.physical.set_plan(npc, location, self.next_phase_start(), "director", "导演安排")
 
     def expire_overrides(self) -> None:
         self.npc_overrides = {k: v for k, v in self.npc_overrides.items() if v.get("slot") == self.slot_index}
@@ -511,8 +602,10 @@ class GodEnv:
     # ------------------------------------------------------------ 事件与结局
 
     def available_events(self, location: str, affinity_of: Callable[[str], int]) -> list[EventDef]:
+        party = self.physical.party if self.physical is not None else []
         return [e for e in self.quest.events
                 if e.id not in self.events_done and e.location == location and self.phase in e.phases
+                and e.npc not in party                      # 人已经和你在一起了，就不会「偶遇」
                 and (not e.acts or self.act_id in e.acts) and affinity_of(e.npc) >= e.affinity_min]
 
     def compute_ending(self, affinity: int) -> EndingDef:
@@ -548,6 +641,14 @@ class GodEnv:
             g.append(f"{self.quest.deadline['label']}就在眼前，时间不多了。")
         return g
 
+    def stance_of(self, persona) -> str:
+        """主线结束后用后日谈的立场（可以按结局细分：after:mercy）。"""
+        if self.resolved:
+            for key in (f"after:{self.ending}", "after"):
+                if persona.stances.get(key):
+                    return persona.stances[key]
+        return persona.stance(self.act_id)
+
     def npc_task_detail(self, persona, trust: int) -> dict:
         npc = persona.id
         ev = self.quest.event(self.conv["event"]) if self.conv and self.conv.get("event") else None
@@ -556,8 +657,11 @@ class GodEnv:
         met = self.met.get(npc, 1)
         forced = [self.quest.signal(sid) for sid in (self.conv or {}).get("forced", [])]
         must_reveal = [s.reveal or s.desc for s in forced if s]
+        in_party = self.physical is not None and npc in self.physical.party
         if ev:
             opening = ev.premise
+        elif in_party:
+            opening = "和你一路同行，到了这里，转过头来跟你说话"
         elif met <= 1:
             opening = "第一次来见你"
         else:
@@ -568,7 +672,7 @@ class GodEnv:
             "stage_title": self.act.title,
             "objective": self.act.objective if persona.role == "companion" else "",
             "opening_hint": opening,
-            "npc_stance": ev.stance if ev else persona.stance(self.act_id),
+            "npc_stance": ev.stance if ev else self.stance_of(persona),
             "event": {"title": ev.title, "premise": ev.premise} if ev else None,
             "info_goals": [d["desc"] for d in pending],
             "locked_info": [f"{d['desc']}（{why}）" for d, why in locked],
@@ -581,6 +685,8 @@ class GodEnv:
             "turns_in_stage": self.turns_in_stage,
             "first_meeting": met <= 1,
             "must_reveal": must_reveal,
+            "invite": (self.conv or {}).get("invite"),          # 对方邀你同行：代码判定的答应 / 婉拒
+            "dismiss": bool((self.conv or {}).get("dismiss")),  # 对方请你先回去
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
             "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],
@@ -610,22 +716,26 @@ class GodEnv:
             "tension": self.tension,
             "tension_label": self.tension_label(),
             "narrative_guidance": self.narrative_guidance(scene_public, task["pending_signals"])
-                                  + ([task["director_note"]] if task["director_note"] else []),
+                                  + ([task["director_note"]] if task["director_note"] and not task["must_reveal"] else []),
             "npc_task_detail": task,
         }
 
     def status_line(self) -> str:
-        return (f"{self.time_label()} ｜ 距{self.quest.deadline['label']}还有 {max(0, self.slots_left())} 个时段 ｜ "
+        due = (f"距{self.quest.deadline['label']}还有 {max(0, self.slots_left())} 个时段" if self.slots_left() > 0
+               else f"{self.quest.deadline['label']}已经过去了")
+        return (f"{self.time_label()} {self.clock_label()} ｜ {due} ｜ "
                 f"线索 {len(self.clues)}/{len(self.quest.clues)} ｜ 【{self.act.title}】{self.act.objective}")
 
     # ------------------------------------------------------------ 存档
 
     def to_dict(self) -> dict:
-        return {"quest_id": self.quest.id, "day": self.day, "phase_idx": self.phase_idx, "location": self.location,
+        return {"quest_id": self.quest.id, "minute": self.minute, "day": self.day, "phase_idx": self.phase_idx,
+                "location": self.location,
                 "act_id": self.act_id, "clues": self.clues, "known": self.known, "achieved": self.achieved,
                 "flags": self.flags, "examined": self.examined, "events_done": self.events_done, "met": self.met,
                 "tension": self.tension, "session_count": self.session_count, "total_turns": self.total_turns,
                 "resolved": self.resolved, "ending": self.ending, "journal": self.journal,
                 "testimonies": self.testimonies, "director_slot": self.director_slot,
                 "last_progress_slot": self.last_progress_slot, "nudges": self.nudges,
-                "npc_overrides": self.npc_overrides, "rumors": self.rumors}
+                "npc_overrides": self.npc_overrides, "rumors": self.rumors,
+                **({"physical": self.physical.to_dict()} if self.physical is not None else {})}

@@ -23,8 +23,10 @@ def test_options_dedupe_and_bare_list():
     out = validate_player_options([{"text": "A", "intent": "推进任务"}, {"text": "A"}, "B"])
     assert [o["text"] for o in out] == ["A", "B"]
     assert out[1]["intent"] == "闲聊"
+    assert len(validate_player_options({"options": [{"text": "只有一个"}]})) == 1   # 给几句由模型看情况
+    assert validate_player_options({"options": []}) == []                            # 不需要提示时可以一句不给
     with pytest.raises(ValidationError):
-        validate_player_options({"options": [{"text": "只有一个"}]})
+        validate_player_options({"answer": "没有 options 字段"})
 
 
 def test_summary_defaults():

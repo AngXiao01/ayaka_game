@@ -87,6 +87,11 @@ def npc_reply_schema(signal_ids: list[str], lie_ids: Optional[list[str]] = None)
                 "properties": {"said": {"type": "string"}, "truth": {"type": "string"},
                                "lie_id": {"type": "string", "enum": list(lie_ids or []) + ["improvised"]}},
                 "required": ["said", "truth", "lie_id"]}},
+            # 可选：托人带话、说完要去别处（不写就是没有）
+            "tell": {"type": "array", "items": {
+                "type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"}},
+                "required": ["to", "text"]}},
+            "go_to": {"type": "string"},
         },
         "required": ["action", "speech", "emotion", "intent", "affinity_delta", "trust_delta",
                      "tension_delta", "task_signals", "wants_to_end", "new_facts", "lies"],
@@ -121,7 +126,20 @@ def validate_npc_reply(obj: Any, signal_ids: list[str], lie_ids: Optional[list[s
         "wants_to_end": _bool(obj.get("wants_to_end", False)),
         "new_facts": _new_facts(obj.get("new_facts")),
         "lies": _lies(obj.get("lies"), lie_ids or []),
+        "tell": _tell(obj.get("tell")),
+        "go_to": _str(obj.get("go_to"))[:20],
     }
+
+
+def _tell(v: Any, limit: int = 1) -> list[dict]:
+    """托人带话：[{to, text}]，宽容解析，每轮最多一条、每条不超过 60 字。"""
+    if isinstance(v, dict):
+        v = [v]
+    out = []
+    for it in v if isinstance(v, list) else []:
+        if isinstance(it, dict) and _str(it.get("to")) and _str(it.get("text")):
+            out.append({"to": _str(it.get("to"))[:12], "text": _str(it.get("text"))[:60]})
+    return out[:limit]
 
 
 def _lies(v: Any, lie_ids: list[str], limit: int = 2) -> list[dict]:
@@ -195,9 +213,7 @@ def validate_player_options(obj: Any, max_len: int = 60) -> list[dict]:
         intent, tone = _str(it.get("intent")), _str(it.get("tone"))
         out.append({"text": text, "intent": intent if intent in PLAYER_INTENTS else "闲聊",
                     "tone": tone if tone in PLAYER_TONES else ""})
-    if len(out) < 2:
-        raise ValidationError("至少需要 2 个不重复的有效选项")
-    return out
+    return out                  # 0~3 句都可以：不是每一轮都需要替玩家想台词
 
 
 # ---------------------------------------------------------------- 对话摘要

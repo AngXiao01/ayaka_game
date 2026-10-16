@@ -63,7 +63,7 @@ def test_false_accusation_costs_trust(tmp_path):
     eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(["q"]), out=lambda s: None, save_name="acc")
     eng.god.add_testimony("aen", "送信的是个戴斗笠的年轻人", "truth")
     eng.god.location = "komore_teahouse"
-    eng.god.phase_idx = 1
+    eng.god.minute = eng.god.phase_start(2, 1) + 30
     trust0 = eng.npcs["aen"].relationship.trust
     eng.player = ScriptedPlayer([{"kind": "talk", "npc": "aen"}, {"kind": "confront_menu"}, {"kind": "testimony"},
                                  {"kind": "evidence", "clue": "c_letter"}, "q"])

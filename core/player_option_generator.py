@@ -54,9 +54,11 @@ class PlayerOptionGenerator:
         known = "\n".join([ctx.player_view.get("known_text", ""), ctx.history_summary]
                           + [h["text"] + (h.get("reply") or {}).get("action", "") for h in ctx.history])
         dropped: list[dict] = []
-        out = self._polish(raw, said, known, ctx.player_view.get("spoiler_terms", []), dropped)
-        if len(out) < 2:
-            out = self._polish(raw + list(fallback), said, known, ctx.player_view.get("spoiler_terms", []), dropped)
+        terms = ctx.player_view.get("spoiler_terms", [])
+        if raw or (self.mode == "llm" and self.adapter is not None and not force_static and not degraded):
+            out = self._polish(raw, said, known, terms, dropped)      # 模型说给几句就几句，0 句也行
+        else:                                                          # 模型挂了 / 降级 / 静态模式：用兜底台词
+            out = self._polish(list(fallback), said, known, terms, dropped)
         if dropped and self.tracer:
             self.tracer.log("options_filter", dropped=dropped)
         return [PlayerOption(o["text"], o["intent"], tone=o.get("tone", "")) for o in out], degraded

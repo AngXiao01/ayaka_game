@@ -17,15 +17,23 @@ INJECTIONS = [
 
 
 class IdlePlayer:
-    """只找绫华闲聊、从不查案：验证截止时间能把游戏收住（正确失败），而不是无限空转。"""
+    """只找绫华闲聊、聊完就发呆、从不查案：验证截止时间能把游戏收住（正确失败），而不是无限空转。
+    说话只花几分钟，光聊天时间几乎不走，所以每聊完一次就待到下个时段。"""
+
+    stops_at_ending = True
 
     def __init__(self, seed: Optional[int] = None):
         self.rng = random.Random(seed)
+        self.chatted = False
 
     def choose(self, options: list[PlayerOption], ctx: Optional[TurnContext]) -> PlayerAction:
         if ctx is None:
             talk = [o for o in options if o.kind == "talk" and o.meta.get("companion")]
-            return PlayerAction.of(talk[0] if talk else next(o for o in options if o.kind == "wait"))
+            if talk and not self.chatted:
+                self.chatted = True
+                return PlayerAction.of(talk[0])
+            self.chatted = False
+            return PlayerAction.of(next(o for o in options if o.kind == "wait"))
         if ctx.turn >= 4:
             return PlayerAction.of(next(o for o in options if o.kind == "leave"))
         idle = [o for o in options if o.kind == "say" and o.intent in ("闲聊", "赞美")]
@@ -36,6 +44,8 @@ class IdlePlayer:
 
 class InjectorPlayer:
     """对话里每隔一轮发一句注入，其余时候像认真的玩家：验证注入轮不推进剧情、NPC 不跳出角色。"""
+
+    stops_at_ending = True
 
     def __init__(self, seed: Optional[int] = None):
         self.rng = random.Random(seed)
@@ -63,6 +73,8 @@ LOOKS = ["仔细看看脚边的石板", "看看屋檐下挂着的东西", "凑�
 class SteerPlayer:
     """一边正常查案，一边在对话里不停「带节奏」（不是注入，防护不会拦），在地图上偶尔自由描述想看的东西。
     验证：导演看不到这些话（信息隔离），NPC 不出戏，自由查看走场景 agent。"""
+
+    stops_at_ending = True
 
     def __init__(self, seed: Optional[int] = None):
         self.rng = random.Random(seed)

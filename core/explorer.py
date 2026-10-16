@@ -43,12 +43,12 @@ class Explorer:
             return True
         if any(self._grantable(lid, o) for o in self.world.objects(lid)):
             return True
-        return cost == 0 and bool(self.god.available_events(lid, lambda n: self.rel(n).affinity))
+        return cost <= 15 and bool(self.god.available_events(lid, lambda n: self.rel(n).affinity))
 
     def _distance_to_progress(self, dest: str, max_hops: int = 3) -> Optional[tuple[int, int]]:
-        """从 dest 出发沿出口往外搜：到最近一个「有进展」的地方要花 (时段, 步数)，没有则 None。"""
+        """从 dest 出发沿出口往外搜：到最近一个「有进展」的地方要走 (分钟, 步数)，没有则 None。"""
         g, w = self.god, self.world
-        frontier = [(w.travel_cost(g.location, dest), 1, dest)]
+        frontier = [(w.travel_minutes(g.location, dest), 1, dest)]
         seen = {g.location}
         while frontier:
             frontier.sort()
@@ -56,13 +56,16 @@ class Explorer:
             if lid in seen:
                 continue
             seen.add(lid)
-            _, phase = g.phase_after(cost)
-            if self._useful_here(lid, phase, cost):
+            if self._useful_here(lid, g.phase_at(g.minute + cost), cost):
                 return cost, hops
             if hops < max_hops:
-                frontier += [(cost + w.travel_cost(lid, n), hops + 1, n)
+                frontier += [(cost + w.travel_minutes(lid, n), hops + 1, n)
                              for n in w.exits(lid) if n not in seen and w.unlocked(n, g.clues)]
         return None
+
+    @property
+    def party(self) -> list[str]:
+        return list(self.god.physical.party) if self.god.physical is not None else []
 
     def _mark(self, text: str, on: bool, tip: str) -> str:
         return f"{text}  💡{tip}" if (self.hints and on) else text
@@ -72,6 +75,8 @@ class Explorer:
     def whereabouts(self, p: Personality) -> str:
         """某人这一幕的作息，写成「木漏茶室·清晨、午后、黄昏」；人就在眼前时写「就在这里」。"""
         g = self.god
+        if p.id in self.party:
+            return "和你同行"
         if g.where(p) == g.location:
             return "就在这里"
         by: dict[str, list[str]] = {}
@@ -89,6 +94,10 @@ class Explorer:
         if g.resolved or g.ending:
             return []
         out: list[dict] = []
+        left = g.slots_left()
+        if 0 < left <= 3:
+            out.append({"key": f"deadline:{left}", "here": True,
+                        "text": f"⏳ 离{q.deadline['label']}只剩 {left} 个时段了，抓紧把该查的查完"})
         for s in q.signals:
             if not s.lead or s.event or s.id in g.achieved or g.missing_prereqs(s.id):
                 continue
@@ -174,6 +183,13 @@ class Explorer:
         return {"clues": [f"{q.clue_name(c)}：{q.clues[c]['desc']}" for c in g.clues],
                 "directions": directions, "known_text": "\n".join(parts), "spoiler_terms": terms}
 
+    def player_whereabouts(self, npc: str) -> str:
+        """玩家以为某人在哪：亲眼看到的、听人说的；都没有就按平常的作息猜。不看真相。"""
+        if self.god.physical is not None:
+            return self.god.physical.player_belief(npc)
+        where = self.god.where(self.personas[npc])
+        return self.world.name(where) if where else "不知去向"
+
     def checklist_line(self) -> str:
         items = self.god.checklist()
         if not items:
@@ -190,7 +206,8 @@ class Explorer:
         for nid in self.npcs_here():
             p = self.personas[nid]
             pending = g.preview_pending(nid)
-            opts.append(PlayerOption(self._mark(f"和{p.name}交谈（{p.title}）", pending > 0, "似乎有话可谈"),
+            label = f"和同行的{p.name}说话" if nid in self.party else f"和{p.name}交谈（{p.title}）"
+            opts.append(PlayerOption(self._mark(label, pending > 0, "似乎有话可谈"),
                                      "交谈", kind="talk", meta={"npc": nid, "pending": pending,
                                                                "companion": p.role == "companion"}))
         for o in w.objects(here):
@@ -203,12 +220,16 @@ class Explorer:
         dist = {d: self._distance_to_progress(d) for d in dests}
         best = min((v for v in dist.values() if v), default=None)
         for dest in dests:
-            cost = w.travel_cost(here, dest)
+            cost = w.travel_minutes(here, dest)
             useful = dist[dest] is not None and dist[dest] == best      # 只标最近的方向
-            label = f"前往{w.name(dest)}（{'约一个时段' if cost else '就在附近'}）"
+            label = f"前往{w.name(dest)}（{'就在附近' if cost <= 15 else '路上'}约 {cost} 分钟）"
             opts.append(PlayerOption(self._mark(label, useful, "那边也许有进展"), "移动", kind="move",
                                      meta={"dest": dest, "cost": cost, "useful": useful, "distance": dist[dest]}))
-        opts.append(PlayerOption("在这里待一会儿（时间推进一个时段）", "等待", kind="wait"))
+        nxt = g.next_phase_start()
+        opts.append(PlayerOption(f"在这里待到{g.phase_at(nxt)}（{g.clock_label(nxt)}）" if g.phase != g.phases[-1]
+                                 else f"歇下，等到天亮（{g.clock_label(nxt)}）", "等待", kind="wait"))
+        for nid in self.party:
+            opts.append(PlayerOption(f"请{self.personas[nid].name}先回去", "同行", kind="dismiss", meta={"npc": nid}))
         if self.hints:
             opts.append(PlayerOption("🧭 下一步可以做什么", "查看", kind="view", meta={"view": "leads"}))
         opts.append(PlayerOption("翻看线索本", "查看", kind="view", meta={"view": "clues"}))
@@ -224,10 +245,15 @@ class Explorer:
         g, w = self.god, self.world
         lines = ["", "─" * 40, g.status_line(), "",
                  w.describe(g.location, g.phase, g.tension)]
-        people = [f"{self.personas[n].name}（{self.personas[n].brief}）" for n in self.npcs_here()]
+        people = [f"{self.personas[n].name}（{self.personas[n].brief}）" for n in self.npcs_here() if n not in self.party]
         lines.append("这里的人：" + ("；".join(people) if people else "没有能说上话的人"))
-        if self.hints:
+        if self.party:
+            lines.append("和你同行：" + "、".join(self.personas[n].name for n in self.party))
+        if g.resolved:
+            lines.append("提示：主线告一段落，可以随意走走、拜访认识的人，或者约人同行。")
+        elif self.hints:
             lines.append(f"提示：{g.act.hint}")
+        if self.hints:
             items = self.lead_items()
             keys = (g.act_id, tuple(g.checklist()), tuple(x["key"] for x in items))
             if keys != self._shown_leads:            # 下一步变了才整张列出来，没变就只提眼前的
@@ -242,14 +268,20 @@ class Explorer:
     # ------------------------------------------------------------ 动作
 
     def move(self, dest: str) -> str:
-        cost = self.world.travel_cost(self.god.location, dest)
+        """走过去要花时间（按距离）；同行的人跟着一起到。先落地再走钟，到达时看见的是目的地的人。"""
+        cost = self.world.travel_minutes(self.god.location, dest)
+        if self.god.physical is not None:
+            self.god.physical.depart(dest)             # 留在原地的人看见你们往哪儿去了
         self.god.location = dest
-        self.god.advance(cost)
-        return f"你来到了{self.world.name(dest)}。" + ("路上花了些时间。" if cost else "")
+        self.god.pass_time(cost)
+        with_ = "、".join(self.personas[n].name for n in self.party)
+        return (f"你{'和' + with_ + '一起' if with_ else ''}来到了{self.world.name(dest)}"
+                f"（路上约 {cost} 分钟，现在是{self.god.clock_label()}）。")
 
     def examine(self, obj_id: str) -> tuple[str, list[str]]:
         g = self.god
         desc, clue = self.world.examine(g.location, obj_id, g.clues)
+        g.pass_time(self.world.examine_minutes)
         if obj_id not in g.examined:
             g.examined.append(obj_id)
         gained = []
@@ -261,7 +293,13 @@ class Explorer:
 
     def wait(self) -> str:
         self.god.advance(1)
-        return f"你在{self.world.name(self.god.location)}待了一阵。"
+        return f"你在{self.world.name(self.god.location)}待到了{self.god.clock_label()}（{self.god.phase}）。"
+
+    def dismiss(self, npc: str) -> str:
+        phys = self.god.physical
+        home = phys.leave(npc) if phys is not None else None
+        name = self.personas[npc].name
+        return f"{name}和你道了别，往{self.world.name(home) if home else '回'}去了。"
 
     def view(self, which: str) -> str:
         g = self.god
@@ -282,9 +320,8 @@ class Explorer:
                 if not g.met.get(nid) and p.role != "companion":
                     continue
                 r = self.rel(nid)
-                where = g.where(p)
                 rows.append(f"· {p.name}（{p.title}）{p.brief}\n  关系：{r.tier()[0]}（好感 {r.affinity}，信任 {r.trust}）"
-                            f"｜此刻大概在：{self.world.name(where) if where else '不知去向'}")
+                            f"｜你知道的去向：{self.player_whereabouts(nid)}")
             return "\n".join(rows)
         if which == "leads":
             rows = ["【下一步】", f"目标：{g.act.objective}"] + ([self.checklist_line()] if self.checklist_line() else [])

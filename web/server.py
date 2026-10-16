@@ -166,13 +166,15 @@ class Game:
             if not g.met.get(nid) and p.role != "companion":
                 continue
             r = e.npcs[nid].relationship
-            where = p.location_at(g.phase, g.act_id)
             people.append({"name": p.name, "title": p.title, "brief": p.brief, "tier": r.tier()[0],
-                           "affinity": r.affinity, "trust": r.trust, "where": e.world.name(where) if where else "不知去向"})
+                           "affinity": r.affinity, "trust": r.trust,
+                           "where": e.explorer.player_whereabouts(nid)})     # 玩家知道的去向，不是真相
         hints = e.explorer.hints
         return {
-            "status": g.status_line(), "time": g.time_label(), "location": e.world.name(g.location),
-            "act": f"{g.act.title}：{g.act.objective}", "hint": g.act.hint,
+            "status": g.status_line(), "time": f"{g.time_label()} {g.clock_label()}", "location": e.world.name(g.location),
+            "act": f"{g.act.title}：{g.act.objective}" + ("（已告一段落）" if g.resolved else ""),
+            "hint": "主线告一段落，可以随意走走、拜访认识的人，或者约人同行。" if g.resolved else g.act.hint,
+            "party": [e.personas[n].name for n in e.explorer.party],
             "leads": e.explorer.leads() if hints else [],
             "checklist": [{"label": label, "ok": ok} for label, ok in g.checklist()] if hints else [],
             "glossary": [{"term": k, "desc": v} for k, v in q.glossary.items()],

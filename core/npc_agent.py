@@ -42,6 +42,8 @@ class NPCReply:
     wants_to_end: bool = False
     new_facts: list[dict] = field(default_factory=list)     # 这一轮即兴编出、需要记住的设定
     lies: list[dict] = field(default_factory=list)          # 这一轮说的谎 [{said, truth, lie_id}]
+    tell: list[dict] = field(default_factory=list)          # 托人带话 [{to, text}]（物理世界里按距离送达）
+    go_to: str = ""                                         # 说完要去哪（地点名），代码校验后才动
     degraded: bool = False          # True = 兜底台词，不是模型生成的
     loop: Optional[dict] = None     # 本轮循环摘要：stop / forced_by / steps / tools / tokens
 
