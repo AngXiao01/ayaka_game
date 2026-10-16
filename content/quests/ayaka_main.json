@@ -715,5 +715,73 @@
     "药钱",
     "母亲病",
     "娘病"
+  ],
+  "hypotheses": [
+    {
+      "id": "h_workshop",
+      "desc": "伪信是辰巳印坊的人做的",
+      "terms": [
+        [
+          "小吉",
+          "印坊",
+          "辰巳",
+          "学徒"
+        ],
+        [
+          "伪信",
+          "信",
+          "做的",
+          "干的",
+          "写的",
+          "伪造",
+          "仿",
+          "拓"
+        ]
+      ],
+      "listeners": [
+        "ayaka",
+        "thoma"
+      ],
+      "agent": "thoma",
+      "location": "print_workshop",
+      "search_minutes": 30,
+      "clues": [
+        "c_workshop",
+        "c_seal_rubbing"
+      ],
+      "plan": "让托马悄悄去辰巳印坊看看",
+      "report": "去辰巳印坊看过了：今年茶会的请柬确实外托那里印，废纸篓里还翻出几张拓着社奉行家纹的残纸，用的是雪白的洋纸。"
+    },
+    {
+      "id": "h_messenger",
+      "desc": "信是离岛的搬运工送的",
+      "terms": [
+        [
+          "宗次",
+          "搬运工",
+          "离岛"
+        ],
+        [
+          "送信",
+          "送的",
+          "跑腿",
+          "送过"
+        ]
+      ],
+      "listeners": [
+        "ayaka",
+        "thoma",
+        "aen"
+      ],
+      "agent": "thoma",
+      "location": "ritou",
+      "search_minutes": 40,
+      "clues": [
+        "c_messenger",
+        "c_soji"
+      ],
+      "plan": "让托马去离岛码头找那个搬运工问问",
+      "report": "去离岛码头问过了：一个叫宗次的搬运工承认，是辰巳印坊的学徒小吉托他往花见坂送的信，他只拿了跑腿钱。"
+    }
   ]
 }

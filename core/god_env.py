@@ -107,6 +107,7 @@ class QuestDef:
     spoiler_terms: list[str] = field(default_factory=list)    # 玩家没听说过就不该出现在玩家台词选项里的词
     public_premise: str = ""                                  # 城里人都知道的版本（不知道绫华托人查访的 NPC 用这个）
     after_hint: str = ""                                      # 结局之后继续玩时的一句提示
+    hypotheses: list[dict] = field(default_factory=list)      # 玩家直接说出的推测 → 谁会派人去查、查到什么
     late_note: str = ""                                       # 截止时间过了才解决时，结局前面加的一段
 
     @classmethod
@@ -486,6 +487,17 @@ class GodEnv:
                 out.append(s.id)
         return out
 
+    def hypothesis_for(self, npc: str, text: str) -> Optional[dict]:
+        """玩家对 npc 说出了某个推测（每组至少一个词在话里），而且这件事还没查清、也还没派人去查。"""
+        for h in self.quest.hypotheses:
+            if npc not in h["listeners"] or f"dispatched:{h['id']}" in self.flags:
+                continue
+            if set(h["clues"]) <= set(self.clues):
+                continue
+            if all(any(k in text for k in grp) for grp in h["terms"]):
+                return h
+        return None
+
     def checklist(self) -> list[tuple[str, bool]]:
         """这一幕要弄清的几件事，各自弄清了没有（给玩家看的目标进度）。"""
         return [(c["label"], bool(set(c.get("clues_any", [])) & set(self.clues))) for c in self.act.checklist]
@@ -687,6 +699,7 @@ class GodEnv:
             "must_reveal": must_reveal,
             "invite": (self.conv or {}).get("invite"),          # 对方邀你同行：代码判定的答应 / 婉拒
             "dismiss": bool((self.conv or {}).get("dismiss")),  # 对方请你先回去
+            "dispatch": (self.conv or {}).get("dispatch"),      # 对方说出了推测：你决定派人去查
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
             "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],
