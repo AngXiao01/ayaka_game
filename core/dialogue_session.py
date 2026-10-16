@@ -59,8 +59,10 @@ class DialogueSession:
     def __init__(self, npc: NPCAgent, player: Any, option_gen: PlayerOptionGenerator, god: GodEnv,
                  world: World, settings: Settings, reviewer: SignalReviewer, budget: Budget,
                  event: Optional[EventDef] = None, compressor: Optional[Callable[[str, list[str]], str]] = None,
-                 out: Callable[[str], None] = print, tracer: Any = None, branch: Any = None):
+                 out: Callable[[str], None] = print, tracer: Any = None, branch: Any = None,
+                 player_view: Optional[Callable[[str, Optional[str]], dict]] = None):
         self.npc = npc
+        self.player_view = player_view  # 玩家视角（Explorer.player_view）：选项 agent 只能看这个，看不到 NPC 的心思
         self.player = player
         self.option_gen = option_gen
         self.god = god
@@ -129,6 +131,8 @@ class DialogueSession:
 
     def _options(self, ctx: TurnContext) -> list[PlayerOption]:
         g, nid = self.god, self.npc.p.id
+        if self.player_view is not None:
+            ctx.player_view = self.player_view(nid, self.event.id if self.event else None)
         with self._span(agent="options"):
             says, degraded = self.option_gen.generate(ctx, self.npc.name, self.npc.p.fallback_options,
                                                       force_static=self.budget.degraded())

@@ -103,6 +103,8 @@ class QuestDef:
     primer: list[str] = field(default_factory=list)           # 开场前给不熟悉设定的玩家的背景速览
     how_to_play: list[str] = field(default_factory=list)
     glossary: dict[str, str] = field(default_factory=dict)    # 名词速查
+    spoiler_terms: list[str] = field(default_factory=list)    # 玩家没听说过就不该出现在玩家台词选项里的词
+    public_premise: str = ""                                  # 城里人都知道的版本（不知道绫华托人查访的 NPC 用这个）
 
     @classmethod
     def load(cls, path: Path) -> "QuestDef":
@@ -595,7 +597,9 @@ class GodEnv:
         task = self.npc_task_detail(persona, trust)
         return {
             "quest_title": self.quest.title,
-            "premise": self.quest.premise,
+            # 绫华托人暗中查访这件事，只有绫华自己和被告知过（看过线索）的人知道；其余的人只知道城里的传言
+            "premise": self.quest.premise if persona.role == "companion" or self.known.get(persona.id)
+                       else (self.quest.public_premise or self.quest.premise),
             "era": self.quest.era,
             "time_label": self.time_label(),
             "day_phase": self.phase,

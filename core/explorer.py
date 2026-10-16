@@ -134,6 +134,46 @@ class Explorer:
                         "text": f"和{name}多聊聊、真诚相待，关系更近时也许会有意外的相遇（好感 {aff}/{need}）"})
         return out
 
+    def player_view(self, npc_id: str, event: Optional[str] = None) -> dict:
+        """玩家视角：玩家此刻真正知道的事。替玩家想台词的选项 agent 只能看这些——
+        NPC 心里的秘密、还没解锁的信号内容（里面写着答案）一律不给，不然选项会替玩家「先知道」。
+          clues          线索本
+          directions     可以朝哪里问（关键问题按钮的说法 / 该出示什么），不含答案
+          known_text     玩家看到过的文字（开场、线索、证词、日志、见过的人、到过的地方……），过滤剧透用
+          spoiler_terms  玩家没听说过就不该出现在台词里的词（案情关键词 + 人名）"""
+        g, w, q = self.god, self.world, self.god.quest
+        directions = []
+        for s in q.signals:
+            if s.npc != npc_id or s.id in g.achieved or g.missing_prereqs(s.id):
+                continue
+            if g.signal_status(s, npc_id, event, 99, check_turns=False, optimistic=True)[0] != "available":
+                continue
+            if s.requires_known_any and not set(s.requires_known_any) & set(g.known.get(npc_id, [])):
+                show = [q.clue_name(c) for c in s.requires_known_any if c in g.clues]
+                directions.append(f"把「{'」或「'.join(show)}」的事说给对方听，看对方什么反应")
+            elif s.ask or s.lead:
+                directions.append((s.ask or {}).get("label", "").lstrip("❓🤝💬 ") or s.lead)
+        parts = [q.title, *q.primer, *q.how_to_play, *q.prologue, *(k + v for k, v in q.glossary.items()), *directions]
+        for a in q.acts:                                   # 到过的幕
+            parts += [a.objective, a.hint]
+            if a.id == g.act_id:
+                break
+            parts.append(a.narration)
+        parts += [q.clue_name(c) + q.clues[c]["desc"] for c in g.clues]
+        parts += [t["said"] for t in g.testimonies] + g.journal + (self.leads() if self.hints else [])
+        here = set(self.npcs_here())
+        parts += [p.name + p.brief for nid, p in self.personas.items() if g.met.get(nid) or nid in here]
+        parts += [w.name(lid) for lid in w.locations if w.unlocked(lid, g.clues)]
+        loc = w.loc(g.location)
+        parts += [loc["desc"], *loc.get("atmosphere", {}).values(), *(o["name"] for o in w.objects(g.location))]
+        parts += [w.examine(lid, o["id"], g.clues)[0] for lid in w.locations for o in w.objects(lid)
+                  if o["id"] in g.examined]
+        if event and q.event(event):
+            parts.append(q.event(event).premise)
+        terms = list(dict.fromkeys(q.spoiler_terms + [p.name for p in self.personas.values()]))
+        return {"clues": [f"{q.clue_name(c)}：{q.clues[c]['desc']}" for c in g.clues],
+                "directions": directions, "known_text": "\n".join(parts), "spoiler_terms": terms}
+
     def checklist_line(self) -> str:
         items = self.god.checklist()
         if not items:

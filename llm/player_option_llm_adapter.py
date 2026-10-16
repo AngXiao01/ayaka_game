@@ -1,4 +1,8 @@
-"""玩家台词选项：语气各异、接得上话、不重复，并给玩家指出可以追问的方向。"""
+"""玩家台词选项：语气各异、接得上话、不重复，并给玩家指出可以追问的方向。
+
+信息隔离：这个 agent 替玩家说话，只能看玩家视角（ctx.player_view：线索本、可以问的方向、对话原文）。
+NPC 的待达成信号、锁着的秘密里写着答案，一律不给——给了，选项就会替玩家「先知道」小吉、辰巳印坊这些还没查到的事。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -9,15 +13,20 @@ from llm.base import LLMBackend, LLMRequest
 from llm.schemas import PLAYER_OPTIONS_SCHEMA, PLAYER_TONES, PLAYER_INTENTS, validate_player_options
 from llm.structured import call_json
 
-SYSTEM = """你是一款原神同人叙事游戏的「台词选项生成器」。玩家（{player}）正在和{npc}说话，你替玩家想出接下来可以说的 {n} 句话。
+OPTION_INTENTS = [i for i in PLAYER_INTENTS if i != "冒犯"]   # 想冒犯的话玩家可以自己打字，不往嘴里塞
+
+SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地的旅行者，独自来到稻妻；为人礼貌、好奇、有分寸，说话像普通人。{player}正在和{npc}说话，你替{player}想出接下来可以说的 {n} 句话。
 
 要求：
 1. {n} 句话的语气各不相同，语气从这些里选：{tones}；意图从这些里选：{intents}。
-2. 每句都要接得上{npc}刚才说的话，带着具体的细节（提到对方说过的东西、眼前的景物、自己的经历），不要空泛的客套。
-3. 至少一句在推进玩家眼下的目标；如果「可以追问的方向」不为空，至少一句要自然地朝那个方向问。
-4. 不要重复玩家之前说过的话，也不要和之前的选项换汤不换药。
+2. 每句都要接得上{npc}刚才说的话，带着具体的细节（对方说过的东西、眼前的景物、自己的旅途见闻），不要空泛的客套。
+3. 至少一句在推进{player}眼下的目标；如果「可以问的方向」不为空，至少一句要自然地朝那个方向问。
+4. 不要重复{player}之前说过的话，也不要和之前的选项换汤不换药。
 5. 以{player}第一人称，像真人聊天一样口语、简短，每句不超过 30 字；大多数不需要括号动作，最多一句在开头带一个简短动作。
-6. 选项要有内容，不要只是客套和附和：可以追问对方刚才话里的细节、分享旅行者自己的见闻（蒙德的风车与酒、璃月港的灯火、一路上遇到的人和事）、说出自己的看法、打趣对方；允许有一句俏皮、大胆或带点私人感情的话，让对话有起伏。
+6. 选项要有内容：可以追问对方刚才话里的细节、分享旅途见闻（蒙德的风车与酒、璃月港的灯火、一路上遇到的人和事）、说出自己的看法、打趣对方。
+7. 只用{player}已经知道的事：「{player}已经知道的事」里列的线索，和对话里对方亲口说过的话。{player}还没听说过的人名、地点、案情细节一律不提，也不要替{player}猜出答案——{player}只能问，不能先知道。
+8. 不出戏：每句都是{player}在稻妻当面说出口的话。不提「游戏」「玩家」「剧情」「任务」「选项」「系统」这类说法；不提这个故事里没有出场的同伴（比如派蒙）；不搬出与眼前无关的原作剧情。
+9. 有分寸：对初次见面或还不熟的人礼貌克制；亲昵、调情或带私人感情的话，只在对方是神里绫华、且关系到了「友好」以上时才用，最多一句。
 
 只输出一个 JSON 对象，不要任何其他文字，不要代码块：
 {{"options": [{{"text": "……", "intent": "打听情报", "tone": "好奇"}}, …]}}"""
@@ -42,34 +51,37 @@ class PlayerOptionLLMAdapter:
         self.repair_attempts = repair_attempts
 
     def generate(self, ctx: TurnContext, npc_name: str, n: int = 3) -> list[dict]:
-        t, w = ctx.task, ctx.world
+        t, w, pv = ctx.task, ctx.world, ctx.player_view
         said = [h["text"] for h in ctx.history if h["speaker"] == "player"]
-        directions = t["info_goals"] or [x.split("（")[0] for x in t.get("locked_info", [])][:2]
+        player = ctx.player_name
         event = f"\n私人时光：「{t['event']['title']}」——{t['event']['premise']}" if t.get("event") else ""
         user = f"""# 场景
 {ctx.scene['name']}，{w['time_label']}，局势{w['tension_label']}。距{w['deadline_label']}还有 {w['deadline_left']} 个时段。{event}
 
-# 玩家眼下的目标
-{w['quest_title']}·第 {w['stage_no']}/{w['stage_total']} 幕：{t['objective'] or t['stage_title']}
+# {player}眼下的目标
+{t['objective'] or t['stage_title']}
 
-# 可以追问的方向（{npc_name}知道、但还没说的事）
-{chr(10).join('- ' + d for d in directions) or '（暂无）'}
+# {player}已经知道的事（线索本）
+{chr(10).join('- ' + c for c in pv.get('clues', [])) or '（还没有线索）'}
 
-# {npc_name}对玩家的态度
+# 可以问的方向（{player}这边的想法，不是答案）
+{chr(10).join('- ' + d for d in pv.get('directions', [])) or '（暂无，顺着对话聊就好）'}
+
+# {npc_name}对{player}的态度
 {ctx.relationship['tier']}（好感 {ctx.relationship['affinity']}，信任 {ctx.relationship['trust']}）
 
 # 最近的对话
 {_render_history(ctx, npc_name)}
 
-# 玩家之前说过的话（不要重复）
+# {player}之前说过的话（不要重复）
 {chr(10).join('- ' + s for s in said[-6:]) or '（无）'}
 
 请给出 {n} 句。"""
         req = LLMRequest(
             task="player_options",
-            messages=[{"role": "system", "content": SYSTEM.format(player=ctx.player_name, npc=npc_name, n=n,
+            messages=[{"role": "system", "content": SYSTEM.format(player=player, npc=npc_name, n=n,
                                                                   tones="、".join(PLAYER_TONES),
-                                                                  intents="、".join(PLAYER_INTENTS))},
+                                                                  intents="、".join(OPTION_INTENTS))},
                       {"role": "user", "content": user}],
             temperature=self.params.temperature, max_tokens=self.params.max_tokens,
             json_schema=PLAYER_OPTIONS_SCHEMA, schema_name="player_options",

@@ -229,7 +229,8 @@ class GameEngine:
                 ev = self.quest.event(action.meta["event"]) if action.kind == "event" else None
                 r = DialogueSession(npc, self.player, self.option_gen, g, self.world, self.settings, self.reviewer,
                                     self.budget, event=ev, compressor=self.compressor, out=self.out,
-                                    tracer=self.tracer, branch=self.branch).run()
+                                    tracer=self.tracer, branch=self.branch,
+                                    player_view=self.explorer.player_view).run()
                 result.sessions.append(r)
                 self.tracer.log("session_end", npc=r.npc, end_reason=r.end_reason.name, turns=r.turns,
                                 signals=r.signals, clues_gained=r.clues_gained, degraded_turns=r.degraded_turns,
