@@ -162,3 +162,13 @@ def test_style_tics_are_counted_not_judged():
     assert any("反问" in n for n in notes) and any("「哟，」" in n or "「哟" in n for n in notes)
     calm = type("C", (), {"history": [{"speaker": "npc", "text": t} for t in ["窗是从里面开的。", "我去看过了。", "就这些。"]]})()
     assert agent.style_tics(calm) == []
+
+
+def test_claims_without_evidence_are_flagged_and_retries_reroll():
+    from core.dice import roll
+    g, _ = fs({"act_id": "act2", "clues": ["c_case"]})
+    flagged = g.unverified_claims("heizou", "货架上有短毛和泥爪印，布包是小吉抱着的，委托我记得")
+    assert "货架上的短毛" in flagged and "深夜的布包" in flagged and "失窃的委托" not in flagged   # 手上有的不算
+    g.mark_known("heizou", ["c_letter"]) if "c_letter" in g.clues else None
+    outs = {roll(g, "press:x", 0.5, attempt=n)[0] for n in range(12)}
+    assert outs == {True, False}                          # 同一分钟里重试，每次是独立的一掷

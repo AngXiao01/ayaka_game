@@ -541,7 +541,7 @@ class GodEnv:
             if len(shown) + len(held) > last["ev"]:
                 parts.append(("这次拿出了新东西", 0.1))
             elif self.minute - last["minute"] < 120:
-                parts.append(("刚问过又问", -0.15 * last["n"]))
+                parts.append(("刚问过又问", -0.1 * min(last["n"], 2)))
         p = max(0.05, min(0.85, sum(v for _, v in parts)))
         return p, [f"{k}{v:+.0%}" for k, v in parts]
 
@@ -562,6 +562,12 @@ class GodEnv:
         known = set(self.known.get(npc, []))
         return [c for c in self.clues if c not in known
                 and any(k and k in text for k in self.quest.clues[c].get("keywords", []))]
+
+    def unverified_claims(self, npc: str, text: str) -> list[str]:
+        """玩家嘴上说了、手上却没有的线索（keywords 在话里出现）：对方没法核实。只返回线索名，是否追问凭据由对方的性格决定。"""
+        known = set(self.known.get(npc, []))
+        return [self.quest.clue_name(c) for c, d in self.quest.clues.items()
+                if c not in self.clues and c not in known and any(k and k in text for k in d.get("keywords", []))]
 
     def spoken_signals(self, speech: str, player_text: str = "") -> list[str]:
         """NPC 这句话里自己说出了哪件事（信号的 evidence：每组至少一个词在 NPC 的话里、且不是玩家刚说过的）。

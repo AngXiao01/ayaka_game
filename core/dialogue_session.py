@@ -470,7 +470,8 @@ class DialogueSession:
             s = g.quest.signal(action.meta["signal"])
             text, intent = s.ask["text"], "推进任务"
             p, why = g.press_chance(s, nid)
-            ok, pct = roll(g, f"press:{s.id}", p)
+            prev = g.misses.get(f"press:{s.id}")
+            ok, pct = roll(g, f"press:{s.id}", p, attempt=prev["n"] if isinstance(prev, dict) else 0)
             press = {"ok": ok, "desc": s.desc, "line": tag(pct, ok, why)}
             if ok:
                 forced = [s.id]
@@ -611,6 +612,7 @@ class DialogueSession:
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
         ctx.task["shown"] = [{"name": n, "desc": d} for n, d in shown]
+        ctx.task["unverified"] = g.unverified_claims(nid, guard.text) if action.kind == "say" and not guard.suspicious else []
         self._log("guard", raw=text, text=guard.text, flags=guard.flags, truncated=guard.truncated)
         if guard.suspicious and self.cfg.debug:
             self.out(f"    · 输入防护：{'；'.join(guard.flags)}（本轮不计进展）")

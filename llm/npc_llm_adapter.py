@@ -236,6 +236,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
                      + _bullets([f"{x['name']}：{x['desc']}" for x in t["shown"]]))
     if ctx.tics:                                   # 代码量出来的：句式、开头、口头禅有没有变成固定套路
         parts.append("## 你最近的说话习惯（有点固定了）\n" + _bullets(ctx.tics))
+    if t.get("unverified"):                        # 代码核对过：这些事玩家嘴上说了，手上没有任何东西能证明
+        parts.append(f"## {player}说了你无法核实的事\n" + f"提到了：{'、'.join(t['unverified'])}。{player}没有拿出任何东西证明。"
+                     "你可以好奇、追问凭据或让对方拿出来看；不要当成已经查清，也不要因此兑现人情、交换情报或改口认输。")
     extra = situational_rules(ctx)
     if extra and not focus:
         parts.append("## 这一轮才用得上的规矩\n" + "\n".join(extra))
