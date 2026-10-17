@@ -58,6 +58,17 @@ python3 main.py --auto steer --new --save or_test --debug
 
 `.env` 里的 `GEMMA_MAX_CONTEXT_TOKENS` 要与 up51.sh 选的 max-model-len 一致（GPU 空闲 32768，0.80 时 16384）。
 
+## 分享给朋友玩
+
+```bash
+python3 web/server.py --share --code 你定的邀请码 --max-games 5    # 一人一局，要邀请码
+cloudflared tunnel --url http://localhost:8770                       # 另开一个终端：拿到 https://xxx.trycloudflare.com
+```
+
+把隧道给的网址和邀请码发给朋友。每个浏览器各玩各的（存档 `data/saves/p_<id>.json`），关掉页面再来接着玩；
+同时最多 `--max-games` 局，闲置 30 分钟的局自动存档并释放名额；每局 token 上限 `--budget`（默认 60 万）。
+服务只听 127.0.0.1，公网只能经过隧道进来；没有邀请码只能看到登录页，接口一律 401。
+
 ## 玩法
 
 - **地图**：神里屋敷、镇守之森、花见坂、木漏茶室、志村屋、离岛、辰巳印坊（要先查到线索才找得到）。

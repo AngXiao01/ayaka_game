@@ -261,7 +261,12 @@ function renderSide(p) {
 async function poll() {
   try {
     const r = await fetch(`/api/state?since=${next}`, {cache: "no-store"});
+    if (r.status === 401) { location.reload(); return; }          // 分享模式：邀请码失效（服务重启过），回登录页
     const st = await r.json();
+    if (r.status === 503) {                                          // 分享模式：人满了
+      if (!document.querySelector(".err")) $("inner").append(el("div", "err", st.error));
+      setTimeout(poll, 10000); return;
+    }
     if (st.lines.length) append(st.lines);
     next = st.next;
     waiting = st.waiting;
