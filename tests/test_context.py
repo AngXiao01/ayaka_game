@@ -88,7 +88,7 @@ def test_options_claiming_unbacked_visits_are_dropped(tmp_path):
     class Stub:
         def generate(self, ctx, npc, n):
             assert "还没去过" in ctx.player_view["footprint"]               # 选项 agent 看得到足迹
-            return [{"text": "刚去了木漏茶室，听说那晚连油豆腐和茶筅都丢了。", "intent": "打听情报", "tone": "直率"},
+            return [{"text": "刚去了木漏茶室，听说那晚连油豆腐和竹篮子都丢了。", "intent": "打听情报", "tone": "直率"},
                     {"text": "听说木漏茶室也丢了东西？", "intent": "打听情报", "tone": "好奇"}]
     d = ScriptedDecider({"unbacked": {"o0": (True, 0.9), "o1": (False, 0.9)}})
     save = tmp_path / "data/saves/c.json"
