@@ -41,9 +41,75 @@
 
 ## 5. 其余看过但没深入
 
-- **Mantella / SkyrimNet**【只读了 README 摘要】：给 NPC 加记忆和对游戏内事件的感知，后台线程异步处理 LLM。我们的 trace 与异步无关，没有借鉴。
-- **MIRAGE / WhodunitBench / Holmes**【只看到简介】：谋杀之谜评测与小型侦探游戏；Holmes 用 LangChain + ChromaDB 做 RAG。体量和成熟度不足以作为架构参照。
+- **Mantella**【只读了 README；`src/` 没读】：语音 → LLM → 语音的 Skyrim 模组，README 没讲记忆和上下文怎么拼，没有可借鉴的细节。
+- **MIRAGE / WhodunitBench**【只看到简介】：谋杀之谜评测，体量和成熟度不足以作为架构参照。
 - **SillyTavern World Info**：关键词触发 + 字数预算，已用于 `fit_state`。
+
+## 6. 第二批：这次新找的（2026-10）
+
+读到什么程度逐项标明。**读不到的不当事实写。**
+
+### 6.1 Open-Theatre（`johnnie193/Open-Theatre`，导演—演员式互动戏剧）【读了 `frame.py` 源码；`memory/`、`prompt/` 没读】
+
+- 导演是 `DramaLLM`，每轮按场景的 `mode`（一个模型管所有角色 / 导演+演员 / 导演+全局演员）调对应的 `*_react`，让导演模型返回 JSON：当前情节链、下一个行动的角色、给他的指令。导演能看到全部原始记录，演员看不到。
+- **情节链 `nc` 是 `[节拍, 是否完成]` 的列表，导演模型返回更新后的链，代码直接采纳，不核对**；全部为真就置 `ready_for_next_scene`。
+- 知识边界靠“在场”：`update_memory` 只把事件写给当前场景里的角色，各自按场景存；别人只能看到对方公开的 `surface`。
+- 对照我们：节拍完成是**代码**按信号算的（信号图），不是模型说了算。它这一点正好是我们当初要避免的做法。“只写给在场的人”与我们的 `physical.sightings` 同一思路。
+
+### 6.2 RPG-MCP（`Mnehmos/rpg-mcp`，D&D 规则引擎）【读了 `secret-manage.ts`；其余只读了 README 与目录】
+
+- 原则写得很直白：模型只提议，引擎校验并执行；世界状态在 SQLite，所有改动走工具。README 说“同样输入同样输出、可确定性重放”，但**没有讲重放日志怎么记，我没核实**。
+- 秘密有 `publicDescription`（玩家可知）/ `secretDescription`（隐藏真相）/ `revealConditions` / `leakPatterns` / `sensitivity`。
+  条件由**代码**判断（事件类型、技能、难度值），`check_conditions` 只返回满足条件的秘密，不改状态，要另调 `reveal`。
+- **支持部分揭示**：条件里可带 `partialReveal` / `partialText`，达到较低门槛时只露一句话。
+- `check_leaks` 按 `leakPatterns` 扫文本，但**只是建议，不拦截**；工具描述里写着“别把 secretDescription 放进玩家可见输出”，靠调用方自觉。`sensitivity` 只存不用。
+- 有 `preview_prompt`：能看某个 NPC 此刻会收到的完整提示词。
+- 对照我们：我们的越界检查是强制的（带理由重说），它是建议性的；它的“部分揭示”和“预览提示词”值得学。
+
+### 6.3 Talemate（`vegu-ai/talemate`，叙述 + 世界状态的角色扮演框架）【读了 `world_state/pin_conditions.py`、`world_state/reinforcements.py`、`director/auto_direct.py`；其余只看到目录】
+
+- **钉住的事实（pin）**：一条事实带 `condition`（文字描述什么时候该生效）、`active`、`decay`。条件由 **LLM** 每隔 N 轮（默认 2）判一次是/否；`decay` 到期自动失效；带 `gamestate_condition` 的钉子**不交给 LLM 判**，由游戏状态控制。
+  也就是说它自己也把“代码能判的”和“要模型判的”分开了，只是分得没我们彻底。
+- **强化（reinforcement）**：一个常驻问题（可指定角色）+ 间隔 + 上次的答案。每过 `interval` 轮重新问一次模型，**新答案替换旧答案**（不是追加），写成角色细节或世界条目。
+  这是一种“按问题保鲜”的做法，和我们“每次反思追加一条、留最近 3 条”不同。
+- **旧的自动导演模块 `AutoDirectMixin` 已被标为弃用**（`auto_direct_enabled` 恒为 False，注释写 DEPRECATED）。同目录有 `scene_direction/`、`plan/`、`action_core/` 等新实现，**我没读**，所以不能说它放弃了“导演”这条路，只能说这个旧版放弃了。旧版留下的辅助函数里有选下一个说话人的规则：同一个人连说超过 1 次就剔除、沉默超过 5 轮的优先、AI 连续说 3 轮就把回合还给玩家、导演指令每 5 条消息最多一次。
+  我们是 1 对 1 谈话，用不上轮流发言；这些规则（防同一人连说、防冷场、把回合还给玩家）对多人场景才有用。
+- 目录里还有 `narrator/`、`summarize/`、`memory/`、`world_state/snapshot.py` 等，**没读**。
+
+### 6.4 Holmes（`eliotjlee/holmes`，LangChain + ChromaDB 谋杀之谜）【读了 `suspect_agents/suspect_agent.py`；剧情生成只读了 README】
+
+- 嫌疑人 agent 没有工具：把本人的“经历文本”切块（1000 字、重叠 200）存向量库，每轮取最相似 4 块塞进提示词，说“当作内心想法、不要直接引用”，温度 0。
+- 有罪 / 无罪只是 Python 里选一段不同的提示：有罪的“别让侦探知道，被问到就紧张结巴”，无罪的“被冤枉时紧张结巴”。
+- **保密完全靠提示词**，代码没有任何输出过滤或信息隔离。
+- README 说案情由模型按 JSON 模式生成，含 10 个相隔 15 分钟的时间点，把每个嫌疑人的行动和共同经历排到时间点上，再给每人导出一份“经历”。**每人知道什么是从同一条时间线导出的**，这一点值得学；这部分我只看了 README。
+
+### 6.5 其余
+
+| 项目 | 读到的程度 | 值得记下的 |
+|---|---|---|
+| `ttrpg-npc`（PyPI） | 只读了页面 | 秘密分两层：写在角色卡里的“软秘密”（NPC 知道、被要求别说，会被套出来）与单独文件里的“锁住的秘密”——**NPC 只收到一句 hint，从不拿到全文**，解锁由主持人（人）决定，解锁后才把全文给它。每条秘密可设 `hesitate`（支吾）或 `deflect`（装作不知道）。 |
+| SkyrimNet（`MinLL/SkyrimNet-GamePlugin`） | 只读了 README | 每个 NPC 私有记忆、第一人称、按语义取；**记忆按重要度衰减**；NPC 只对“听得见、看得见”的事件反应（楼上听不到楼下，低语缩小范围）；世界知识按地点 / 阵营 / 任务阶段限定范围；动作先选大类再由便宜的提示词细化。核心是 C++ 插件，提示词模板在 `plugins/skyrimnet/base/`，**没读**。 |
+| PromptKeeper（`SamuelGong/PromptKeeper`） | 只读了 README | 把“有没有泄露系统提示词”当假设检验来做，检测到泄露就**用一个假提示词重新生成回答**。统计量与阈值没核实。 |
+| CHIM / HerikaServer | 只读了目录 | PHP 服务，`prompts/`、`functions/` 等目录名看得出分工，**没读内容**。 |
+| deepclue、Redstring | 只读了 README | README 没讲内部实现；deepclue 是“GPT 扮演所有人 + 法庭陪审投票”。 |
+| ChatRPG（`KarmaKamikaze/ChatRPG`） | 只读了 README | README 只说“用 ChatGPT 当主持人”，**搜索摘要里说的“多 agent 架构”在仓库首页看不到证据**，不采信。 |
+| LIGHT（ParlAI） | 只读了搜索摘要 | 众包的奇幻文字冒险世界；对话与动作都以所在地点、物件、在场角色为依据——和我们的 `layout` 事实表同一方向。 |
+| `roleplay-master` 的 `knowledge/gate.ts` | **没读到**（页面只返回了网站导航） | 搜索摘要说它按玩家地位与已知信息分层放行秘密、“解锁前内容不进提示词”；无法核实，不采信。 |
+
+### 6.6 这一批对我们意味着什么
+
+**我们已经做得更硬的地方**（仅就我读到的文件而言）：
+- 保密：Holmes 全靠提示词，RPG-MCP 的泄露扫描只是建议；我们是确定性检查 + 违规带理由重说。
+- 剧情推进：Open-Theatre 的节拍完成由导演模型自己说了算，Talemate 旧版的自动导演已弃用（新版没读）；我们的信号由代码按条件算。
+
+**值得采用的（按我的优先级）**：
+1. **提示词预览工具**（RPG-MCP `preview_prompt`）【已做：`tools/preview_prompt.py`】：不调模型，直接打印“这个 NPC 此刻会收到什么”，并能用 `--find` 查某个词有没有进他的提示词、进了哪一节。做法是在存档的临时副本上用“只记录请求、回答用 mock”的后端把真实对话流程跑一轮，所以看到的就是真实代码拼出来的；“这一轮的心态”和历史里的开场白是 mock 的，工具里会注明。
+2. **每人所知从同一条时间线导出 / 校验**（Holmes）：不是让模型生成，而是给剧情内容写一个检查——每条线索的提供者在案发相关时段是否真的可能在场、知道的人是否都能追溯到一个来源。能提前抓住“平藏没理由知道这个”这类剧情漏洞。
+3. **秘密的支吾方式**（ttrpg-npc 的 `hesitate` / `deflect`）：锁住的信息现在是同一套回避说法，容易显得人机；每条秘密配一种态度，NPC 的躲法就有差别。
+4. **部分揭示**（RPG-MCP）：一条信号达到较低门槛先露半句。可能和已有的“让步计分”重叠，要先看现有实现再定。
+5. **按问题保鲜的反思**（Talemate reinforcement）+ **过期**（pin 的 decay、GA 的 30 天过期）：把“我对旅行者的看法”改成按问题键存、新答案覆盖旧答案，并给临时设定一个失效回合数。收益较小。
+
+**不采用**：让导演模型自动推剧情（Talemate 旧版已弃用，新版没读，暂不判断）、多模式导演切换（Open-Theatre）、把节拍完成交给模型判断。
 
 ## 总结：本轮从真实代码里采用了什么
 

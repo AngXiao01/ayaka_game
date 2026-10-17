@@ -57,6 +57,7 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 加一个新的判断（是不是 X） | `core/judge.py`（便宜的类型化判断）或 `llm/` 下新加一个单一职责的 agent |
 | 改记忆、检索 | `models/memory.py`、`core/working_memory.py`、`core/context_fs.py` |
 | 看某一局发生了什么 | `data/traces/*.jsonl`，用 `python3 tools/view_trace.py <文件>` |
+| 看某个 NPC 此刻会收到什么提示词 / 某个词有没有进他的提示词 | `python3 tools/preview_prompt.py <存档> <npc> [--say …] [--find 词1,词2]`，不调模型 |
 | 把一局原样重放 / 看第 N 步时的世界 | `python3 tools/replay_game.py <文件> [--state-at N]`，原理见 `core/eventlog.py` |
 | 加测试 | `tests/`，用 `MockBackend`，不花钱 |
 
@@ -77,4 +78,5 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 - 离线测试：`~/miniforge3/envs/torch_arm/bin/python -m pytest -q`
 - 离线跑一局：`python3 main.py --mock --auto cooperative`
 - 看 trace：`python3 tools/view_trace.py data/traces/<文件>.jsonl`
+- 预览提示词：`python3 tools/preview_prompt.py web thoma --say "那晚有谁敲过后门？" --intent 打听情报 --no-system --find 守夜狐`（在存档的临时副本上跑，不动存档，不联网）
 - 重放一局：`python3 tools/replay_game.py data/traces/<文件>.jsonl`（只对新版本录的 trace 有效）
