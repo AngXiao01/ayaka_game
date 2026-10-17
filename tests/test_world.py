@@ -25,11 +25,11 @@ def test_yohei_needs_to_see_the_commission():
 
 
 def test_showing_clue_unlocks_thoma():
-    g = make_god()
+    g = make_god({"act_id": "act2"})
     g.clues = ["c_case", "c_bundle"]
     g.begin_conversation("thoma")
-    assert ids(g) == [] and g.useful_clues_for("thoma") == ["c_bundle"]
-    g.mark_known("thoma", ["c_bundle"])                      # 那晚「小吉」抱着布包：托马想起夜里有个「小吉」折回来过
+    assert ids(g) == ["rv_thoma_gate"]                       # 托马是自己人：问到就说，不必先拿凭据来换
+    g.mark_known("thoma", ["c_bundle"])                      # 看了布包，也不改变他会说这件事
     assert ids(g) == ["rv_thoma_gate"]
     newly = g.apply_signals(["rv_thoma_gate"])
     assert newly[0]["clues"] == ["夜里折回来的小吉"] and "c_gate_visitor" in g.known["thoma"]

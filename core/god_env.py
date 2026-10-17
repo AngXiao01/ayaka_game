@@ -239,6 +239,21 @@ class GodEnv:
         m = (self.minute if minute is None else minute) % 1440
         return f"{m // 60:02d}:{m % 60:02d}"
 
+    def daylight(self) -> str:
+        """此刻的天色。由钟点算出来，NPC 和选项只许照这个说（不许在大白天说「天快亮了」）。"""
+        m = self.minute % 1440
+        if m < 360:
+            return "天还黑着"
+        if m < 405:
+            return "天刚蒙蒙亮"
+        if m < 930:
+            return "天已大亮"
+        if m < 1080:
+            return "日头偏西"
+        if m < 1170:
+            return "夕阳西下，天色渐暗"
+        return "天已经黑了"
+
     def time_label(self) -> str:
         return f"第{self.day}天·{self.phase}"
 
@@ -855,9 +870,10 @@ class GodEnv:
             "npc_stance": ev.stance if ev else self.stance_of(persona),
             "event": {"title": ev.title, "premise": ev.premise} if ev else None,
             "info_goals": [d["desc"] for d in pending],
-            "locked_info": [f"关于「{d['topic']}」你知道一些，但现在不会说（{why}）" if d.get("topic")
+            "locked_info": [f"关于「{d['topic']}」你知道一些，现在不说，因为：{why}。被问到时用你自己的话直接说明这个态度，不要岔开话题，也不要装作不知道" if d.get("topic")
                             else f"{d['desc']}（{why}）" for d, why in locked],
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
+            "prior_clues": [self.quest.clues[c]["desc"] for c in getattr(persona, "knows_clues", []) if c in self.quest.clues],
             "known_clues": [f"{self.quest.clue_name(c)}：{self.quest.clues[c]['desc']}" for c in self.known.get(npc, [])],
             "player_clue_count": len(self.clues),
             "achieved_signals": [{"id": s.id, "desc": s.desc, "fact": s.reveal or s.desc} for s in self.quest.signals
@@ -894,6 +910,8 @@ class GodEnv:
                        else (self.quest.public_premise or self.quest.premise),
             "era": self.quest.era,
             "time_label": self.time_label(),
+            "clock": self.clock_label(),
+            "daylight": self.daylight(),
             "day_phase": self.phase,
             "deadline_label": self.quest.deadline["label"],
             "deadline_left": self.slots_left(),

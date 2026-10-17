@@ -90,6 +90,7 @@ class DialogueSession:
         self.transcript: list[str] = []
         self.scene_id = god.location
         self._last_ctx: Optional[TurnContext] = None
+        self._ended_by_player = False
         self._clues_before = list(god.clues)
 
     def _span(self, **kv):
@@ -370,7 +371,8 @@ class DialogueSession:
                           deliver=msg["deliver"])
                 if self.cfg.debug:
                     self.out(f"    📨 {self.npc.name}托人给{phys.name(to)}带话：{t['text']}")
-        if r.go_to and r.wants_to_end and not self.event and nid not in phys.party and self.npc.p.outing:
+        if (r.go_to and r.wants_to_end and not self.event and nid not in phys.party and self.npc.p.outing
+                and not getattr(self, "_ended_by_player", False) and self.npc.p.role != "companion"):   # 是玩家离开的、或她是委托人（留在屋敷）：不去
             dest, name = self._place_name(r.go_to)
             if dest and dest != phys.where(nid):
                 phys.set_plan(nid, dest, self.god.next_phase_start(), "go", reason=r.go_to)
@@ -568,6 +570,7 @@ class DialogueSession:
             felt = judge.turn(g, self.npc.name, guard.text, open_hs, last_line, g.act.objective or "") or {}
         # 玩家打字说「我该走了」：走不走是玩家的事，不用等对方点头。是不是在告别由判定模型答，结束会话由代码执行
         leaving = bool(felt.get("leaving")) and action.kind == "say"
+        self._ended_by_player = action.kind in ("leave", "dismiss") or leaving
         if leaving:
             intent = "告别"
             self._log("leaving", npc=nid, text=guard.text)

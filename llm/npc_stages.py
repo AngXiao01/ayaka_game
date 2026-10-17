@@ -145,7 +145,8 @@ def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnCont
           player_text: str, meta: dict, tracer: Any = None) -> tuple[list[str], int]:
     """核对 NPC 刚说的话。返回 (问题列表，空 = 没问题；token)。失败当没问题，不拦这一轮。"""
     t, sc = ctx.task, ctx.scene
-    known = list(sc.get("layout") or []) + [t.get("npc_stance") or ""] + list(ctx.canon or []) \
+    w = ctx.world
+    known = [f"现在是 {w.get('clock', '')}，{w.get('daylight', '')}"] + list(sc.get("layout") or []) + [t.get("npc_stance") or ""] + list(ctx.canon or []) \
         + [x["fact"] for x in t.get("achieved_signals", []) if x.get("fact")]
     known = [k for k in known if k]
     if not known:

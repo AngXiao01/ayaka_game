@@ -132,6 +132,10 @@ class GameEngine:
                              lambda k, a=a: [m.text for m in reversed(a.memory.items[-k:])],
                              lambda a=a: [m.text for m in a.memory.items if m.kind == "canon"])
         self.god.trust_lookup = lambda nid: self.npcs[nid].relationship.trust
+        for nid, per in self.personas.items():          # 一开始就知道的事：播进「他看过 / 知道什么」，之后既不会被当新鲜事，也不进出示菜单
+            for c in per.knows_clues:
+                if c in self.quest.clues and c not in self.god.known.setdefault(nid, []):
+                    self.god.known[nid].append(c)
         self.companion = self.npcs[self.quest.companion]
         self.option_gen = PlayerOptionGenerator(
             PlayerOptionLLMAdapter(r.backend("options"), r.params("options"), t, rep), mode=g.options_mode, tracer=t)

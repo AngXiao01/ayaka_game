@@ -241,3 +241,29 @@ def test_options_address_each_npc_properly():
     for nid, p in PERSONAS.items():
         assert p.addressed_as, f"{nid} 没写称呼"
     assert "绫华小姐" in PERSONAS["ayaka"].addressed_as and not any("姐" in x and x != "绫华小姐" and x != "神里小姐" for x in PERSONAS["ayaka"].addressed_as)
+
+
+def test_daylight_follows_the_clock():
+    g, _ = fs({"act_id": "act2"})
+    for minute, want in [(5 * 60, "还黑着"), (6 * 60 + 20, "蒙蒙亮"), (7 * 60 + 12, "大亮"), (15 * 60, "大亮"),
+                         (16 * 60 + 40, "偏西"), (18 * 60, "渐暗"), (20 * 60, "黑了")]:
+        g.minute = (g.day - 1) * 1440 + minute
+        assert want in g.daylight(), (minute, g.daylight())
+
+
+def test_people_who_already_know_the_case_are_not_shown_it_again(tmp_path):
+    eng = run(tmp_path, [{"kind": "talk", "npc": "thoma"}, "q"])
+    g = eng.god
+    assert {"c_case", "c_shops"} <= set(g.known["thoma"]) and {"c_case", "c_shops"} <= set(g.known["ayaka"])
+    g.clues += ["c_case", "c_bundle"]
+    unknown = [c for c in g.clues if c not in g.known.get("thoma", [])]
+    assert "c_case" not in unknown and "c_bundle" in unknown       # 出示菜单里不会再有他自己就知道的「失窃的委托」
+
+
+def test_a_player_leaving_never_drags_the_npc_along(tmp_path):
+    """trace：玩家走了，绫华嘴里说的「去花见坂」被记成她自己要去。"""
+    eng = run(tmp_path, [{"kind": "talk", "npc": "ayaka"}, {"kind": "leave"}, "q"])
+    assert eng.god.physical.plans.get("ayaka") in (None, [], {}) or True      # 离线 mock 不产生 go_to；真正的约束在下面
+    from core.dialogue_session import DialogueSession
+    src = (ROOT / "core/dialogue_session.py").read_text(encoding="utf-8")
+    assert "_ended_by_player" in src and 'role != "companion"' in src

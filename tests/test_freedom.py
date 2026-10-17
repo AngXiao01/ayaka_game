@@ -44,14 +44,14 @@ def test_npc_saying_it_counts_even_without_the_button():
 
 
 def test_npc_leak_while_locked_still_counts():
-    # trace：给托马看了「货架上的短毛」（不是他要的线索），他还是说出了夜里「小吉」折回来敲过后门
-    g = make_god({"act_id": "act2", "clues": ["c_case", "c_shops", "c_tanuki_hair"]})
-    g.begin_conversation("thoma")
-    g.mark_known("thoma", ["c_tanuki_hair"])
-    assert "rv_thoma_gate" not in g.available_ids(check_turns=False)
-    speech = "短毛？说起来……那天夜里「小吉」折回来敲过后门，说落了东西，我让他在门房等着，人就不见了。不会跟他有关吧？"
+    # trace：给宗次看了「货架上的棕毛」（不是他要的线索），他还是说出了那晚海边的青白灯火
+    g = make_god({"act_id": "act2", "clues": ["c_case", "c_shops", "c_tanuki_hair"], "location": "ritou", "phase_idx": 1})
+    g.begin_conversation("soji")
+    g.mark_known("soji", ["c_tanuki_hair"])
+    assert "rv_soji_fire" not in g.available_ids(check_turns=False)          # 宗次还没到肯说的时候
+    speech = "短毛？……说起来，那晚海边有一团青白的火，有个人影蹲在滩上拾什么。我、我没喝醉。"
     assert g.apply_signals(g.spoken_signals(speech, "志村屋丢纸的货架上留着几根棕色的短毛"), heard=True)
-    assert "c_gate_visitor" in g.clues
+    assert "c_foxfire" in g.clues
 
 
 def test_echoing_the_player_is_not_a_confession():

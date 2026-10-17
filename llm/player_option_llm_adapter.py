@@ -70,7 +70,7 @@ class PlayerOptionLLMAdapter:
         player = ctx.player_name
         event = f"\n私人时光：「{t['event']['title']}」——{t['event']['premise']}" if t.get("event") else ""
         user = f"""# 场景
-{ctx.scene['name']}，{w['time_label']}，局势{w['tension_label']}。距{w['deadline_label']}还有 {w['deadline_left']} 个时段。{event}
+{ctx.scene['name']}，{w['time_label']}，现在 {w.get('clock', '')}，{w.get('daylight', '')}（说到时间、天色只按这个，别说天快亮 / 天快黑），局势{w['tension_label']}。距{w['deadline_label']}还有 {w['deadline_left']} 个时段。{event}
 
 # {player}眼下的目标
 {t['objective'] or t['stage_title']}

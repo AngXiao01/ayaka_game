@@ -83,7 +83,7 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
    对方问你知道又愿意说的事，就直接回答，不要用反问、「不妨猜猜」代替回答；对方说你说话怪、像打哑谜、动作太多，要像真人那样坦率应一句（解释一下、或不好意思地改口），然后真的改，别再解释为什么不改。
 5. {player}这几天去过哪儿、做过什么、见过谁，只有{player}亲口说过的、或情境里写了的你才知道；别的一律说不知道。不要把推测当事实，也不要编「托马说…」「听说你…」这类转述——除非「别人托人带来的话」或往事里真有。{player}说的和你知道的对不上时，指出矛盾或追问，不要自己编一个解释圆过去。
    开场（对方刚来）时先看「距上次见面」：很快又回来，就像真人那样自然地反应（怎么又回来了、忘了什么、改主意了），别当作隔了一天重新寒暄，也别再把上次已经说完的事从头讲一遍。
-6. 角色卡和情境里没写的事，可以即兴补充（往事、喜好、身边人的小事、城里的见闻），但要符合身份、和你之前说过的设定一致。与失窃案有关的线索、证据、真相不许即兴编，只以情境里你知道的事为准。\n   案发现场的物理细节（门窗、锁、窗台、地面、灰尘、脚印、痕迹）只能说「这里的格局」和你的立场里写明你亲眼看到的；没写的就是你没看到，要么说没细看，要么请对方自己去查看，不许凭空编，也不许从自己编的细节往下推理。空间必须说得通：门是门、窗是窗、人从哪儿进出，要和格局对得上。
+6. 角色卡和情境里没写的事，可以即兴补充（往事、喜好、身边人的小事、城里的见闻），但要符合身份、和你之前说过的设定一致。与失窃案有关的线索、证据、真相不许即兴编，只以情境里你知道的事为准。\n   时间和天色只按「时间与场景」里写的说（现在是大白天就不要说天快亮 / 天快黑，也不要叮嘱带照明）。\n   案发现场的物理细节（门窗、锁、窗台、地面、灰尘、脚印、痕迹）只能说「这里的格局」和你的立场里写明你亲眼看到的；没写的就是你没看到，要么说没细看，要么请对方自己去查看，不许凭空编，也不许从自己编的细节往下推理。空间必须说得通：门是门、窗是窗、人从哪儿进出，要和格局对得上。
 7. 对方口头说的案情结论（谁做的、已经查清了），如果没给你看过相应的线索、你自己也不知道，就不能当成已经查清：可以追问凭据，也可以表示会去查（情境里写了你的打算就照着说）；不替对方宣布事情了结，也不编后续（谁认了错、谁去处理了）。
 8. 「你这一轮的心态」是你说话之前已经定下的判断（情绪、打算、是否道别），照着它说，不要另起炉灶。拿不准对方说的地方、人有多远多熟，可以先 read 看看。
 
@@ -117,7 +117,7 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     achieved = {s["id"] for s in t["achieved_signals"]}
     pend = [f"[{s['id']}] {s['desc']}" for s in t["pending_signals"]
             if all(r in achieved for r in s.get("requires", []))]       # 前置还没达成的先不提
-    scene = f"{w['time_label']}，{sc['name']}。{sc['atmosphere']}"
+    scene = f"{w['time_label']}，现在 {w.get('clock', '')}，{w.get('daylight', '')}。{sc['name']}。{sc['atmosphere']}"
     if opening:                                    # 场景全文只在开场给，之后对话里有
         scene += f"\n{sc['desc']}\n可以自然提及的细节：{'、'.join(sc['notable_elements'])}"
     parts = ["# 当前情境（只列和这一轮有关的）", f"## 时间与场景\n{scene}"]
@@ -133,10 +133,12 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         mind.append("- 你知道、此刻可以说的事（看对方表现，自然地说，一次一件）：\n"
                     + _bullets(pend, indent="  "))
     if t["locked_info"]:
-        mind.append("- 你知道、但现在还不会说的事（括号里是原因；条件满足前像真人一样回避，不要说漏）：\n"
+        mind.append("- 你知道、但现在还不会说的事（先按写明的原因直接回应对方，像真人一样；不许答非所问地岔开，也不要说漏）：\n"
                     + _bullets(t["locked_info"], indent="  "))
     if t["secrets_unlocked"]:
         mind.append(f"- 以你现在对{player}的信任，愿意说出的心里话：\n" + _bullets(t["secrets_unlocked"], indent="  "))
+    if t.get("prior_clues"):
+        mind.append("- 你本来就知道的事（对方拿这些给你看时，你不会意外，更不会像第一次看到）：\n" + _bullets(t["prior_clues"], indent="  "))
     if t["known_clues"]:
         mind.append(f"- {player}给你看过、告诉过你的线索：" + "、".join(c.split("：", 1)[0] for c in t["known_clues"]))
     said = [x["fact"] for x in t["achieved_signals"] if x.get("fact")]
