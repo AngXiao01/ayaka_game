@@ -121,24 +121,46 @@ def annotate(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnC
         return {"task_signals": [], "new_facts": [], "lies": [], "tell": [], "go_to": ""}, 0
 
 
-AUDIT_SYSTEM = """你是事实核对员。下面是{npc}知道的事实、不知道的事，和{npc}刚说的一句话。只找三类问题，不挑文风：
+AUDIT_SYSTEM = """你是事实核对员。下面是{npc}知道的事实、不知道的事，和{npc}刚说的一句话。只找三类问题，不挑文风、不挑细枝末节：
 
-1. 与事实矛盾：位置、数字、钥匙、门窗、谁在场、时间，和清单对不上。
-2. 编造越界：说了清单里没有的案发现场细节（窗台、地面、灰尘、脚印、痕迹、谁进出过）、具体数字或人物行为，而这些是{npc}并不知道的。
-3. 物理或常识上说不通：人够不到、东西不可能在那儿、前后矛盾、时间对不上。
+1. 矛盾：这句话和清单里的某一条明确冲突（位置、数字、钥匙、门窗、谁在场、时间）。必须摘出清单里那一条原文放进 fact。
+2. 编造：说了清单里没有的**案发现场细节或具体数字**（窗台、地面、灰尘、脚印、痕迹、谁进出过、几丈几尺），而这些是{npc}并不知道的。
+3. 说不通：人够不到、东西不可能在那儿、前后矛盾、时间对不上。claim 必须是这句话里的原话片段。
 
-闲聊里的往事、喜好、身边人的小事不算越界，只管案发现场和案情相关的话。拿不准就算没问题。
-只输出一个 JSON 对象：{{"ok": true 或 false, "problems": ["……"]}}，每条问题一句话、点明哪里不对；ok 为 true 时 problems 留空。"""
+拿不准、需要自己推断没写明的空间关系的，一律算没问题。清单里没写、但属于{npc}自己的生活和经历的事（自己丢了什么、自己的店和家人），不算编造。
+只输出一个 JSON 对象：{{"problems": [{{"kind": "矛盾 / 编造 / 说不通", "claim": "这句话里有问题的原话", "fact": "清单里被冲突的那一条原文（编造和说不通可留空）"}}]}}。没有问题就 {{"problems": []}}。"""
 
-AUDIT_SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}, "problems": {"type": "array", "items": {"type": "string"}}},
-                "required": ["ok", "problems"]}
+AUDIT_SCHEMA = {"type": "object", "properties": {"problems": {"type": "array", "items": {
+    "type": "object", "properties": {"kind": {"type": "string"}, "claim": {"type": "string"}, "fact": {"type": "string"}},
+    "required": ["kind", "claim"]}}}, "required": ["problems"]}
+
+SCENE_WORDS = ("窗台", "灰尘", "脚印", "地面", "地板", "痕迹", "门窗", "钥匙", "插销", "丈", "尺", "进出", "墙根", "爪印")
 
 
-def validate_audit(obj: Any) -> list[str]:
+def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "") -> list[str]:
+    """核对员自己的意见也要有依据：矛盾要摘得出清单原文，编造要真的是现场细节，说不通要引得出原话；
+    摘不出依据的“意见”直接丢掉（小模型的核对员很爱挑刺）。"""
+    from models.retrieval import coverage
     if not isinstance(obj, dict):
         return []
-    problems = [str(x).strip() for x in (obj.get("problems") or []) if str(x).strip()][:3]
-    return [] if obj.get("ok") is True and not problems else problems
+    known_text = "\n".join(known or [])
+    out: list[str] = []
+    for it in obj.get("problems") or []:
+        if not isinstance(it, dict):
+            continue
+        kind, claim, fact = str(it.get("kind", "")).strip(), str(it.get("claim", "")).strip(), str(it.get("fact", "")).strip()
+        if not claim:
+            continue
+        if kind.startswith("矛盾"):
+            if known is not None and (not fact or coverage(fact, known_text) < 0.6):
+                continue
+        elif kind.startswith("编造"):
+            if not any(w in claim for w in SCENE_WORDS):
+                continue
+        elif speech and coverage(claim, speech) < 0.5:
+            continue
+        out.append(f"{kind or '问题'}：{claim}" + (f"（依据：{fact}）" if fact else ""))
+    return out[:3]
 
 
 def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnContext, speech: str, action: str,
@@ -146,7 +168,8 @@ def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnCont
     """核对 NPC 刚说的话。返回 (问题列表，空 = 没问题；token)。失败当没问题，不拦这一轮。"""
     t, sc = ctx.task, ctx.scene
     w = ctx.world
-    known = [f"现在是 {w.get('clock', '')}，{w.get('daylight', '')}"] + list(sc.get("layout") or []) + [t.get("npc_stance") or ""] + list(ctx.canon or []) \
+    known = [f"现在是 {w.get('clock', '')}，{w.get('daylight', '')}", p.identity] + list(sc.get("layout") or []) \
+        + [t.get("npc_stance") or ""] + list(ctx.canon or []) + list(t.get("prior_clues") or []) + list(t.get("known_clues") or []) \
         + [x["fact"] for x in t.get("achieved_signals", []) if x.get("fact")]
     known = [k for k in known if k]
     if not known:
@@ -169,7 +192,7 @@ def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnCont
                      temperature=0.0, max_tokens=min(300, params.max_tokens), json_schema=AUDIT_SCHEMA,
                      schema_name="npc_audit", meta=meta)
     try:
-        return call_json_ex(backend, req, validate_audit, tracer, 0)
+        return call_json_ex(backend, req, lambda o: validate_audit(o, known, speech), tracer, 0)
     except LLMError as e:
         if tracer:
             tracer.log("fallback", where="npc_audit", error=str(e))

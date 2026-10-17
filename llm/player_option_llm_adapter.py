@@ -58,7 +58,8 @@ def _render_history(ctx: TurnContext, npc_name: str, last_n: int = 8) -> str:
 
 
 class PlayerOptionLLMAdapter:
-    def __init__(self, backend: LLMBackend, params: TaskParams, tracer: Any = None, repair_attempts: int = 2):
+    def __init__(self, backend: LLMBackend, params: TaskParams, tracer: Any = None, repair_attempts: int = 2, small: Any = None):
+        self.small_backend = small if small else backend
         self.backend = backend
         self.params = params
         self.tracer = tracer
@@ -122,7 +123,7 @@ class PlayerOptionLLMAdapter:
             temperature=0.0, max_tokens=300, json_schema=act_tag_schema(ids), schema_name="option_acts",
             meta={"n": len(lines), "acts": ids, "lines": [o["text"] for o in lines]})
         try:
-            tags = call_json(self.backend, req, lambda o: validate_act_tags(o, len(lines), ids), self.tracer, 1)
+            tags = call_json(self.small_backend, req, lambda o: validate_act_tags(o, len(lines), ids), self.tracer, 1)
         except LLMError:
             return lines
         return [{**o, "act": tags.get(i, "")} for i, o in enumerate(lines)]

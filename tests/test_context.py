@@ -191,8 +191,13 @@ def test_auditor_sends_a_contradicting_line_back_once(tmp_path):
     """核对员发现矛盾 / 编造 / 说不通，NPC 带着意见重说一次（只重一次）。"""
     from llm.npc_stages import validate_audit
 
-    assert validate_audit({"ok": True, "problems": []}) == []
-    assert validate_audit({"ok": False, "problems": ["窗离地两丈，和格局矛盾"]}) == ["窗离地两丈，和格局矛盾"]
+    known = ["窗只有一臂宽，窗台离茶室地面大约一个半人高", "钥匙只有两把"]
+    assert validate_audit({"problems": []}, known, "你好") == []
+    ok = {"problems": [{"kind": "矛盾", "claim": "窗离地两丈", "fact": "窗台离茶室地面大约一个半人高"}]}
+    assert validate_audit(ok, known, "窗离地两丈") == ["矛盾：窗离地两丈（依据：窗台离茶室地面大约一个半人高）"]
+    assert validate_audit({"problems": [{"kind": "矛盾", "claim": "他在说谎", "fact": "清单里根本没有的话"}]}, known, "他在说谎") == []   # 摘不出依据的意见丢掉
+    assert validate_audit({"problems": [{"kind": "编造", "claim": "他今天心情不好"}]}, known, "他今天心情不好") == []                  # 不是现场细节，不算编造
+    assert validate_audit({"problems": [{"kind": "编造", "claim": "窗台上的灰尘比别处少"}]}, known, "窗台上的灰尘比别处少")
 
     class Strict(MockBackend):
         def __init__(self):
@@ -201,7 +206,7 @@ def test_auditor_sends_a_contradicting_line_back_once(tmp_path):
 
         def _npc_audit(self, meta):
             self.audits += 1
-            return {"ok": False, "problems": ["编造了窗台上的灰尘"]} if self.audits == 1 else {"ok": True, "problems": []}
+            return {"problems": [{"kind": "编造", "claim": "窗台上的灰尘比别处少"}]} if self.audits == 1 else {"problems": []}
 
     save = tmp_path / "data/saves/c.json"
     save.parent.mkdir(parents=True, exist_ok=True)
@@ -211,10 +216,10 @@ def test_auditor_sends_a_contradicting_line_back_once(tmp_path):
                      out=lambda s: None, save_name="c")
     eng.run()
     ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
-    assert [e["problems"] for e in ev if e["event"] == "audit"] == [["编造了窗台上的灰尘"]]
+    assert [e["problems"] for e in ev if e["event"] == "audit"] == [["编造：窗台上的灰尘比别处少"]]
     steps = [e for e in ev if e["event"] == "llm" and e["task"] == "npc_step"]
     told = [m["content"] for e in steps for m in e["messages"] if "你上一版回答有问题" in m["content"]]
-    assert told and "编造了窗台上的灰尘" in told[0]                 # 重说的那一版看得到核对员的意见
+    assert told and "窗台上的灰尘比别处少" in told[0]                 # 重说的那一版看得到核对员的意见
 
 
 def test_questions_and_invented_fragments_are_not_claims():
@@ -323,3 +328,61 @@ def test_state_block_drops_by_tier_when_over_budget():
     assert "你记得的往事" in dropped and "你这一轮的心态" in out and "时间与场景" in out and "你此刻的心思" in out
     kept, none = fit_state(state, 10_000)
     assert kept == state and none == []
+
+
+def test_single_purpose_stages_use_the_small_model_tier(tmp_path):
+    from llm.router import ModelRouter
+
+    class Tagged(MockBackend):
+        def __init__(self, tag):
+            super().__init__(seed=0)
+            self.tag = tag
+            self.tasks = []
+
+        def complete(self, req):
+            self.tasks.append(req.task)
+            return super().complete(req)
+
+    big, small = Tagged("big"), Tagged("small")
+    s = settings(tmp_path)
+    s.llm.routes = {"small": "tiny-model"}
+    router = ModelRouter(big, s.llm, lambda m: small)
+    save = tmp_path / "data/saves/c.json"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(json.dumps({"world": {"act_id": "act2", "phase_idx": 1, "clues": ["c_case", "c_shops"]}}))
+    eng = GameEngine(s, big, ScriptedPlayer([{"kind": "talk", "npc": "ayaka"}, ("我已经查看过茶室的高窗了。", "自由发言"),
+                                             ("再请教一件事。", "打听情报"), {"kind": "leave"}, "q"]), out=lambda x: None,
+                     save_name="c", router=router)
+    eng.run()
+    assert {"npc_appraise", "npc_annotate", "npc_audit", "claims", "reflect"} <= set(small.tasks)    # 小活走小模型
+    assert "npc_step" in big.tasks and not {"npc_appraise", "npc_audit", "npc_annotate"} & set(big.tasks)   # 说话留在主模型
+    assert any(m.kind == "reflection" for m in eng.npcs["ayaka"].memory.items)                          # 谈话结束后写了反思
+
+
+def test_beat_selector_picks_one_fitting_outcome_or_none():
+    from core.beats import pick_beat
+    g, _ = fs({"act_id": "act2", "clues": ["c_case", "c_shops"]})
+    g.mark_known("aen", ["c_case"])
+    pending = [{"id": "rv_aen_prints", "desc": "阿缘说出后门外雪地上有一串圆圆的小脚印通往镇守之森", "requires": []},
+               {"id": "rv_aen_bundle", "desc": "阿缘说出失窃那晚看见「小吉」抱着白纸包的东西往林子去", "requires": []}]
+    best, scored = pick_beat(g, pending, "油豆腐是怎么丢的？后门外有没有脚印？", "打听情报")
+    assert best and best["id"] == "rv_aen_prints" and len(scored) == 2          # 话头贴着脚印，就提脚印
+    none, _ = pick_beat(g, pending, "今天天气不错呢。", "闲聊")
+    assert none is None                                                           # 闲聊、没卡住：不硬塞剧情
+    patient, _ = pick_beat(g, pending, "今天天气不错呢。", "闲聊", stuck_turns=4)
+    assert patient is not None                                                    # 卡了几轮，就该找机会提一件
+
+
+def test_prompt_carries_only_the_chosen_beat(tmp_path):
+    save = tmp_path / "data/saves/c.json"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(json.dumps({"world": {"act_id": "act2", "phase_idx": 1, "location": "komore_teahouse", "clues": ["c_case", "c_shops"]}}))
+    eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer([{"kind": "talk", "npc": "aen"},
+                     ("油豆腐是怎么丢的？后门外有脚印吗？", "打听情报"), "q"]), out=lambda s: None, save_name="c")
+    eng.run()
+    ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
+    beats = [e for e in ev if e["event"] == "beat"]
+    assert beats and beats[-1]["picked"] == "rv_aen_prints"
+    prompts = [m["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step" for m in e["messages"]
+               if "这一轮可以顺势提起的一件事" in m["content"]]
+    assert prompts and "rv_aen_prints" in prompts[-1] and "rv_aen_bundle" not in prompts[-1]

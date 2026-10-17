@@ -76,6 +76,7 @@ class NPCAgent:
         self.world_canon = world_canon          # 所有角色共享：关于别人和稻妻的即兴设定
         self.guard_terms = guard_terms or []
         self.persona_mode = persona_mode
+        self.reflector = None                   # ReflectionLLMAdapter：谈话结束后合成“我对对方的看法”（引擎装配）
         self.fs = None                          # ContextFS：按需翻看的上下文（引擎装配；没有就不提供 ls / read）
         self.registry = self._build_tools()
 
@@ -313,5 +314,32 @@ class NPCAgent:
             self.tracer.log("memory_write", summary=s["summary"], merged=merged, facts_kept=kept,
                             facts_dropped=dropped, handoff=handoff, handoff_dropped=handoff_dropped,
                             provenance=provenance)
+        self._reflect(ctx, transcript, turns, world_time, provenance)
         self.registry.cache.clear()            # 记忆变了，recall 的缓存作废
         return s
+
+    def _reflect(self, ctx: TurnContext, transcript: str, turns: int, world_time: int, provenance: dict) -> None:
+        """谈话够长就反思一次：合成“我对对方的看法 / 疑问”，只留最近 3 条，下次见面放进上下文。"""
+        if self.reflector is None or turns < 2:
+            return
+        previous = [m.text for m in self.memory.items if m.kind == "reflection"][-2:]
+        r = self.reflector.reflect(self.name, ctx.player_name, transcript, previous)
+        if not r:
+            return
+        text = f"我对{ctx.player_name}的看法：{r['impression']}"
+        if r["doubts"]:
+            text += "；我的疑问：" + "；".join(r["doubts"])
+        if r["next"]:
+            text += "；下次我打算：" + r["next"]
+        self.memory.add(MemoryItem(text=text, kind="reflection", importance=4, world_time=world_time,
+                                   topics=["看法", "疑问"], extra=dict(provenance)))
+        old = [m for m in self.memory.items if m.kind == "reflection"]
+        for m in old[:-3]:
+            self.memory.items.remove(m)
+        self.memory._rewrite()
+        if self.tracer:
+            self.tracer.log("reflection", npc=self.p.id, text=text)
+
+    def latest_reflection(self) -> str:
+        items = [m.text for m in self.memory.items if m.kind == "reflection"]
+        return items[-1] if items else ""

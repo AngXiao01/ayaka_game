@@ -108,6 +108,13 @@ class WebPlayer:
 
 
 class Game:
+    def _monitor_line(self) -> str:
+        try:
+            from tools.monitor import line, load, summarize
+            return "\n" + line(summarize(load([self.engine.tracer.path])))
+        except Exception:  # noqa: BLE001 —— 监控统计出错不能影响游戏收尾
+            return ""
+
     def __init__(self, args, save: Optional[str] = None):
         self.args = args
         self.save = save or args.save
@@ -160,7 +167,8 @@ class Game:
             try:
                 self.engine.run(max_actions=1000)
                 io.write(f"\n[{backend.name}] {self.engine.stats_line()}"
-                         + (f"\n免费优先：{self._free_first.summary()}" if self._free_first is not None else ""), "meta")
+                         + (f"\n免费优先：{self._free_first.summary()}" if self._free_first is not None else "")
+                         + (self._monitor_line() if self.engine.tracer.path else ""), "meta")
             except Exception as e:  # noqa: BLE001
                 io.error = f"{type(e).__name__}: {e}"
                 io.write(traceback.format_exc(), "meta")

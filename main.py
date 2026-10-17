@@ -157,6 +157,9 @@ def main(argv=None) -> int:
     if hasattr(backend, "free"):
         print("免费优先：" + backend.summary())
     if engine.tracer.path:
+        from tools.monitor import line, load, summarize
+        print(line(summarize(load([engine.tracer.path]))))
+    if engine.tracer.path:
         print(f"trace：{engine.tracer.path}\n可视化：python3 tools/view_trace.py {engine.tracer.path}")
     return 0
 

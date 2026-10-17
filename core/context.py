@@ -15,6 +15,7 @@ class TurnContext:
     history_summary: str = ""                           # 窗口外较早对话的滚动摘要
     canon: list[str] = field(default_factory=list)      # 之前即兴编出、必须保持一致的设定
     handoff: dict = field(default_factory=dict)         # 上次见面的结构化交接（上下文重置后接续的唯一来源）
+    reflection: str = ""                                 # 上次见面后她自己琢磨出的“对旅行者的看法 / 疑问”
     appraisal: dict = field(default_factory=dict)       # 说话之前的评估：情绪、这一轮的打算、是否要结束（见 llm/npc_stages.py）
     tics: list[str] = field(default_factory=list)       # 代码从最近几句话里量出来的说话套路（句式、开头、称呼）
     problems: list[str] = field(default_factory=list)   # 核对员指出的上一版回答的问题（矛盾 / 编造 / 说不通），这一轮重说

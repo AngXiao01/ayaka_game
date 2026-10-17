@@ -99,8 +99,11 @@ class MockBackend:
         return {**{k: r[k] for k in ("fit", "emotion", "intent", "affinity_delta", "trust_delta", "tension_delta",
                                      "wants_to_end")}, "plan": ""}
 
+    def _reflect(self, meta: dict) -> dict:
+        return {"impression": "对方举止得体，说话有分寸，值得继续观察", "doubts": ["对方为什么愿意帮一个刚认识的人"], "next": "下次问问对方的看法"}
+
     def _npc_audit(self, meta: dict) -> dict:
-        return {"ok": True, "problems": []}
+        return {"problems": []}
 
     def _npc_annotate(self, meta: dict) -> dict:
         r = self._take(meta)

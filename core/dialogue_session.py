@@ -17,6 +17,7 @@ from core.budget import Budget
 from core.context import TurnContext
 from core.god_env import EventDef, GodEnv
 from core import judge
+from core.beats import pick_beat
 from core.dice import roll, tag
 from core.guard import inspect_player_input
 from core.npc_agent import NPCAgent, NPCReply
@@ -112,6 +113,7 @@ class DialogueSession:
         canon = self.npc.recall_canon(topic or self.god.act.objective, 3, self.god.total_turns)
         memories = [m for m in memories if not any(m in c for c in canon)]
         handoff = self.npc.handoff()
+        reflection = self.npc.latest_reflection()
         if handoff.get("minute") is not None:
             handoff["ago"] = self.god.elapsed_since(handoff["minute"])
             handoff["same_place"] = handoff.get("where") == self.scene_id
@@ -122,7 +124,7 @@ class DialogueSession:
         return TurnContext(player_name=self.cfg.player_name, scene=scene, world=world,
                            relationship=self.npc.relationship.summary(), memories=memories,
                            history=list(self.wm.entries), history_summary=self.wm.summary, turn=turn, canon=canon,
-                           handoff=handoff, place=place)
+                           handoff=handoff, place=place, reflection=reflection)
 
     def _flush_notices(self) -> None:
         for line in self.god.notices:
@@ -631,6 +633,10 @@ class DialogueSession:
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
         ctx.task["shown"] = [{"name": n, "desc": d} for n, d in shown]
         ctx.task["unverified"] = g.unverified_claims(nid, guard.text) if action.kind == "say" and not guard.suspicious else []
+        beat, scored = pick_beat(g, ctx.task["pending_signals"], guard.text, intent, g.turns_since_progress)
+        ctx.task["beat"] = beat                               # None = 这一轮什么都不提；不设 beat（开场等）则沿用“列出全部”
+        if scored:
+            self._log("beat", npc=nid, picked=beat["id"] if beat else None, scored=scored[:4])
         ctx.task["claims"] = []
         if self.claims is not None and action.kind == "say" and not guard.suspicious and not self.event:
             ctx.task["claims"] = self.claims.check(nid, guard.text)       # 抽取归模型，真假和知不知情归代码

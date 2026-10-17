@@ -46,6 +46,7 @@ from llm.player_option_llm_adapter import PlayerOptionLLMAdapter
 from llm.reviewer_llm_adapter import ReviewerLLMAdapter
 from llm.scene_llm_adapter import SceneLLMAdapter
 from llm.router import ModelRouter
+from llm.reflection_llm_adapter import ReflectionLLMAdapter
 from llm.summary_llm_adapter import CompressLLMAdapter, SummaryLLMAdapter
 from models.knowledge import LoreBase
 from models.memory import MemoryItem, MemoryStore
@@ -117,8 +118,9 @@ class GameEngine:
         limits = LoopLimits(max_steps=h.loop_max_steps, max_repeat=h.max_repeat, token_budget=h.turn_token_budget,
                             timeout_s=h.turn_timeout_s, obs_max_chars=h.obs_max_chars)
         npc_adapter = NPCLLMAdapter(r.backend("npc"), r.params("npc"), limits, t, rep, lp.max_context_tokens,
-                                    persona_mode=h.persona_mode)
+                                    persona_mode=h.persona_mode, small=(r.backend("small"), r.params("small")))
         summarizer = SummaryLLMAdapter(r.backend("summary"), r.params("summary"), t, rep)
+        reflector = ReflectionLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
         self.world_canon = MemoryStore(mem_dir / "_world_canon.jsonl")     # 共享的即兴世界设定
         self.npcs: dict[str, NPCAgent] = {}
         for nid, p in self.personas.items():
@@ -127,6 +129,8 @@ class GameEngine:
                                       self.lore, self.skills, rng=random.Random(g.seed), tracer=t,
                                       world_canon=self.world_canon, guard_terms=self.quest.canon_guard_terms,
                                       persona_mode=h.persona_mode)
+        for a in self.npcs.values():
+            a.reflector = reflector
         for nid, a in self.npcs.items():         # 按需翻看的上下文：每个人只看得到自己知道的那部分
             a.fs = ContextFS(nid, self.god, self.world, self.personas, self.lore,
                              lambda k, a=a: [m.text for m in reversed(a.memory.items[-k:])],
@@ -138,7 +142,7 @@ class GameEngine:
                     self.god.known[nid].append(c)
         self.companion = self.npcs[self.quest.companion]
         self.option_gen = PlayerOptionGenerator(
-            PlayerOptionLLMAdapter(r.backend("options"), r.params("options"), t, rep), mode=g.options_mode, tracer=t)
+            PlayerOptionLLMAdapter(r.backend("options"), r.params("options"), t, rep, small=r.backend("small")), mode=g.options_mode, tracer=t)
         self.reviewer = SignalReviewer(
             self.god, ReviewerLLMAdapter(r.backend("review"), r.params("review"), t, min(rep, 1)),
             self.companion.name, g.player_name, mode=h.reviewer_mode, fail_policy=h.review_fail_policy, tracer=t)
@@ -157,7 +161,7 @@ class GameEngine:
         self.option_gen.verify = lambda fp, texts: judge.unbacked(self.god, fp, texts)
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
                                   mode=h.branch_mode, tracer=t, decider=self.decider)
-        claim_llm = ClaimLLMAdapter(r.backend("review"), r.params("review"), t, min(rep, 1))
+        claim_llm = ClaimLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
         self.claims = ClaimChecker(self.god, self.world, self.personas,
                                    lambda text, pl, ob, pe: claim_llm.extract(g.player_name, text, pl, ob, pe))
         self.scene = SceneAgent(self.god, self.world, self.explorer, self.world_canon, self.quest.canon_guard_terms,

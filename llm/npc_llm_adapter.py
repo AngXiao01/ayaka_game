@@ -50,7 +50,7 @@ SECTION_TIERS = {"时间与场景": "pinned", "局势": "pinned", "你此刻的�
                  "你对对方说过的谎": "situational", "你可能会说的谎": "situational", "对质": "situational",
                  "你之前说过的设定": "retrieved", "这次谈话较早的内容": "pinned", "本轮相关的人物细节": "retrieved",
                  "本轮适用的技能": "retrieved", "你刚做过的小动作": "situational", "这句话你刚说过了": "situational",
-                 "这一轮才用得上的规矩": "situational", "你上一版回答有问题": "situational", "你这一轮的心态": "situational", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
+                 "这一轮才用得上的规矩": "situational", "你上一版回答有问题": "situational", "你这一轮的心态": "situational", "你自己上次琢磨出来的": "pinned", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
 
 
 PROTECTED = ("你这一轮的心态", "你上一版回答有问题", "刚给你看的东西", "说了你无法核实", "说起自己做过的事", "这句话你刚说过了",
@@ -147,6 +147,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     achieved = {s["id"] for s in t["achieved_signals"]}
     pend = [f"[{s['id']}] {s['desc']}" for s in t["pending_signals"]
             if all(r in achieved for r in s.get("requires", []))]       # 前置还没达成的先不提
+    beat_mode = "beat" in t                                             # 代码已经挑好了这一轮要提的那一件（core/beats.py）
+    if beat_mode:
+        pend = [f"[{t['beat']['id']}] {t['beat']['desc']}"] if t["beat"] else []
     scene = f"{w['time_label']}，现在 {w.get('clock', '')}，{w.get('daylight', '')}。{sc['name']}。{sc['atmosphere']}"
     if opening:                                    # 场景全文只在开场给，之后对话里有
         scene += f"\n{sc['desc']}\n可以自然提及的细节：{'、'.join(sc['notable_elements'])}"
@@ -160,7 +163,8 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         parts.append(f"## 私人时光：{t['event']['title']}\n{t['event']['premise']}")
     mind = [f"- 你的立场：{t['npc_stance']}"]
     if pend and not focus:
-        mind.append("- 你知道、此刻可以说的事（看对方表现，自然地说，一次一件）：\n"
+        mind.append(("- 这一轮可以顺势提起的一件事（话头合适就自然地说；其余的事这一轮不提）：\n" if beat_mode else
+                     "- 你知道、此刻可以说的事（看对方表现，自然地说，一次一件）：\n")
                     + _bullets(pend, indent="  "))
     if t["locked_info"]:
         mind.append("- 你知道、但现在还不会说的事（先按写明的原因直接回应对方，像真人一样；不许答非所问地岔开，也不要说漏）：\n"
@@ -197,6 +201,8 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     if recent:
         parts.append("## 你刚做过的小动作（这一轮别再用同样的，多数时候不用写动作）\n" + "、".join(recent))
     parts.append(f"## 你与{player}的关系\n好感 {rel['affinity']}/100，信任 {rel['trust']}/100，「{rel['tier']}」：{rel['behavior_hint']}")
+    if ctx.reflection:                             # 上次见面后她自己琢磨出来的看法：关系是靠这种累积的印象走的
+        parts.append("## 你自己上次琢磨出来的（对" + player + "的看法与疑问）\n" + ctx.reflection)
     if ctx.handoff:
         h = ctx.handoff
         lines = [f"- 经过：{h['summary']}" + (f"（{h['time']}）" if h.get("time") else "")]
@@ -376,9 +382,10 @@ def build_messages(system: str, ctx: TurnContext, player_text: Optional[str], pl
 
 class NPCLLMAdapter:
     def __init__(self, backend: LLMBackend, params: TaskParams, limits: LoopLimits, tracer: Any = None,
-                 repair_attempts: int = 2, max_context_tokens: int = 32768, persona_mode: str = "full"):
+                 repair_attempts: int = 2, max_context_tokens: int = 32768, persona_mode: str = "full", small: Any = None):
         self.backend = backend
         self.params = params
+        self.small_backend, self.small_params = small if small else (backend, params)     # 评估 / 核对 / 记录用小模型（MODEL_SMALL），没设就和说话同一个
         self.limits = limits
         self.tracer = tracer
         self.repair_attempts = repair_attempts
@@ -412,7 +419,7 @@ class NPCLLMAdapter:
         if player_text is not None and allow_tools:                         # ① 评估
             state = build_state_block(ctx, [], flags, None)
             persona = "\n".join(p._core_parts(ctx.player_name)[:3])
-            ctx.appraisal, used = appraise(self.backend, self.params, p, ctx, state, player_text, player_intent, meta,
+            ctx.appraisal, used = appraise(self.small_backend, self.small_params, p, ctx, state, player_text, player_intent, meta,
                                            self.tracer, min(1, self.repair_attempts), persona)
             extra_tokens += used
         dropped: list[str] = []
@@ -438,8 +445,8 @@ class NPCLLMAdapter:
                 recent = [h["text"] for h in ctx.history if h["speaker"] == "player"][-3:] + [player_text]
                 problems = knowledge_boundary(res.final["speech"], res.final["action"],
                                               ctx.task.get("blocked_terms", {}), recent)
-            if not problems:                                                       # 再请核对员看矛盾和物理
-                problems, used = audit(self.backend, self.params, p, ctx, res.final["speech"], res.final["action"],
+            if not problems and not ctx.task.get("must_reveal"):                  # 再请核对员看矛盾和物理（必须说出口的那轮不核对）
+                problems, used = audit(self.small_backend, self.small_params, p, ctx, res.final["speech"], res.final["action"],
                                        player_text, meta, self.tracer)
                 extra_tokens += used
             if problems:
@@ -458,7 +465,7 @@ class NPCLLMAdapter:
         ap = ctx.appraisal or DEFAULT_APPRAISAL
         note = {}
         if player_text is not None and allow_tools:                         # ③ 记录
-            note, used = annotate(self.backend, self.params, p, ctx, res.final["speech"], res.final["action"], player_text,
+            note, used = annotate(self.small_backend, self.small_params, p, ctx, res.final["speech"], res.final["action"], player_text,
                                   bool(ap.get("wants_to_end")),
                                   [s for s in ctx.task["pending_signals"] if s["id"] in signal_ids],
                                   ctx.task.get("lies_available", []), people or [], places or [], meta, self.tracer, 1)

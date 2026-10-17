@@ -123,7 +123,7 @@ class TaskParams:
     max_tokens: int
 
 
-TASKS = ("npc", "options", "summary", "review", "compress", "director", "branch", "scene")
+TASKS = ("npc", "options", "summary", "review", "compress", "director", "branch", "scene", "small")   # small = 评估 / 核对 / 记录 / 声明抽取 / 台词标注 / 反思，这些单一职责的小活可以用小模型（MODEL_SMALL）
 
 
 @dataclass
@@ -155,6 +155,7 @@ class LLMSettings:
     director: TaskParams = field(default_factory=lambda: TaskParams(0.3, 400))
     branch: TaskParams = field(default_factory=lambda: TaskParams(0.0, 200))
     scene: TaskParams = field(default_factory=lambda: TaskParams(0.7, 300))
+    small: TaskParams = field(default_factory=lambda: TaskParams(0.2, 500))
     # 模型路由：某个任务想走别的模型就设 MODEL_<TASK>（同一个后端下的另一个模型，如 MODEL_REVIEW=openai/gpt-4o-mini）
     routes: dict[str, str] = field(default_factory=dict)
 
