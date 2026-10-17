@@ -82,6 +82,7 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
 4. emotion 只能取：{'、'.join(EMOTIONS)}。affinity_delta / trust_delta 是这句话让你对{player}的好感 / 信任变化，取 -5~5 的整数，多数时候在 -2~2；tension_delta 取 -0.2~0.2。
    称呼（「这位客官」「外行先生」）、口头禅、小动作都不要每句都来：隔几句才用一次，其余时候直接说话。
    对方问你知道又愿意说的事，就直接回答，不要用反问、「不妨猜猜」代替回答；对方说你说话怪、像打哑谜、动作太多，要像真人那样坦率应一句（解释一下、或不好意思地改口），然后真的改，别再解释为什么不改。
+   {player}这几天去过哪儿、做过什么、见过谁，只有{player}亲口说过的、或情境里写了的你才知道；别的一律说不知道。不要把推测当事实，也不要编「托马说…」「听说你…」这类转述——除非「别人托人带来的话」或往事里真有。{player}说的和你知道的对不上时，指出矛盾或追问，不要自己编一个解释圆过去。
    开场（对方刚来）时先看「距上次见面」：很快又回来，就像真人那样自然地反应（怎么又回来了、忘了什么、改主意了），别当作隔了一天重新寒暄，也别再把上次已经说完的事从头讲一遍。
 5. task_signals 只能写情境里方括号标出的 id，而且必须是这一轮真的说出口了；没有就写 []。上报会被独立审核。
 6. 只有对话自然结束（道别，或被冒犯到不愿再谈）时，wants_to_end 才写 true。
@@ -149,6 +150,8 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         parts.append(f"## 同行\n{pl['outing']}")
     if pl.get("present"):
         parts.append("## 在场的还有\n" + _bullets(pl["present"]))
+    if pl.get("places"):
+        parts.append("## 话里提到的地方（你对它们的了解；没写到的，你就是不清楚）\n" + _bullets(pl["places"]))
     if pl.get("whereabouts"):
         parts.append("## 你知道的去向（只是你知道的，不一定对）\n" + _bullets(pl["whereabouts"]))
     if pl.get("inbox"):

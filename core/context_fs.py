@@ -58,6 +58,12 @@ class ContextFS:
         fn = {"地点": self._place, "人物": self._person, "我": self._me, "案子": self._case, "稻妻": self._lore}.get(root)
         return fn(name) if fn else f"（没有这个文件：{path}）"
 
+    def places_in(self, text: str, k: int = 2) -> list[str]:
+        """话里提到了哪些地方，就把这个 NPC 对它们的了解附上（距离、他觉得谁在那儿）。代码按名字认，不靠模型自己想起来去翻。"""
+        names = [self.world.name(l) for l in self.world.locations] + list(self.far_places())
+        hit = [n for n in dict.fromkeys(names) if n and n in (text or "")]
+        return [self._place(n).replace("\n", " ")[:160] for n in hit[:k]]
+
     def far_places(self) -> dict:
         return self.world.cfg.get("far_places", {})
 

@@ -115,6 +115,8 @@ class DialogueSession:
             handoff["same_place"] = handoff.get("where") == self.scene_id
         memories = [m for m in memories if m != handoff.get("summary")]
         place = self.god.physical.npc_view(p.id, topic) if self.god.physical is not None else {}
+        if self.npc.fs is not None:
+            place = {**place, "places": self.npc.fs.places_in(topic + " " + " ".join(h["text"] for h in self.wm.entries[-2:]))}
         return TurnContext(player_name=self.cfg.player_name, scene=scene, world=world,
                            relationship=self.npc.relationship.summary(), memories=memories,
                            history=list(self.wm.entries), history_summary=self.wm.summary, turn=turn, canon=canon,
