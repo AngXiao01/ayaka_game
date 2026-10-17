@@ -80,6 +80,7 @@ class World:
         return {"id": lid, "name": sc["name"], "desc": sc["desc"],
                 "atmosphere": sc.get("atmosphere", {}).get(phase, ""),
                 "notable_elements": sc.get("notable_elements", []),
+                "layout": sc.get("layout", []),
                 "public": bool(sc.get("public", False))}
 
     def describe(self, lid: str, phase: str, tension: float = 0.3) -> str:

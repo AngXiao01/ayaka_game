@@ -119,3 +119,57 @@ def annotate(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnC
         if tracer:
             tracer.log("fallback", where="npc_annotate", error=str(e))
         return {"task_signals": [], "new_facts": [], "lies": [], "tell": [], "go_to": ""}, 0
+
+
+AUDIT_SYSTEM = """你是事实核对员。下面是{npc}知道的事实、不知道的事，和{npc}刚说的一句话。只找三类问题，不挑文风：
+
+1. 与事实矛盾：位置、数字、钥匙、门窗、谁在场、时间，和清单对不上。
+2. 编造越界：说了清单里没有的案发现场细节（窗台、地面、灰尘、脚印、痕迹、谁进出过）、具体数字或人物行为，而这些是{npc}并不知道的。
+3. 物理或常识上说不通：人够不到、东西不可能在那儿、前后矛盾、时间对不上。
+
+闲聊里的往事、喜好、身边人的小事不算越界，只管案发现场和案情相关的话。拿不准就算没问题。
+只输出一个 JSON 对象：{{"ok": true 或 false, "problems": ["……"]}}，每条问题一句话、点明哪里不对；ok 为 true 时 problems 留空。"""
+
+AUDIT_SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}, "problems": {"type": "array", "items": {"type": "string"}}},
+                "required": ["ok", "problems"]}
+
+
+def validate_audit(obj: Any) -> list[str]:
+    if not isinstance(obj, dict):
+        return []
+    problems = [str(x).strip() for x in (obj.get("problems") or []) if str(x).strip()][:3]
+    return [] if obj.get("ok") is True and not problems else problems
+
+
+def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnContext, speech: str, action: str,
+          player_text: str, meta: dict, tracer: Any = None) -> tuple[list[str], int]:
+    """核对 NPC 刚说的话。返回 (问题列表，空 = 没问题；token)。失败当没问题，不拦这一轮。"""
+    t, sc = ctx.task, ctx.scene
+    known = list(sc.get("layout") or []) + [t.get("npc_stance") or ""] + list(ctx.canon or []) \
+        + [x["fact"] for x in t.get("achieved_signals", []) if x.get("fact")]
+    known = [k for k in known if k]
+    if not known:
+        return [], 0
+    user = f"""# {p.name}知道的事实与立场
+{chr(10).join('- ' + k for k in known)}
+
+# 刚才的对话
+{_history(ctx, p.name, 4)}
+
+# {ctx.player_name}说
+{player_text}
+
+# {p.name}刚说
+{('（' + action + '）') if action else ''}{speech}
+
+请核对。只输出 JSON。"""
+    req = LLMRequest(task="npc_audit", messages=[{"role": "system", "content": AUDIT_SYSTEM.format(npc=p.name)},
+                                                 {"role": "user", "content": user}],
+                     temperature=0.0, max_tokens=min(300, params.max_tokens), json_schema=AUDIT_SCHEMA,
+                     schema_name="npc_audit", meta=meta)
+    try:
+        return call_json_ex(backend, req, validate_audit, tracer, 0)
+    except LLMError as e:
+        if tracer:
+            tracer.log("fallback", where="npc_audit", error=str(e))
+        return [], 0

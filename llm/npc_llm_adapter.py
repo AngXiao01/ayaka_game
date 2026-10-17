@@ -19,7 +19,7 @@ from core.skills import Skill
 from core.tools import ToolRegistry
 from llm.base import LLMBackend
 from llm.messages import estimate_tokens, messages_tokens
-from llm.npc_stages import DEFAULT_APPRAISAL, annotate, appraise
+from llm.npc_stages import DEFAULT_APPRAISAL, annotate, appraise, audit
 from llm.schemas import SPEAK_SCHEMA, validate_npc_reply, validate_speak
 from models.personality import Personality
 
@@ -49,7 +49,7 @@ SECTION_TIERS = {"时间与场景": "pinned", "局势": "pinned", "你此刻的�
                  "你对对方说过的谎": "situational", "你可能会说的谎": "situational", "对质": "situational",
                  "你之前说过的设定": "retrieved", "这次谈话较早的内容": "pinned", "本轮相关的人物细节": "retrieved",
                  "本轮适用的技能": "retrieved", "你刚做过的小动作": "situational", "这句话你刚说过了": "situational",
-                 "这一轮才用得上的规矩": "situational", "你这一轮的心态": "situational", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
+                 "这一轮才用得上的规矩": "situational", "你上一版回答有问题": "situational", "你这一轮的心态": "situational", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
 
 
 def section_report(state: str) -> dict:
@@ -83,7 +83,7 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
    对方问你知道又愿意说的事，就直接回答，不要用反问、「不妨猜猜」代替回答；对方说你说话怪、像打哑谜、动作太多，要像真人那样坦率应一句（解释一下、或不好意思地改口），然后真的改，别再解释为什么不改。
 5. {player}这几天去过哪儿、做过什么、见过谁，只有{player}亲口说过的、或情境里写了的你才知道；别的一律说不知道。不要把推测当事实，也不要编「托马说…」「听说你…」这类转述——除非「别人托人带来的话」或往事里真有。{player}说的和你知道的对不上时，指出矛盾或追问，不要自己编一个解释圆过去。
    开场（对方刚来）时先看「距上次见面」：很快又回来，就像真人那样自然地反应（怎么又回来了、忘了什么、改主意了），别当作隔了一天重新寒暄，也别再把上次已经说完的事从头讲一遍。
-6. 角色卡和情境里没写的事，可以即兴补充（往事、喜好、身边人的小事、城里的见闻），但要符合身份、和你之前说过的设定一致。与伪信案有关的线索、证据、真相不许即兴编，只以情境里你知道的事为准。
+6. 角色卡和情境里没写的事，可以即兴补充（往事、喜好、身边人的小事、城里的见闻），但要符合身份、和你之前说过的设定一致。与失窃案有关的线索、证据、真相不许即兴编，只以情境里你知道的事为准。\n   案发现场的物理细节（门窗、锁、窗台、地面、灰尘、脚印、痕迹）只能说「这里的格局」和你的立场里写明你亲眼看到的；没写的就是你没看到，要么说没细看，要么请对方自己去查看，不许凭空编，也不许从自己编的细节往下推理。空间必须说得通：门是门、窗是窗、人从哪儿进出，要和格局对得上。
 7. 对方口头说的案情结论（谁做的、已经查清了），如果没给你看过相应的线索、你自己也不知道，就不能当成已经查清：可以追问凭据，也可以表示会去查（情境里写了你的打算就照着说）；不替对方宣布事情了结，也不编后续（谁认了错、谁去处理了）。
 8. 「你这一轮的心态」是你说话之前已经定下的判断（情绪、打算、是否道别），照着它说，不要另起炉灶。拿不准对方说的地方、人有多远多熟，可以先 read 看看。
 
@@ -120,7 +120,10 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     scene = f"{w['time_label']}，{sc['name']}。{sc['atmosphere']}"
     if opening:                                    # 场景全文只在开场给，之后对话里有
         scene += f"\n{sc['desc']}\n可以自然提及的细节：{'、'.join(sc['notable_elements'])}"
-    parts = ["# 当前情境（只列和这一轮有关的）", f"## 时间与场景\n{scene}",
+    parts = ["# 当前情境（只列和这一轮有关的）", f"## 时间与场景\n{scene}"]
+    if sc.get("layout"):                           # 这里的物理格局：谁说到门窗、位置、能不能进出，都以此为准，不许自己想象
+        parts.append("## 这里的格局（你很熟悉，说到时以此为准；没写的细节你不知道）\n" + _bullets(sc["layout"]))
+    parts += [
              "## 局势\n" + _bullets(([] if t.get("event") else [w["premise"]]) + w["narrative_guidance"],
                                      "（私人时光，不谈公务）")]
     if t.get("event"):
@@ -267,6 +270,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     extra = situational_rules(ctx)
     if extra and not focus:
         parts.append("## 这一轮才用得上的规矩\n" + "\n".join(extra))
+    if ctx.problems:                               # 核对员对你上一版回答的意见：这一版必须改掉
+        parts.append("## 你上一版回答有问题（核对员指出）\n" + _bullets(ctx.problems)
+                     + "\n这一版重新说：只用你确知的事和「这里的格局」；不知道就说没细看，不要编，不要给没写的数字。")
     if ctx.avoid:                                  # 代码比对出来的：和自己说过的话几乎一样
         parts.append("## 这句话你刚说过了\n" + _bullets([f"「{x}」" for x in ctx.avoid])
                      + f"\n这一轮不要再这样说：对方问了什么就答什么，接住对方这句新话，换一种说法。")
@@ -380,13 +386,33 @@ class NPCLLMAdapter:
         if self.tracer:
             self.tracer.log("context", npc=p.id, turn=ctx.turn, system=len(msgs[0]["content"]),
                             history=sum(len(m["content"]) for m in msgs[1:-1]), sections=section_report(msgs[-1]["content"]))
-        loop = ReActLoop(self.backend, registry, self.limits, self.params.temperature, self.params.max_tokens,
-                         self.tracer, self.repair_attempts)
-        res = loop.run(msgs, validate_speak, final_args_schema=SPEAK_SCHEMA, allow_tools=allow_tools,   # ② 说话
-                       meta={**meta, "persona_details": [t for t, _ in details],
-                             "context_tokens": estimate_tokens("".join(m["content"] for m in msgs))})
+        def speak(messages: list[dict]) -> LoopResult:
+            loop = ReActLoop(self.backend, registry, self.limits, self.params.temperature, self.params.max_tokens,
+                             self.tracer, self.repair_attempts)
+            return loop.run(messages, validate_speak, final_args_schema=SPEAK_SCHEMA, allow_tools=allow_tools,   # ② 说话
+                            meta={**meta, "persona_details": [t for t, _ in details],
+                                  "context_tokens": estimate_tokens("".join(m["content"] for m in messages))})
+
+        res = speak(msgs)
         if res.final is None:
             return res
+        if player_text is not None and allow_tools and not ctx.problems:          # ②′ 核对：矛盾 / 编造 / 说不通 → 带着意见重说一次
+            problems, used = audit(self.backend, self.params, p, ctx, res.final["speech"], res.final["action"],
+                                   player_text, meta, self.tracer)
+            extra_tokens += used
+            if problems:
+                if self.tracer:
+                    self.tracer.log("audit", npc=p.id, turn=ctx.turn, speech=res.final["speech"], problems=problems)
+                ctx.problems = problems
+                try:
+                    msgs2 = build_messages(self.system(p, ctx.player_name, registry, skill_index), ctx, player_text,
+                                           player_intent, skills, flags, self.budget_tokens, details)
+                    again = speak(msgs2)
+                    if again.final is not None:
+                        extra_tokens += res.tokens
+                        res = again
+                finally:
+                    ctx.problems = []
         ap = ctx.appraisal or DEFAULT_APPRAISAL
         note = {}
         if player_text is not None and allow_tools:                         # ③ 记录

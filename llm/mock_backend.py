@@ -99,6 +99,9 @@ class MockBackend:
         return {**{k: r[k] for k in ("fit", "emotion", "intent", "affinity_delta", "trust_delta", "tension_delta",
                                      "wants_to_end")}, "plan": ""}
 
+    def _npc_audit(self, meta: dict) -> dict:
+        return {"ok": True, "problems": []}
+
     def _npc_annotate(self, meta: dict) -> dict:
         r = self._take(meta)
         return {"task_signals": r["task_signals"], "new_facts": r["new_facts"], "lies": r["lies"], "tell": [], "go_to": ""}

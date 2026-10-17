@@ -185,3 +185,33 @@ def test_persona_examples_carry_no_case_facts():
         for line in p.style_examples:
             hit = [t for t in guard if t in line]
             assert not hit, f"{nid} 的语气示例带了案情词 {hit}：{line}"
+
+
+def test_auditor_sends_a_contradicting_line_back_once(tmp_path):
+    """核对员发现矛盾 / 编造 / 说不通，NPC 带着意见重说一次（只重一次）。"""
+    from llm.npc_stages import validate_audit
+
+    assert validate_audit({"ok": True, "problems": []}) == []
+    assert validate_audit({"ok": False, "problems": ["窗离地两丈，和格局矛盾"]}) == ["窗离地两丈，和格局矛盾"]
+
+    class Strict(MockBackend):
+        def __init__(self):
+            super().__init__(seed=0)
+            self.audits = 0
+
+        def _npc_audit(self, meta):
+            self.audits += 1
+            return {"ok": False, "problems": ["编造了窗台上的灰尘"]} if self.audits == 1 else {"ok": True, "problems": []}
+
+    save = tmp_path / "data/saves/c.json"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(json.dumps({"world": {"act_id": "act2", "phase_idx": 1, "clues": ["c_case", "c_shops"]}}))
+    be = Strict()
+    eng = GameEngine(settings(tmp_path), be, ScriptedPlayer([{"kind": "talk", "npc": "ayaka"}, ("窗台上有灰尘吗？", "打听情报"), "q"]),
+                     out=lambda s: None, save_name="c")
+    eng.run()
+    ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
+    assert [e["problems"] for e in ev if e["event"] == "audit"] == [["编造了窗台上的灰尘"]]
+    steps = [e for e in ev if e["event"] == "llm" and e["task"] == "npc_step"]
+    told = [m["content"] for e in steps for m in e["messages"] if "你上一版回答有问题" in m["content"]]
+    assert told and "编造了窗台上的灰尘" in told[0]                 # 重说的那一版看得到核对员的意见
