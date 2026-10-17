@@ -378,7 +378,10 @@ class DialogueSession:
     def _run(self) -> SessionResult:
         g, p = self.god, self.npc.p
         rel = self.npc.relationship
-        self.out(f"\n—— 与{p.name}交谈 ——  {p.brief}  （{rel.tier()[0]}）")
+        last = self.npc.handoff().get("minute")
+        met = g.met.get(p.id, 1)
+        tag = "初次见面" if last is None or met <= 1 else f"第 {met} 次见面 · {g.ago_short(last)}"
+        self.out(f"\n—— 与{p.name}交谈 ——  {p.brief}  （{tag}）")
         if self.event:
             self.out(f"\n✨【{self.event.title}】\n{self.event.premise}")
         elif self.cfg.hints:

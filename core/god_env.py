@@ -242,6 +242,11 @@ class GodEnv:
     def time_label(self) -> str:
         return f"第{self.day}天·{self.phase}"
 
+    def ago_short(self, then: int) -> str:
+        """给界面标题用的一个词：刚分开 / 今天稍早 / 昨天 / N 天前。"""
+        d, days = max(0, self.minute - then), self.day - self._split(then)[0]
+        return "刚分开" if d <= 5 else "今天稍早" if days == 0 else "昨天" if days == 1 else f"{days} 天前"
+
     def elapsed_since(self, then: int) -> str:
         """距 then 过去了多久，用人话写：这是代码算的事实，模型只负责按这个说，不许自己猜「昨日」「几天不见」。"""
         d = max(0, self.minute - then)

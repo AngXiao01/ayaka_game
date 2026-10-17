@@ -137,3 +137,16 @@ def test_elapsed_since_is_computed_not_guessed():
     assert "不到五分钟" in g.elapsed_since(now - 2)
     assert "不是昨天" in g.elapsed_since(now - 30) and "30 分钟" in g.elapsed_since(now - 30)
     assert g.elapsed_since(now - 1440) == "昨天" and g.elapsed_since(now - 2 * 1440) == "2 天前"
+
+
+def test_situational_rules_only_appear_when_the_situation_does():
+    from llm.npc_llm_adapter import RULE_LIES, RULE_ROUTING, build_system_prompt, situational_rules, section_report
+    from core.tools import ToolRegistry
+    sysm = build_system_prompt(PERSONAS["yohei"], "旅行者", ToolRegistry([]), "（无）")
+    assert RULE_LIES not in sysm and RULE_ROUTING not in sysm                      # 常驻的系统提示里不再背着这两条
+    bare = type("C", (), {"task": {}, "place": {}})()
+    assert situational_rules(bare) == []
+    lying = type("C", (), {"task": {"lies_available": [{"id": "x"}]}, "place": {"present": ["绫华"]}})()
+    assert situational_rules(lying) == [RULE_LIES, RULE_ROUTING]
+    rep = section_report("# 当前情境\n\n## 时间与场景\n清晨\n\n## 你记得的往事（更多可用 recall_memory）\n- 往事")
+    assert rep["时间与场景"][0] == "pinned" and rep["你记得的往事"][0] == "retrieved"
