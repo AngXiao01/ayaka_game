@@ -150,3 +150,15 @@ def test_situational_rules_only_appear_when_the_situation_does():
     assert situational_rules(lying) == [RULE_LIES, RULE_ROUTING]
     rep = section_report("# 当前情境\n\n## 时间与场景\n清晨\n\n## 你记得的往事（更多可用 recall_memory）\n- 往事")
     assert rep["时间与场景"][0] == "pinned" and rep["你记得的往事"][0] == "retrieved"
+
+
+def test_style_tics_are_counted_not_judged():
+    from core.npc_agent import NPCAgent
+    agent = NPCAgent.__new__(NPCAgent)
+    agent.p = PERSONAS["heizou"]
+    lines = ["哟，外行先生，案子你怎么看？", "哟，这话说得有意思，你是认真的？", "哟，外行先生，你手里还有什么？", "哟，还没完呢，你想到了什么？"]
+    ctx = type("C", (), {"history": [{"speaker": "npc", "text": t} for t in lines]})()
+    notes = agent.style_tics(ctx)
+    assert any("反问" in n for n in notes) and any("「哟，」" in n or "「哟" in n for n in notes)
+    calm = type("C", (), {"history": [{"speaker": "npc", "text": t} for t in ["窗是从里面开的。", "我去看过了。", "就这些。"]]})()
+    assert agent.style_tics(calm) == []

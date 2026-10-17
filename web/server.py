@@ -244,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "index" in body and 0 <= int(body["index"]) < len(io.options):
                     io.answer = {"index": int(body["index"])}
                 elif body.get("text", "").strip() and io.allow_free:
-                    io.answer = {"text": body["text"].strip()[:300]}
+                    io.answer = {"text": body["text"].strip()[:1000]}
                 else:
                     return self._json({"ok": False, "error": "无效的选择"}, 400)
                 io.cond.notify_all()

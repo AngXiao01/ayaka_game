@@ -45,14 +45,14 @@ def detect_injection(text: str) -> list[str]:
     return seen
 
 
-def sanitize(text: str, max_chars: int = 200) -> tuple[str, bool]:
+def sanitize(text: str, max_chars: int = 1000) -> tuple[str, bool]:
     text = "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch)[0] != "C")
     text = text.replace("<", "＜").replace(">", "＞").strip()
     truncated = len(text) > max_chars
     return (text[:max_chars] + "…" if truncated else text), truncated
 
 
-def inspect_player_input(raw: str, max_chars: int = 200) -> GuardResult:
+def inspect_player_input(raw: str, max_chars: int = 1000) -> GuardResult:
     flags = detect_injection(raw)            # 在原文上检测，清洗前的标签伪造也要能识别
     text, truncated = sanitize(raw, max_chars)
     return GuardResult(text=text, flags=flags, truncated=truncated)

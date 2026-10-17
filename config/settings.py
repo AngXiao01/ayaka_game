@@ -170,7 +170,7 @@ class HarnessSettings:
     reviewer_mode: str = "llm"                  # llm | rules | off
     review_fail_policy: str = "reject"          # 审核调用失败时：reject（fail-closed）| accept
     stall_limit: int = 10                       # 连续多少轮既无进展、关系也没升温，就收束这次交谈
-    player_input_max_chars: int = 200
+    player_input_max_chars: int = 1000
     compress_mode: str = "llm"                  # 工作记忆超窗时：llm 摘要 | extractive 抽取 | off 直接丢
     # GOD / tree / ENV 三层的模型部分：都只提议，最后由代码校验执行
     director_mode: str = "llm"                  # 导演（时段切换时调节奏）：llm | rules | off

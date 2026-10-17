@@ -301,7 +301,7 @@ class DialogueSession:
             self._log("action_signal", npc=self.npc.p.id, action=(player or {}).get("kind"), forced=forced,
                       accepted=[s["id"] for s in newly])
         # NPC 自己说出口了（不管有没有上报、条件满没满足），玩家听到了就算：线索本和剧情不能对不上
-        heard = [] if flags else g.spoken_signals(r.speech + r.action, (player or {}).get("text", ""))
+        heard = [] if flags else g.spoken_signals(r.speech + r.action, (player or {}).get("evidence_text") or (player or {}).get("text", ""))
         if heard:
             got = g.apply_signals(heard, heard=True)
             newly += got
@@ -309,7 +309,7 @@ class DialogueSession:
             forced = forced + heard
         review = self.reviewer.review([x for x in r.task_signals if x not in forced], opening=opening,
                                       injection_flags=flags or [],
-                                      player_text=(player or {}).get("text", ""), npc_speech=r.speech,
+                                      player_text=(player or {}).get("evidence_text") or (player or {}).get("text", ""), npc_speech=r.speech,
                                       context_lines=context_lines or [], degraded=self.budget.degraded())
         newly += g.apply_signals(review.accepted)
         for s_ in [] if self.npc.p.role == "companion" else newly:
@@ -460,6 +460,7 @@ class DialogueSession:
         nid = self.npc.p.id
         before = g.available_ids(check_turns=False)
         forced: list[str] = []
+        shown: list[tuple[str, str]] = []          # 这一轮玩家递给对方看的东西（名字、内容）
         press = None
         if action.kind == "ask":
             s = g.quest.signal(action.meta["signal"])
@@ -479,12 +480,14 @@ class DialogueSession:
         elif action.kind == "clue":
             c = action.meta["clue"]
             g.mark_known(nid, [c])
-            text, intent = f"（拿出线索「{g.quest.clue_name(c)}」给对方看）{g.quest.clues[c]['desc']}", "出示线索"
+            # 递东西是个动作，不是一段台词：玩家这边只记一句动作，内容作为「对方亲眼看到的东西」交给 NPC 的情境
+            text, intent = f"（把「{g.quest.clue_name(c)}」递给{self.npc.name}看）", "出示线索"
+            shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"])]
             ctx = self._last_ctx = self.build_ctx(turn)          # 出示之后对方知道的事变了，重建情境
         elif action.kind == "report":
             g.mark_known(nid, list(g.clues))
-            text = (action.text if action.meta.get("line") else "") + "（把这几天查到的事一五一十地说出来）" + "；".join(
-                f"{g.quest.clue_name(c)}：{g.quest.clues[c]['desc'].split('。')[0]}" for c in g.clues)
+            text = (action.text if action.meta.get("line") else "") + "（把这几天查到的事一五一十地说了出来）"
+            shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"].split("。")[0]) for c in g.clues]
             intent = "汇报"
             ctx = self._last_ctx = self.build_ctx(turn)
         elif action.kind == "propose":
@@ -498,10 +501,10 @@ class DialogueSession:
             res = g.confront(t["id"], c, self.npc.relationship.trust)
             if c:
                 g.mark_known(nid, [c])
-                text = (f"你之前说「{t['said']}」……（拿出线索「{g.quest.clue_name(c)}」）{g.quest.clues[c]['desc']}"
-                        "这又怎么解释？")
+                text = f"（拿出「{g.quest.clue_name(c)}」）你之前那句话，和这个对不上。"
+                shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"])]
             else:
-                text = f"你之前说「{t['said']}」——说实话，我不太相信。"
+                text = "你之前那句话，说实话，我不太信。"
             intent = "对质"
             self._apply_confrontation(res)
             ctx = self._last_ctx = self.build_ctx(turn, query_text=t["said"])
@@ -607,6 +610,7 @@ class DialogueSession:
             g.conv["invite"] = invite
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
+        ctx.task["shown"] = [{"name": n, "desc": d} for n, d in shown]
         self._log("guard", raw=text, text=guard.text, flags=guard.flags, truncated=guard.truncated)
         if guard.suspicious and self.cfg.debug:
             self.out(f"    · 输入防护：{'；'.join(guard.flags)}（本轮不计进展）")
@@ -637,6 +641,7 @@ class DialogueSession:
         with self._span(agent="reviewer"):
             newly = self._settle(reply, turn, opening=False,
                                  player={"text": guard.text, "intent": intent, "kind": action.kind,
+                                         "evidence_text": guard.text + "".join(f"{n}：{d}" for n, d in shown),
                                          "flags": guard.flags, "skills": [s.name for s in skills]},
                                  options=options, flags=guard.flags, context_lines=context_lines, forced=forced)
         self._show_debug(reply)

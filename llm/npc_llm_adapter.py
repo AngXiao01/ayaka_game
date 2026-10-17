@@ -49,7 +49,7 @@ SECTION_TIERS = {"时间与场景": "pinned", "局势": "pinned", "你此刻的�
                  "你对对方说过的谎": "situational", "你可能会说的谎": "situational", "对质": "situational",
                  "你之前说过的设定": "retrieved", "这次谈话较早的内容": "pinned", "本轮相关的人物细节": "retrieved",
                  "本轮适用的技能": "retrieved", "你刚做过的小动作": "situational", "这句话你刚说过了": "situational",
-                 "这一轮才用得上的规矩": "situational"}
+                 "这一轮才用得上的规矩": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
 
 
 def section_report(state: str) -> dict:
@@ -231,6 +231,11 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
                      + "告诉对方你会去查，有消息会托人告诉对方。别说已经查清了。")
     if t.get("dismiss"):
         parts.append("## 对方请你先回去\n你们就此分开，你自己回去。道个别。")
+    if t.get("shown"):                             # 玩家这一轮递过来的东西：内容在这里，玩家那句话里只有一个动作
+        parts.append(f"## {player}刚给你看的东西（你亲眼看到了，按你的性格反应）\n"
+                     + _bullets([f"{x['name']}：{x['desc']}" for x in t["shown"]]))
+    if ctx.tics:                                   # 代码量出来的：句式、开头、口头禅有没有变成固定套路
+        parts.append("## 你最近的说话习惯（有点固定了）\n" + _bullets(ctx.tics))
     extra = situational_rules(ctx)
     if extra and not focus:
         parts.append("## 这一轮才用得上的规矩\n" + "\n".join(extra))

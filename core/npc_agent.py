@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
@@ -195,12 +196,42 @@ class NPCAgent:
 
     # ------------------------------------------------------------ 发言
 
+    def style_tics(self, ctx: TurnContext) -> list[str]:
+        """最近几句话里的固定套路：只数、不评判。数出来的事实交给模型，换不换、怎么换由它决定。"""
+        mine = [h["text"] for h in ctx.history if h["speaker"] == "npc"][-4:]
+        if len(mine) < 3:
+            return []
+        notes = []
+        q = sum(1 for m in mine if m.rstrip("」』 ").endswith(("？", "?")))
+        if q >= 3:
+            notes.append(f"最近 {len(mine)} 句里有 {q} 句是以反问/提问收尾的——这一句用陈述收，把话说完，别又抛回一个问题。")
+        heads = [m.lstrip("（…。，、 ")[:2] for m in mine]
+        top = max(set(heads), key=heads.count)
+        if len(top) == 2 and heads.count(top) >= 3:
+            notes.append(f"最近几句都以「{top}」开头——换个开头，或者直接说事。")
+        terms = [t for line in self.p.speech_style for t in re.findall(r"「([^」]{2,8})」", line)]
+        terms = [t for t in terms if not t.startswith("{")]
+        for t in dict.fromkeys(terms):
+            n = sum(1 for m in mine[-3:] if t in m)
+            if n >= 2:
+                notes.append(f"「{t}」最近 3 句里用了 {n} 次——这一句不用。")
+        runs: dict[str, int] = {}
+        for m in mine[-4:]:
+            cjk = re.sub(r"[^㐀-鿿]", "", m)
+            for g in {cjk[i:i + 4] for i in range(len(cjk) - 3)}:
+                runs[g] = runs.get(g, 0) + 1
+        rep = [g for g, n in runs.items() if n >= 3]
+        if rep:
+            notes.append(f"「{rep[0]}」这样的说法在最近几句里反复出现——换一种。")
+        return notes
+
     def _echoes(self, ctx: TurnContext, speech: str) -> list[str]:
         mine = [h["text"] for h in ctx.history if h["speaker"] == "npc"][-REPEAT_WINDOW:]
         return [m for m in mine if bigram_jaccard(m, speech) >= REPEAT_THRESHOLD]
 
     def _call(self, ctx: TurnContext, text: Optional[str], intent: Optional[str], skills: list[Skill],
               flags: list[str], allow_tools: bool) -> NPCReply:
+        ctx.tics = self.style_tics(ctx) if text is not None else []
         res: LoopResult = self.adapter.reply(self.p, ctx, text, intent, self.registry, self.skills.index(),
                                              skills, flags, allow_tools)
         info = {"stop": res.stop.value, "forced_by": res.forced_by.value if res.forced_by else None,
