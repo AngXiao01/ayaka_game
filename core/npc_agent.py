@@ -189,6 +189,7 @@ class NPCAgent:
             return {}
         m = items[-1]
         return {"summary": m.text, "time": m.extra.get("time", ""), "end_reason": m.extra.get("end_reason", ""),
+                "minute": m.extra.get("minute"), "where": m.extra.get("where"),
                 "open_threads": m.extra.get("open_threads", []), "promises": m.extra.get("promises", []),
                 "feeling": m.extra.get("npc_feeling", "")}
 

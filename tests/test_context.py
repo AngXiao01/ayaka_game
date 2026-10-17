@@ -129,3 +129,11 @@ def test_options_claiming_unbacked_visits_are_dropped(tmp_path):
     eng.run()
     assert seen[0] == ["听说木漏茶室也丢了东西？"]
     assert "木漏茶室" in d.calls[-1][1]["speaker_footprint"]
+
+
+def test_elapsed_since_is_computed_not_guessed():
+    g, _ = fs({"act_id": "act1"})
+    now = g.minute
+    assert "不到五分钟" in g.elapsed_since(now - 2)
+    assert "不是昨天" in g.elapsed_since(now - 30) and "30 分钟" in g.elapsed_since(now - 30)
+    assert g.elapsed_since(now - 1440) == "昨天" and g.elapsed_since(now - 2 * 1440) == "2 天前"

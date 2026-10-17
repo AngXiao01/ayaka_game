@@ -110,6 +110,9 @@ class DialogueSession:
         canon = self.npc.recall_canon(topic or self.god.act.objective, 3, self.god.total_turns)
         memories = [m for m in memories if not any(m in c for c in canon)]
         handoff = self.npc.handoff()
+        if handoff.get("minute") is not None:
+            handoff["ago"] = self.god.elapsed_since(handoff["minute"])
+            handoff["same_place"] = handoff.get("where") == self.scene_id
         memories = [m for m in memories if m != handoff.get("summary")]
         place = self.god.physical.npc_view(p.id, topic) if self.god.physical is not None else {}
         return TurnContext(player_name=self.cfg.player_name, scene=scene, world=world,
@@ -434,7 +437,8 @@ class DialogueSession:
         with self._span(agent="memory"):
             summary = self.npc.remember_session(
                 self._last_ctx, "\n".join(self.transcript), end.value, turn, g.total_turns,
-                provenance={"session": g.session_count, "time": g.time_label(), "turns": turn})
+                provenance={"session": g.session_count, "time": g.time_label(), "turns": turn,
+                            "minute": g.minute, "where": self.scene_id})
         if self.cfg.debug:
             self.out(f"    · {p.name}记住了：{summary['summary']}")
         return SessionResult(end_reason=end, turns=turn, npc=p.id, transcript=self.transcript, signals=signals,

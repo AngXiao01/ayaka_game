@@ -242,6 +242,17 @@ class GodEnv:
     def time_label(self) -> str:
         return f"第{self.day}天·{self.phase}"
 
+    def elapsed_since(self, then: int) -> str:
+        """距 then 过去了多久，用人话写：这是代码算的事实，模型只负责按这个说，不许自己猜「昨日」「几天不见」。"""
+        d = max(0, self.minute - then)
+        days = self.day - self._split(then)[0]
+        if d <= 5:
+            return f"才分开不到五分钟，还是同一个{self.phase}——对方这么快又来了"
+        if days == 0:
+            when = f"今天{self.phase_at(then)}"
+            return f"约 {d} 分钟前（{when}，今天之内，不是昨天）" if d < 60 else f"约 {d // 60} 个钟头前（{when}，今天之内，不是昨天）"
+        return "昨天" if days == 1 else f"{days} 天前"
+
     def next_phase_start(self) -> int:
         day, idx = self._split(self.minute)
         return self.phase_start(day + 1, 0) if idx + 1 >= len(self.phases) else self.phase_start(day, idx + 1)

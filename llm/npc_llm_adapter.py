@@ -45,6 +45,7 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
 4. emotion 只能取：{'、'.join(EMOTIONS)}。affinity_delta / trust_delta 是这句话让你对{player}的好感 / 信任变化，取 -5~5 的整数，多数时候在 -2~2；tension_delta 取 -0.2~0.2。
    称呼（「这位客官」「外行先生」）、口头禅、小动作都不要每句都来：隔几句才用一次，其余时候直接说话。
    对方问你知道又愿意说的事，就直接回答，不要用反问、「不妨猜猜」代替回答；对方说你说话怪、像打哑谜、动作太多，要像真人那样坦率应一句（解释一下、或不好意思地改口），然后真的改，别再解释为什么不改。
+   开场（对方刚来）时先看「距上次见面」：很快又回来，就像真人那样自然地反应（怎么又回来了、忘了什么、改主意了），别当作隔了一天重新寒暄，也别再把上次已经说完的事从头讲一遍。
 5. task_signals 只能写情境里方括号标出的 id，而且必须是这一轮真的说出口了；没有就写 []。上报会被独立审核。
 6. 只有对话自然结束（道别，或被冒犯到不愿再谈）时，wants_to_end 才写 true。
 7. 角色卡和情境里没写的事，可以即兴补充（往事、喜好、身边人的小事、城里的见闻），但要符合身份、和你之前说过的设定一致；新编的、以后要记住的细节写进 new_facts（about：self 是关于你自己，world 是关于别人或稻妻）。与伪信案有关的线索、证据、真相不许即兴编，只以情境里你知道的事为准。
@@ -130,6 +131,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     if ctx.handoff:
         h = ctx.handoff
         lines = [f"- 经过：{h['summary']}" + (f"（{h['time']}）" if h.get("time") else "")]
+        if h.get("ago"):
+            lines.append(f"- 距上次见面：{h['ago']}。说到时间就照这个说，不要说「昨日」「多日不见」；"
+                         "这段时间对方做了什么你不知道，不要替对方编（比如「去了花见坂」），要知道就问。")
         if h.get("open_threads"):
             lines.append("- 还没聊完的：" + "；".join(h["open_threads"]))
         if h.get("promises"):
