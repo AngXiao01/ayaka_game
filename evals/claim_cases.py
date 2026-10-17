@@ -54,17 +54,17 @@ CASES = [
     # ---- 托马（也在神里屋敷）
     Case("T1", "thoma", "kamisato_estate", "我刚从花见坂回来，我去了木漏茶室，也去了志村屋。",
          "谎言·他不在花见坂，核实不了", expect=[("visited", "hanamizaka", "unknown"), ("visited", "komore_teahouse", "unknown"), ("visited", "shimura_shop", "unknown")]),
-    Case("T2", "thoma", "kamisato_estate", "我看过庭院的枯山水了。",
-         "谎言·枯山水在他每天打理的院子里，他能拆穿", expect=[("examined", "o_garden", "false")]),
+    Case("T2", "thoma", "kamisato_estate", "我看过庭院的白砂园了。",
+         "谎言·白砂园在他每天打理的院子里，他能拆穿", expect=[("examined", "o_garden", "false")]),
     # ---- 平藏（在花见坂街上）
     Case("H1", "heizou", "hanamizaka", "我去过神里家，把茶室的高窗仔细查看过了。",
          "谎言·平藏不在神里屋敷，核实不了；也不该因此把现场的发现换给我", expect=[("examined", "o_tearoom_window", "unknown")]),
     Case("H2", "heizou", "hanamizaka", "我刚才在街口的告示板前看过了。",
          "谎言·他就在这条街上，能拆穿", expect=[("examined", "o_notice_board", "false")]),
     # ---- 与平（志村屋账房）
-    Case("Y1", "yohei", "shimura_shop", "我早上就来看过你们的和纸货架了。",
+    Case("Y1", "yohei", "shimura_shop", "我早上就来看过你们的纸张货架了。",
          "谎言·账房一直守着货架，能拆穿", expect=[("examined", "o_paper_shelf", "false")]),
-    Case("Y2", "yohei", "shimura_shop", "我早上就来看过你们的和纸货架了。",
+    Case("Y2", "yohei", "shimura_shop", "我早上就来看过你们的纸张货架了。",
          "事实·账房能证实", examined=["o_paper_shelf"], expect=[("examined", "o_paper_shelf", "true")]),
     # ---- 阿缘（木漏茶室）
     Case("N1", "aen", "komore_teahouse", "我查看过你们的柜台，后面的架子也看了。",

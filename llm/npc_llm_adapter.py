@@ -221,7 +221,8 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     pr = t.get("press")
     if pr and not pr["ok"]:                        # 硬问没问出来：代码掷过骰，这次不松口
         parts.append(f"## 对方在逼问：{pr['desc']}\n这次你没有松口。用你的方式回避——岔开话题、推说不知道、"
-                     "或者明显地紧张起来，但不要说出这件事。你心里起了戒心。")
+                     "或者明显地紧张起来，但不要说出这件事。你心里起了戒心。"
+                     "和你刚才说过的话保持一致：刚才已经让过步的，不要突然翻脸不认，可以说「话虽如此……」再把话收回来一点。")
     dsp = t.get("dispatch")
     if dsp:
         parts.append(f"## 对方说出了一个推测：{dsp['desc']}\n没有凭据，你不会就此认定；但这值得查一查。"

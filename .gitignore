@@ -5,3 +5,11 @@ data/saves/*.json
 data/memories/*/
 data/traces/*.html
 evals_out/
+
+# 隧道程序（直接下载的二进制）
+cloudflared
+cloudflared.tgz
+# 分享模式里朋友的存档、记忆和对话记录不进仓库
+data/saves/p_*
+data/memories/p_*
+data/traces/p_*

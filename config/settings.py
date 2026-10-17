@@ -289,4 +289,6 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         debug=_env_bool("GAME_DEBUG", False),
         seed=int(seed) if seed else None,
     )
+    if _env("GAME_DATA_DIR", ""):
+        game.data_dir = Path(_env("GAME_DATA_DIR", ""))
     return Settings(llm=llm, game=game, harness=harness)

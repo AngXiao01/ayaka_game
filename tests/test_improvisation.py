@@ -31,7 +31,7 @@ def test_improvised_fact_is_kept_reused_and_case_fact_blocked(tmp_path):
     eng.run()
     ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
     w = next(e for e in ev if e["event"] == "canon_write")
-    assert [k["fact"] for k in w["kept"]] == ["小时候养过一只叫小雪的白猫，爱趴在茶室纸门边晒太阳"]
+    assert [k["fact"] for k in w["kept"]] == ["小时候养过一只叫小雪的白猫，爱趴在茶室纸拉门边晒太阳"]
     assert w["dropped"][0]["fact"] == "茶碗其实是托马藏起来的" and "案情" in w["dropped"][0]["reason"]
     later = npc_prompts(eng, "ayaka")[-1]                      # 同一次交谈的下一轮就能看到
     assert "你之前说过的设定" in later and "小雪" in later

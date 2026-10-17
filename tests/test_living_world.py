@@ -107,3 +107,27 @@ def test_warning_the_forger_changes_the_epilogue(tmp_path):
     g = eng.god
     assert {"warned_kokichi", "kokichi_hid"} <= set(g.flags)
     assert "绫华始终不知道" in "".join(eng.outcome_lines())
+
+
+def _heizou_state():
+    return {"act_id": "act2", "phase_idx": 1, "location": "hanamizaka", "clues": ["c_case", "c_tanuki_hair", "c_sill"],
+            "achieved": ["asked_purpose", "accepted_commission", "rv_heizou_sill"]}
+
+
+def test_concession_said_out_loud_counts_and_removes_the_dice(tmp_path):
+    # trace：平藏嘴上已经认了输，却没算达成，玩家还被摆出一个低概率的硬问按钮
+    from llm.decider import ScriptedDecider
+    from tests.test_decider import engine as eng_with
+    d = ScriptedDecider({"conceded": {"rv_heizou_shapeshift": (True, 0.9)}})
+    eng, _, _ = eng_with(tmp_path, _heizou_state(),
+                         [{"kind": "talk", "npc": "heizou"}, ("样张只印了一半，阿缘说那人的耳朵是尖的，人和狐其实是同一个。", "自由发言"), "q"], d)
+    assert "rv_heizou_shapeshift" in eng.god.achieved and "heizou_conceded" in eng.god.flags
+
+
+def test_good_argument_raises_press_odds():
+    g, *_ = living(_heizou_state())
+    g.trust_lookup = lambda n: 22
+    s = g.quest.signal("rv_heizou_shapeshift")
+    base, _ = g.press_chance(s, "heizou")
+    strong, why = g.press_chance(s, "heizou", 2)
+    assert strong >= base + 0.39 and any("理由很充分" in w for w in why)

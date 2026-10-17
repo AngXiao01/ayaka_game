@@ -305,6 +305,16 @@ class DialogueSession:
                       accepted=[s["id"] for s in newly])
         # NPC 自己说出口了（不管有没有上报、条件满没满足），玩家听到了就算：线索本和剧情不能对不上
         heard = [] if flags else g.spoken_signals(r.speech + r.action, (player or {}).get("evidence_text") or (player or {}).get("text", ""))
+        if not flags and not opening:
+            # 关键词没认出来的说法，交给模型判：他是不是已经亲口承认了还没达成的事
+            nid = self.npc.p.id
+            open_ = [s_ for s_ in g.quest.signals
+                     if s_.npc == nid and s_.id not in g.achieved and s_.id not in heard + forced and not s_.event
+                     and not g.missing_prereqs(s_.id)
+                     and g.signal_status(s_, nid, None, 99, check_turns=False)[0] != "hidden"
+                     and (s_.ask or s_.evidence)]
+            heard += judge.conceded(g, self.npc.name, r.speech + r.action,
+                                    (player or {}).get("evidence_text") or (player or {}).get("text", ""), open_) or []
         if heard:
             got = g.apply_signals(heard, heard=True)
             newly += got
@@ -472,7 +482,9 @@ class DialogueSession:
         elif action.kind == "press":
             s = g.quest.signal(action.meta["signal"])
             text, intent = s.ask["text"], "推进任务"
-            p, why = g.press_chance(s, nid)
+            lines = [f"{'玩家' if h['speaker'] == 'player' else self.npc.name}：{h['text']}" for h in ctx.history[-6:]]
+            strength = judge.persuasion(g, self.npc.name, s.desc, lines) or 0
+            p, why = g.press_chance(s, nid, strength)
             prev = g.misses.get(f"press:{s.id}")
             ok, pct = roll(g, f"press:{s.id}", p, attempt=prev["n"] if isinstance(prev, dict) else 0)
             press = {"ok": ok, "desc": s.desc, "line": tag(pct, ok, why)}
