@@ -29,6 +29,27 @@ def test_files_are_scoped_to_what_the_npc_knows():
     assert "托马" in f.read("/人物/托马") and "茶泡饭" in f.read("/我/记忆")
 
 
+def test_ledger_of_what_the_npc_already_said_is_a_file():
+    g, f = fs({"act_id": "act2", "clues": ["c_case"], "achieved": ["yohei_shelf"]}, npc="yohei")
+    sid = next(s.id for s in g.quest.signals if s.npc == "yohei" and "爪印" in s.desc)
+    g.achieved.append(sid)
+    f.canon = lambda: ["我进货的纸来自美浓"]
+    text = f.read("/我/说过的事")
+    assert "泥爪印" in text and "美浓" in text                      # 说出口的事实 + 随口编的设定都在
+    assert "/我/说过的事" in f.ls("/我")
+    other = ContextFS("ayaka", g, WORLD, PERSONAS, f.lore, lambda k: [])
+    assert "泥爪印" not in other.read("/我/说过的事")                # 每个人只有自己说过的
+
+
+def test_echo_of_own_recent_line_is_detected():
+    from core.npc_agent import NPCAgent
+    ctx = type("C", (), {"history": [{"speaker": "npc", "text": "这位客官，买东西请看货架，不买的话……恕不奉陪。"},
+                                     {"speaker": "player", "text": "是狸猫吗"}]})()
+    agent = NPCAgent.__new__(NPCAgent)
+    assert agent._echoes(ctx, "这位客官，买东西请看货架，不买的话恕不奉陪。")
+    assert not agent._echoes(ctx, "狸猫的爪尖不外露，这串印子分趾，是狗爪。")
+
+
 def npc_prompts(eng):
     ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
     return [e["messages"][-1]["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step"]

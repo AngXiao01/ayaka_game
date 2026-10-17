@@ -21,6 +21,7 @@ class Skill:
     stages: list[str] = field(default_factory=list)
     on_injection: bool = False
     only_when_locked: bool = False      # 只有对方心里有暂时不肯说的事时才适用
+    npcs: list[str] = field(default_factory=list)   # 只适用于这些角色（空 = 谁都能用）
 
 
 def _parse(path: Path) -> Skill:
@@ -38,7 +39,7 @@ def _parse(path: Path) -> Skill:
         return [x.strip() for x in meta.get(key, "").split(",") if x.strip()]
 
     return Skill(name=meta["name"], description=meta.get("description", ""), body=body.strip(),
-                 intents=lst("intents"), keywords=lst("keywords"), stages=lst("stages"),
+                 intents=lst("intents"), keywords=lst("keywords"), stages=lst("stages"), npcs=lst("npcs"),
                  on_injection=meta.get("on_injection", "").lower() == "true",
                  only_when_locked=meta.get("only_when_locked", "").lower() == "true")
 
@@ -58,11 +59,13 @@ class SkillLibrary:
         return self.skills.get(name)
 
     def route(self, intent: str | None, text: str, stage_id: str, injection: bool, limit: int = 1,
-              has_locked: bool = True) -> list[Skill]:
+              has_locked: bool = True, npc: str | None = None) -> list[Skill]:
         """规则路由：确定性、零 token。"""
         hits: list[tuple[int, Skill]] = []
         for s in self.skills.values():
             if s.only_when_locked and not has_locked:
+                continue
+            if s.npcs and npc not in s.npcs:
                 continue
             score = 0
             if injection and s.on_injection:

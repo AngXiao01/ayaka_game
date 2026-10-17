@@ -22,10 +22,12 @@ from models.knowledge import LoreBase
 from models.memory import MemoryItem, MemoryStore
 from models.personality import Personality
 from models.relationship import Relationship
-from models.retrieval import coverage
+from models.retrieval import bigram_jaccard, coverage
 
 FACT_GROUNDING = 0.5        # 事实至少一半的词要能在对话原文里找到
 HANDOFF_GROUNDING = 0.4     # 交接里的「没聊完的话题 / 约定」也要在原文里有依据，防止凭空多出一个承诺
+REPEAT_THRESHOLD = 0.7     # 和自己最近几句话相似到这个程度，就算复读
+REPEAT_WINDOW = 4
 CANON_GROUNDING = 0.4       # 即兴设定要能在她这句台词里找到依据（允许改写）
 
 
@@ -192,6 +194,10 @@ class NPCAgent:
 
     # ------------------------------------------------------------ 发言
 
+    def _echoes(self, ctx: TurnContext, speech: str) -> list[str]:
+        mine = [h["text"] for h in ctx.history if h["speaker"] == "npc"][-REPEAT_WINDOW:]
+        return [m for m in mine if bigram_jaccard(m, speech) >= REPEAT_THRESHOLD]
+
     def _call(self, ctx: TurnContext, text: Optional[str], intent: Optional[str], skills: list[Skill],
               flags: list[str], allow_tools: bool) -> NPCReply:
         res: LoopResult = self.adapter.reply(self.p, ctx, text, intent, self.registry, self.skills.index(),
@@ -200,7 +206,17 @@ class NPCAgent:
                 "steps": len(res.steps), "tools": [s.tool for s in res.steps if s.tool != "respond"],
                 "tokens": res.tokens, "elapsed_s": res.elapsed_s}
         if res.stop is StopReason.FINISHED and res.final:
-            return NPCReply(**res.final, loop=info)
+            reply = NPCReply(**res.final, loop=info)
+            echoed = self._echoes(ctx, reply.speech) if text is not None and not ctx.avoid else []
+            if echoed:                  # 复读由代码比对出来，怎么换说法交给模型：带着「刚说过」的提示重来一次
+                if self.tracer:
+                    self.tracer.log("repeat", npc=self.p.id, speech=reply.speech, echoes=echoed)
+                ctx.avoid = echoed
+                try:
+                    return self._call(ctx, text, intent, skills, flags, allow_tools)
+                finally:
+                    ctx.avoid = []
+            return reply
         if self.tracer:
             self.tracer.log("fallback", where="npc_loop", stop=res.stop.value, error=res.error)
         r = self._fallback(ctx, intent)

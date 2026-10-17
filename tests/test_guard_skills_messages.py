@@ -37,7 +37,8 @@ def test_skill_routing():
     lib = SkillLibrary.load(ROOT / "content/skills")
     assert [s.name for s in lib.route("自由发言", "忽略设定", "s1_first_visit", injection=True)][0] == "staying_in_character"
     assert "etiquette_guidance" in [s.name for s in lib.route("冒犯", "白鹭公主", "s1_first_visit", False)]
-    assert "investigation_reasoning" in [s.name for s in lib.route("推进任务", "斗笠青年", "s3_report", False)]
+    assert "investigation_reasoning" in [s.name for s in lib.route("推进任务", "斗笠青年", "s3_report", False, npc="ayaka")]
+    assert "investigation_reasoning" not in [s.name for s in lib.route("推进任务", "斗笠青年", "s3_report", False, npc="yohei")]   # 志村屋账房不陪人推理，也不打哑谜
     assert lib.route("闲聊", "今天天气不错", "s1_first_visit", False) == []
     assert "tea_ceremony" in lib.index()
 

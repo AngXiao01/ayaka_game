@@ -66,7 +66,7 @@ def test_spoken_farewell_ends_talk_and_replaces_the_button(tmp_path):
     eng, shown, out = run(tmp_path, [line], [{"kind": "talk", "npc": "ayaka"}, 1, "q"])
     first = shown[0]
     assert first[0] == (line["text"], "leave", True)
-    assert not any(t == "🚪 起身告辞" for t, _, _ in first)                 # 台词已经带上了告辞，不再另给按钮
+    assert not any(t == "🚪 离开" for t, _, _ in first)                 # 台词已经带上了告辞，不再另给按钮
     assert any(line["text"] in x for x in out) and len(shown) == 1        # 说完就走，谈话结束
 
 

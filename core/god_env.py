@@ -829,7 +829,7 @@ class GodEnv:
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
             "known_clues": [f"{self.quest.clue_name(c)}：{self.quest.clues[c]['desc']}" for c in self.known.get(npc, [])],
             "player_clue_count": len(self.clues),
-            "achieved_signals": [{"id": s.id, "desc": s.desc} for s in self.quest.signals
+            "achieved_signals": [{"id": s.id, "desc": s.desc, "fact": s.reveal or s.desc} for s in self.quest.signals
                                  if s.id in self.achieved and s.npc == npc],
             "pending_signals": pending,
             "turns_in_stage": self.turns_in_stage,

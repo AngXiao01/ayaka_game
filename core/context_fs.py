@@ -7,6 +7,7 @@ NPC 需要时用 ls / read 去翻，翻到的内容只在这一轮的工具观�
   /人物/<名字>     你和这个人的关系、你对他/她的看法、你知道的去向
   /我/记忆         你记得的往事（长期记忆，最近的在前）
   /我/今天         你今天的事、日程
+  /我/说过的事     你已经对对方说出口的事实、随口编过的设定、撒过的谎（说话要和它们一致）
   /案子/我知道的   别人给你看过、告诉过你的线索（你没见过的，这里没有）
   /稻妻/<条目>     设定资料（和 lookup_lore 同源）
 
@@ -22,9 +23,10 @@ ROOTS = {"地点": "各个地方（含海外的国度）", "人物": "你认识�
 
 class ContextFS:
     def __init__(self, npc_id: str, god: Any, world: Any, personas: dict, lore: Any,
-                 memories: Callable[[int], list[str]]):
+                 memories: Callable[[int], list[str]], canon: Callable[[], list[str]] = lambda: []):
         self.npc, self.god, self.world, self.personas, self.lore = npc_id, god, world, personas, lore
         self.memories = memories
+        self.canon = canon
 
     # ------------------------------------------------------------ 目录
 
@@ -39,7 +41,7 @@ class ContextFS:
         if root == "人物":
             return "\n".join(f"/人物/{p.name}" for nid, p in self.personas.items() if nid != self.npc)
         if root == "我":
-            return "/我/记忆\n/我/今天"
+            return "/我/记忆\n/我/今天\n/我/说过的事"
         if root == "案子":
             return "/案子/我知道的"
         if root == "稻妻":
@@ -106,7 +108,15 @@ class ContextFS:
             today = (p.days or {}).get(str(self.god.day), "")
             sched = "；".join(f"{'/'.join(s['phases'])}在{self.world.name(s['location'])}" for s in p.schedule)
             return "\n".join(x for x in (today, f"平常的日程：{sched}" if sched else "") if x) or "（今天没什么特别的）"
+        if name == "说过的事":
+            return "\n".join(f"- {x}" for x in self.said()) or "（还没对对方说过什么要紧的事）"
         return f"（没有这个文件：/我/{name}）"
+
+    def said(self) -> list[str]:
+        """这个 NPC 已经说出口、之后必须保持一致的事：达成的信号里说出的事实 + 随口编的设定 + 撒过的谎。"""
+        g = self.god
+        facts = [s.reveal or s.desc for s in g.quest.signals if s.id in g.achieved and s.npc == self.npc]
+        return facts + self.canon() + [f"（谎）{t['said']}——真相：{t['truth']}" for t in g.lies_told(self.npc)]
 
     def _case(self, name: str) -> str:
         g = self.god

@@ -179,7 +179,7 @@ class DialogueSession:
             elif self.npc.p.outing and not (g.conv or {}).get("invite_declined"):
                 acts.append(("invite", PlayerOption(f"🚶 邀{self.npc.name}一起走走", "邀请", kind="invite"),
                              f"邀{self.npc.name}一起出去走走", "🚶 邀请同行"))
-        acts.append(("leave", PlayerOption("🚶 先聊到这儿，接着走吧" if together else "🚪 起身告辞", "告别", kind="leave"),
+        acts.append(("leave", PlayerOption("🚶 接着走" if together else "🚪 离开", "告别", kind="leave"),
                      "结束这次谈话，离开" if not together else "先不聊了，接着赶路", "🚪 告辞" if not together else "🚶 接着走"))
         return acts
 
@@ -390,7 +390,7 @@ class DialogueSession:
         degraded = 0
         with self._span(turn=0, agent="npc"):
             self._last_ctx = self.build_ctx(0)
-            skills = self.npc.skills.route(None, "", g.act_id, False)
+            skills = self.npc.skills.route(None, "", g.act_id, False, npc=self.npc.p.id)
             opening = self.npc.opening(self._last_ctx, skills, allow_tools=not self.budget.degraded())
             self.wm.add({"speaker": "npc", "text": opening.speech, "reply": opening.to_dict()})
             self._show_speech(opening)
@@ -500,8 +500,9 @@ class DialogueSession:
             ctx = self._last_ctx = self.build_ctx(turn, query_text=t["said"])
         elif action.kind == "leave":
             together = g.physical is not None and nid in g.physical.party
-            text, intent = (("先聊到这儿吧，我们接着走。", "闲聊") if together
-                            else ("（起身告辞）今天就先聊到这里吧，我先告辞了。", "告别"))
+            # 按钮只是个动作，不替玩家写台词：想说什么由选项 agent 写（带 act）或玩家自己打字；
+            # 这里只记一句不带话的动作，对方怎么送、说不说话，交给对方自己
+            text, intent = (("（没再多说，继续往前走）", "闲聊") if together else ("（转身离开）", "告别"))
             if action.meta.get("line"):
                 text = action.text
         elif action.kind == "invite":
@@ -539,6 +540,11 @@ class DialogueSession:
                  and f"dispatched:{h['id']}" not in g.flags and not set(h["clues"]) <= set(g.clues)]
             last_line = next((h["text"] for h in reversed(ctx.history) if h["speaker"] == "npc"), "")
             felt = judge.turn(g, self.npc.name, guard.text, open_hs, last_line, g.act.objective or "") or {}
+        # 玩家打字说「我该走了」：走不走是玩家的事，不用等对方点头。是不是在告别由判定模型答，结束会话由代码执行
+        leaving = bool(felt.get("leaving")) and action.kind == "say"
+        if leaving:
+            intent = "告别"
+            self._log("leaving", npc=nid, text=guard.text)
         asked_out = felt["invite"] if "invite" in felt else bool(INVITE_RE.search(guard.text))
         if (phys is not None and not self.event and not guard.suspicious and nid not in phys.party and self.npc.p.outing
                 and (action.kind == "invite" or (action.kind == "say" and asked_out))):
@@ -612,7 +618,7 @@ class DialogueSession:
         if press:
             self.out(f"    {press['line']}")
         skills = self.npc.skills.route(intent, guard.text, g.act_id, guard.suspicious,
-                                       has_locked=bool(ctx.task["locked_info"]))
+                                       has_locked=bool(ctx.task["locked_info"]), npc=nid)
         context_lines = self.wm.lines()
         with self._span(agent="npc"):
             reply = self.npc.respond(ctx, guard.text, intent, skills, guard.flags,
@@ -674,7 +680,7 @@ class DialogueSession:
         self._flush_notices()
         if g.resolved:
             return DialogueEndReason.RESOLVED, ids, deg
-        if action.kind == "leave" or dismissed:
+        if action.kind == "leave" or dismissed or leaving:
             return DialogueEndReason.PLAYER_LEFT, ids, deg
         if went:
             return DialogueEndReason.NPC_LEFT, ids, deg

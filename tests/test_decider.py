@@ -41,6 +41,19 @@ def test_parse_response_tolerates_shapes():
     assert parse_response(Q, {"team": {"answer": "frontend"}}) is None      # 不在选项里的答案不收
 
 
+def test_parse_response_real_jev_shapes():
+    """线上 jev-1.13 的真实回包：noul 只给「是」的概率，choice/score 的答案放在 choice/score 键里。"""
+    data = {"answers": {"is_bug": {"type": "noul", "noul": 0.98},
+                        "team": {"type": "choice", "choice": "payments", "probabilities": {"account": 0.1, "payments": 0.9}, "confidence": 0.9},
+                        "urgency": {"type": "score", "score": 1.89, "probabilities": {"0": 0, "1": 0.11, "2": 0.89}, "confidence": 0.83}}}
+    a = parse_response(Q, data)
+    assert a["is_bug"].answer is True and a["is_bug"].yes(0.9)
+    assert a["team"].answer == "payments" and a["team"].p == 0.9
+    assert a["urgency"].answer == 2
+    low = parse_response({"is_bug": Q["is_bug"]}, {"answers": {"is_bug": {"type": "noul", "noul": 0.05}}})["is_bug"]
+    assert low.answer is False and low.p == 0.95 and not low.yes()          # 0.05 = 九成五不是
+
+
 class FakeHTTP:
     def __init__(self, body=None, fail=False):
         self.body, self.fail, self.sent = body, fail, []
@@ -144,3 +157,17 @@ def test_auto_mode_prefers_jev_then_llm():
     assert type(make_decider(s, "mock", None, (FakeLLM("{}"), None))) is Decider          # mock 不判
     s.llm.backend, s.llm.api_key = "openrouter", "sk-or-v1-abc"
     assert isinstance(make_decider(s, "openrouter", None, (FakeLLM("{}"), None)), JevDecider)
+
+
+def test_typed_farewell_ends_the_talk_without_npc_consent(tmp_path):
+    d = ScriptedDecider({"turn": {"leaving": (True, 0.95), "threat": (False, 0.9), "specific": (0, 1.0)}})
+    eng, res, _ = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case"]},
+                         [{"kind": "talk", "npc": "ayaka"}, ("时候不早了，我该走了，改天再聊。", "自由发言"), "q"], decider=d)
+    assert [r.end_reason.name for r in res.sessions] == ["PLAYER_LEFT"]      # 一句话就走，不必等对方同意
+
+
+def test_not_leaving_keeps_talking(tmp_path):
+    d = ScriptedDecider({"turn": {"leaving": (False, 0.95), "threat": (False, 0.9), "specific": (0, 1.0)}})
+    eng, res, _ = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case"]},
+                         [{"kind": "talk", "npc": "ayaka"}, ("改天再聊聊茶道吧，今天先说案子。", "自由发言"), "q"], decider=d)
+    assert res.sessions[0].end_reason.name != "PLAYER_LEFT"

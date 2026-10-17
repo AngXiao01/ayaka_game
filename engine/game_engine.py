@@ -127,7 +127,8 @@ class GameEngine:
                                       persona_mode=h.persona_mode)
         for nid, a in self.npcs.items():         # 按需翻看的上下文：每个人只看得到自己知道的那部分
             a.fs = ContextFS(nid, self.god, self.world, self.personas, self.lore,
-                             lambda k, a=a: [m.text for m in reversed(a.memory.items[-k:])])
+                             lambda k, a=a: [m.text for m in reversed(a.memory.items[-k:])],
+                             lambda a=a: [m.text for m in a.memory.items if m.kind == "canon"])
         self.god.trust_lookup = lambda nid: self.npcs[nid].relationship.trust
         self.companion = self.npcs[self.quest.companion]
         self.option_gen = PlayerOptionGenerator(

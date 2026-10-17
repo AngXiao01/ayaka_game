@@ -15,6 +15,7 @@ class TurnContext:
     history_summary: str = ""                           # 窗口外较早对话的滚动摘要
     canon: list[str] = field(default_factory=list)      # 之前即兴编出、必须保持一致的设定
     handoff: dict = field(default_factory=dict)         # 上次见面的结构化交接（上下文重置后接续的唯一来源）
+    avoid: list[str] = field(default_factory=list)      # 刚被代码发现重复的自己的话：这一轮换个说法
     turn: int = 0
     player_view: dict = field(default_factory=dict)     # 玩家视角（Explorer.player_view），只给替玩家想台词的选项 agent
     place: dict = field(default_factory=dict)           # 物理世界里这个 NPC 该知道的：身边的人、同行、提到的人在哪、口信

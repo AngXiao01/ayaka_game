@@ -41,3 +41,12 @@ def test_npc_reply_length_guards():
     r = validate_npc_reply({"speech": "嗯。", "action": "微微侧过头，目光落在院中静谧的樱树上，随后又带着一丝试探的意味"}, [])
     assert r["action"] == "" and r["speech"] == "嗯。"
     assert validate_npc_reply({"speech": "嗯。", "action": "递过茶盏"}, [])["action"] == "递过茶盏"
+
+
+def test_stage_directions_leave_the_speech_and_land_in_action():
+    r = validate_npc_reply({"speech": "（推了推眼镜）这位客官，请便。", "action": ""}, [])
+    assert r["speech"] == "这位客官，请便。" and r["action"] == "推了推眼镜"
+    r = validate_npc_reply({"speech": "（扶了扶眼镜）随我来。（领至货架前）就是这儿。", "action": "递茶"}, [])
+    assert r["speech"] == "随我来。就是这儿。" and r["action"] == "递茶"          # 已有 action 时括号里的直接丢掉
+    r = validate_npc_reply({"speech": "（低头拨算盘）", "action": ""}, [])
+    assert r["speech"] == "（低头拨算盘）"                                        # 整句都是括号：不动，别弄成空台词

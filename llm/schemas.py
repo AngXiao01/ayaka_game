@@ -6,6 +6,7 @@ Schema 只用 type / enum / required 这类各家结构化解码都支持的关�
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 EMOTIONS = ["平静", "欣喜", "羞涩", "担忧", "严肃", "不悦", "感动", "好奇", "惊讶"]
@@ -102,6 +103,19 @@ def npc_reply_schema(signal_ids: list[str], lie_ids: Optional[list[str]] = None)
     }
 
 
+_STAGE_DIR = re.compile(r"[（(]([^）)\n]{1,%d})[）)]\s*" % MAX_ACTION_CHARS)
+
+
+def split_stage_directions(speech: str, action: str) -> tuple[str, str]:
+    """模型常把「（推了推眼镜）」直接写进台词里，action 字段却留空。括号里的动作是结构化信息，不属于台词：
+    挪进 action（action 已有就丢掉），台词只留说出口的话。纯机械的整理，不评判动作该不该有。"""
+    found = _STAGE_DIR.findall(speech)
+    clean = _STAGE_DIR.sub("", speech).strip()
+    if not clean:                              # 整句都是括号：当作没说话，原样保留交给上游校验
+        return speech, action
+    return clean, action or (found[0] if found else "")
+
+
 def validate_npc_reply(obj: Any, signal_ids: list[str], lie_ids: Optional[list[str]] = None) -> dict:
     if not isinstance(obj, dict):
         raise ValidationError("顶层必须是 JSON 对象")
@@ -111,6 +125,7 @@ def validate_npc_reply(obj: Any, signal_ids: list[str], lie_ids: Optional[list[s
     if len(speech) > MAX_SPEECH_CHARS:
         raise ValidationError(f"speech 太长了（{len(speech)} 字），像真人聊天那样压缩到一两句、不超过 {MAX_SPEECH_CHARS} 字")
     action = _strip_quotes(_str(obj.get("action")))
+    speech, action = split_stage_directions(speech, action)
     if len(action) > MAX_ACTION_CHARS:      # 冗长的神态描写直接丢掉，不值得为它重写一次
         action = ""
     emotion = _str(obj.get("emotion"))

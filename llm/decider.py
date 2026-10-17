@@ -59,6 +59,15 @@ def _parse_one(q: dict, raw: Any) -> Optional[Decision]:
         return None
     if not isinstance(raw, dict):
         raw = {"answer": raw}
+    # 实测的回包（jev-1.13）：noul 只给「是」的概率 {"type":"noul","noul":0.98}；
+    # choice 给 {"choice": 选项, "probabilities", "confidence"}；score 给 {"score": 1.89, "probabilities", "confidence"}
+    if q["type"] == "noul" and isinstance(raw.get("noul"), (int, float)) and not isinstance(raw.get("noul"), bool):
+        pt = min(1.0, max(0.0, float(raw["noul"])))
+        return Decision(pt >= 0.5, pt if pt >= 0.5 else 1 - pt, {"true": pt, "false": 1 - pt})
+    if q["type"] == "choice" and "choice" in raw and "answer" not in raw:
+        raw = {**raw, "answer": raw["choice"]}
+    if q["type"] == "score" and isinstance(raw.get("score"), (int, float)) and "answer" not in raw:
+        raw = {**raw, "answer": raw["score"]}
     ans = next((raw[k] for k in ("answer", "value", "decision", "result") if k in raw), None)
     probs = next((raw[k] for k in ("probabilities", "probs", "distribution") if isinstance(raw.get(k), dict)), {})
     if ans is None and probs:

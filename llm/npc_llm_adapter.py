@@ -43,6 +43,8 @@ def build_system_prompt(p: Personality, player: str, registry: ToolRegistry, ski
 2. 先接住对方这句话：回应对方刚说的内容，再说别的。像真人聊天，多数时候一两句、二三十个字；对方随口一问就随口一答，讲案情、说心事时最多四句。可以反问、追问细节、分享自己的小事、打趣，不必句句绕回公事；不堆砌修饰，不要句句「若是」「想必」「……」。
 3. action 多数时候留空 ""；只有动作本身有意义时才写（递茶、脸红、沉默片刻、收起折扇……），不超过 12 个字，不写「目光落在……」这类神态描写。
 4. emotion 只能取：{'、'.join(EMOTIONS)}。affinity_delta / trust_delta 是这句话让你对{player}的好感 / 信任变化，取 -5~5 的整数，多数时候在 -2~2；tension_delta 取 -0.2~0.2。
+   称呼（「这位客官」「外行先生」）、口头禅、小动作都不要每句都来：隔几句才用一次，其余时候直接说话。
+   对方问你知道又愿意说的事，就直接回答，不要用反问、「不妨猜猜」代替回答；对方说你说话怪、像打哑谜、动作太多，要像真人那样坦率应一句（解释一下、或不好意思地改口），然后真的改，别再解释为什么不改。
 5. task_signals 只能写情境里方括号标出的 id，而且必须是这一轮真的说出口了；没有就写 []。上报会被独立审核。
 6. 只有对话自然结束（道别，或被冒犯到不愿再谈）时，wants_to_end 才写 true。
 7. 角色卡和情境里没写的事，可以即兴补充（往事、喜好、身边人的小事、城里的见闻），但要符合身份、和你之前说过的设定一致；新编的、以后要记住的细节写进 new_facts（about：self 是关于你自己，world 是关于别人或稻妻）。与伪信案有关的线索、证据、真相不许即兴编，只以情境里你知道的事为准。
@@ -101,6 +103,10 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         mind.append(f"- 以你现在对{player}的信任，愿意说出的心里话：\n" + _bullets(t["secrets_unlocked"], indent="  "))
     if t["known_clues"]:
         mind.append(f"- {player}给你看过、告诉过你的线索：" + "、".join(c.split("：", 1)[0] for c in t["known_clues"]))
+    said = [x["fact"] for x in t["achieved_signals"] if x.get("fact")]
+    if said and not focus:                         # 说过的事实以此为准：这些在历史里会被压缩掉，模型容易改口、编出矛盾的细节
+        mind.append("- 你已经告诉过对方、之后必须以此为准的事实（可以换着说，但不能改口，也不要添新的、和它矛盾的细节）：\n"
+                    + _bullets(said, indent="  "))
     parts.append("## 你此刻的心思（只有你知道，不要原样念给对方听）\n" + "\n".join(mind))
     pl = ctx.place or {}
     if pl.get("outing"):
@@ -116,6 +122,10 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         parts.append(f"## 你今天\n{t['today']}")
     if chat and t.get("curiosity") and ctx.turn % 3 == 2:
         parts.append(f"## 想问问对方（找个自然的时机问一句）\n{t['curiosity']}")
+    recent = [h["reply"].get("action") for h in ctx.history if h["speaker"] == "npc" and h.get("reply")][-4:]
+    recent = [a for a in recent if a]
+    if recent:
+        parts.append("## 你刚做过的小动作（这一轮别再用同样的，多数时候不用写动作）\n" + "、".join(recent))
     parts.append(f"## 你与{player}的关系\n好感 {rel['affinity']}/100，信任 {rel['trust']}/100，「{rel['tier']}」：{rel['behavior_hint']}")
     if ctx.handoff:
         h = ctx.handoff
@@ -182,6 +192,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
                      + "告诉对方你会去查，有消息会托人告诉对方。别说已经查清了。")
     if t.get("dismiss"):
         parts.append("## 对方请你先回去\n你们就此分开，你自己回去。道个别。")
+    if ctx.avoid:                                  # 代码比对出来的：和自己说过的话几乎一样
+        parts.append("## 这句话你刚说过了\n" + _bullets([f"「{x}」" for x in ctx.avoid])
+                     + f"\n这一轮不要再这样说：对方问了什么就答什么，接住对方这句新话，换一种说法。")
     if focus:                                      # 放在最后，离生成位置最近
         parts.append("## 这一轮你要说出口的事（对方已经满足了让你开口的条件，不要再回避、搪塞或说谎）\n"
                      + _bullets(t["must_reveal"]))

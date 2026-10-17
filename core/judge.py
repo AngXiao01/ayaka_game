@@ -74,7 +74,10 @@ def turn(god: Any, npc_name: str, text: str, hyps: list[dict], last_line: str = 
                                 "false": "顺着刚才的话说，或者是自然的转换话题、告别、寒暄"}},
         "invite": {"type": "noul", "instructions": "玩家是不是在邀请对方现在和自己一起去某处、一起走走？",
                    "criteria": {"true": "玩家请对方此刻同行、陪自己去哪儿（哪怕说得委婉）",
-                                "false": "没有邀请；或者只是约以后、问对方要不要去、提到别人一起"}}}
+                                "false": "没有邀请；或者只是约以后、问对方要不要去、提到别人一起"}},
+        "leaving": {"type": "noul", "instructions": "玩家这句话是不是在说自己现在就要结束这次谈话、离开？",
+                    "criteria": {"true": "玩家表示这就走了、先告辞、改天再聊、要去别处（哪怕说得客气、带着笑）",
+                                 "false": "还在聊；或者只是提到以后的打算、问对方要不要走、说的是别人要走"}}}
     for h in hyps:
         qs[h["id"]] = {"type": "noul", "instructions": f"玩家是不是在明确断言：{h['desc']}？",
                        "criteria": {"true": f"玩家把「{h['desc']}」当成判断说了出来（哪怕换了说法）",
@@ -87,6 +90,7 @@ def turn(god: Any, npc_name: str, text: str, hyps: list[dict], last_line: str = 
     return {"threat": bool(th and th.yes(SURE)), "specific": sp.answer if sp else 0,
             "abrupt": bool(ab and ab.yes(SURE)),
             **({"invite": out["invite"].yes(SURE)} if "invite" in out else {}),
+            **({"leaving": out["leaving"].yes(SURE)} if "leaving" in out else {}),
             "hypotheses": [h for h in hyps if h["id"] in out and out[h["id"]].yes(SURE)]}
 
 
