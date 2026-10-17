@@ -267,3 +267,59 @@ def test_a_player_leaving_never_drags_the_npc_along(tmp_path):
     from core.dialogue_session import DialogueSession
     src = (ROOT / "core/dialogue_session.py").read_text(encoding="utf-8")
     assert "_ended_by_player" in src and 'role != "companion"' in src
+
+
+def test_secret_access_follows_what_the_npc_has_learned():
+    g, _ = fs({"act_id": "act2", "clues": ["c_case"]})
+    assert "裂纹" in g.blocked_terms("heizou") and "裂纹" in g.blocked_terms("ayaka")       # 平藏、绫华都还不知道碗有裂
+    assert "裂纹" not in g.blocked_terms("fox")                                                # 守夜狐本来就知道
+    g.mark_known("heizou", ["c_bowl_on_altar"])
+    assert "裂纹" not in g.blocked_terms("heizou")                                             # 被出示了神龛上的白碗
+    g.achieved.append("rv_ayaka_warm")
+    assert "裂纹" not in g.blocked_terms("ayaka")                                              # 绫华自己想到了碗有裂
+    assert "白狐" not in g.blocked_terms("ayaka") and "白狐" in g.blocked_terms("aen")          # 绫华记得母亲救过白狐，阿缘不该知道
+
+
+def test_knowledge_boundary_ignores_what_the_player_just_said():
+    from core.guardrails import knowledge_boundary
+    blocked = {"裂纹": "bowl_crack", "守夜狐": "fox_identity"}
+    assert knowledge_boundary("那只碗有一道裂纹，是守夜狐补的。", "", blocked, ["你好"]) != []
+    assert knowledge_boundary("裂纹？我没听说过。", "", blocked, ["碗上是不是有裂纹？"]) == []   # 复述对方的话不算越界
+    assert knowledge_boundary("我不清楚。", "", blocked, []) == []
+
+
+def test_boundary_violation_sends_the_line_back_with_the_reason(tmp_path):
+    class Leaky(MockBackend):
+        def __init__(self):
+            super().__init__(seed=0)
+            self.leaked = False
+
+        def _npc_step(self, meta):
+            out = super()._npc_step(meta)
+            if out["tool"] == "respond" and not self.leaked and not meta.get("opening"):
+                self.leaked = True
+                out["args"] = {**out["args"], "speech": "那只碗其实有一道旧裂纹。"}
+            return out
+
+    save = tmp_path / "data/saves/c.json"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(json.dumps({"world": {"act_id": "act2", "phase_idx": 1, "clues": ["c_case", "c_shops"]}}))
+    eng = GameEngine(settings(tmp_path), Leaky(), ScriptedPlayer([{"kind": "talk", "npc": "ayaka"}, ("你好，聊聊茶会吧。", "闲聊"), "q"]),
+                     out=lambda s: None, save_name="c")
+    eng.run()
+    ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
+    audits = [e for e in ev if e["event"] == "audit"]
+    assert audits and "裂纹" in audits[0]["problems"][0]                  # 越界被抓到，附带理由
+    told = [m["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step" for m in e["messages"]
+            if "你上一版回答有问题" in m["content"]]
+    assert told and "你并不知道" in told[0]                                   # 重说的那一版看得到理由
+
+
+def test_state_block_drops_by_tier_when_over_budget():
+    from llm.npc_llm_adapter import fit_state
+    state = ("# 当前情境\n\n## 时间与场景\n清晨\n\n## 你记得的往事\n" + "往事" * 400 + "\n\n## 你可能会说的谎\n" + "谎" * 300
+             + "\n\n## 你这一轮的心态\n情绪平静\n\n## 你此刻的心思\n立场")
+    out, dropped = fit_state(state, 600)
+    assert "你记得的往事" in dropped and "你这一轮的心态" in out and "时间与场景" in out and "你此刻的心思" in out
+    kept, none = fit_state(state, 10_000)
+    assert kept == state and none == []

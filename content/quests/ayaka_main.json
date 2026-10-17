@@ -1388,5 +1388,98 @@
       ],
       "text": "你曾经偷偷给小吉报过信。这件事，绫华始终不知道。"
     }
+  ],
+  "secrets": [
+    {
+      "id": "bowl_crack",
+      "desc": "月白有一道旧裂纹，再浇滚水会碎",
+      "terms": [
+        "裂纹",
+        "旧裂",
+        "有裂",
+        "裂了",
+        "要裂",
+        "会碎",
+        "金线"
+      ],
+      "known_by": [
+        "fox"
+      ],
+      "unlocked_by_clues": [
+        "c_bowl_on_altar",
+        "c_warm"
+      ],
+      "unlocked_by_signals": [
+        "rv_fox_truth",
+        "rv_ayaka_warm",
+        "reported_findings"
+      ]
+    },
+    {
+      "id": "shapeshift",
+      "desc": "夜里折回来的「小吉」是狐变的",
+      "terms": [
+        "变成小吉",
+        "借了小吉",
+        "冒充小吉",
+        "假小吉",
+        "假的小吉",
+        "化成",
+        "化作",
+        "变化成",
+        "会变的",
+        "会变形"
+      ],
+      "known_by": [
+        "fox"
+      ],
+      "unlocked_by_clues": [
+        "c_sample",
+        "c_double",
+        "c_bowl_on_altar"
+      ],
+      "unlocked_by_signals": [
+        "rv_heizou_shapeshift",
+        "rv_fox_truth"
+      ]
+    },
+    {
+      "id": "bowl_location",
+      "desc": "月白在神龛的祭台上",
+      "terms": [
+        "祭台",
+        "碗在神龛",
+        "碗就在神龛",
+        "带去了神龛",
+        "放在神龛"
+      ],
+      "known_by": [
+        "fox"
+      ],
+      "unlocked_by_clues": [
+        "c_bowl_on_altar"
+      ],
+      "unlocked_by_signals": [
+        "rv_fox_truth"
+      ]
+    },
+    {
+      "id": "fox_identity",
+      "desc": "拿碗的是稻荷神龛的守夜狐",
+      "terms": [
+        "守夜狐",
+        "白狐"
+      ],
+      "known_by": [
+        "fox",
+        "ayaka"
+      ],
+      "unlocked_by_clues": [
+        "c_bowl_on_altar"
+      ],
+      "unlocked_by_signals": [
+        "rv_fox_truth"
+      ]
+    }
   ]
 }

@@ -114,6 +114,7 @@ class QuestDef:
     agendas: list[dict] = field(default_factory=list)         # NPC 自己的打算（core/agendas.py）
     actions: dict = field(default_factory=dict)               # 自由行动的动词表与发现（core/actions.py）
     outcomes: list[dict] = field(default_factory=list)
+    secrets: list[dict] = field(default_factory=list)         # 不许谁说漏的案情事实：{id, terms, known_by, unlocked_by_clues, unlocked_by_signals}
     fragile: dict = field(default_factory=dict)               # 会被毁掉的证据：{clue: {flag, text}}        # 结局由状态拼出来：满足条件就加一段
 
     @classmethod
@@ -679,6 +680,23 @@ class GodEnv:
         """这一幕要弄清的几件事，各自弄清了没有（给玩家看的目标进度）。"""
         return [(c["label"], bool(set(c.get("clues_any", [])) & set(self.clues))) for c in self.act.checklist]
 
+    def secret_open_to(self, npc: str, s: dict) -> bool:
+        """这个 NPC 现在有没有资格知道这件秘密：本来就知道 / 被出示过相关线索 / 自己的相关信号已经达成。"""
+        if npc in s.get("known_by", []):
+            return True
+        if set(self.known.get(npc, [])) & set(s.get("unlocked_by_clues", [])):
+            return True
+        return any(sid in self.achieved and (self.quest.signal(sid) and self.quest.signal(sid).npc == npc)
+                   for sid in s.get("unlocked_by_signals", []))
+
+    def blocked_terms(self, npc: str) -> dict[str, str]:
+        """{词: 秘密编号}：这个 NPC 现在不该说出口的词（他还不知道这件事）。"""
+        out: dict[str, str] = {}
+        for s in self.quest.secrets:
+            if not self.secret_open_to(npc, s):
+                out.update({t: s["id"] for t in s.get("terms", [])})
+        return out
+
     def pending_signals(self) -> list[dict]:
         return [{"id": s.id, "desc": s.desc, "requires": s.requires} for s, _ in self._conv_signals("available")]
 
@@ -873,6 +891,7 @@ class GodEnv:
             "locked_info": [f"关于「{d['topic']}」你知道一些，现在不说，因为：{why}。被问到时用你自己的话直接说明这个态度，不要岔开话题，也不要装作不知道" if d.get("topic")
                             else f"{d['desc']}（{why}）" for d, why in locked],
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
+            "blocked_terms": self.blocked_terms(persona.id),
             "prior_clues": [self.quest.clues[c]["desc"] for c in getattr(persona, "knows_clues", []) if c in self.quest.clues],
             "known_clues": [f"{self.quest.clue_name(c)}：{self.quest.clues[c]['desc']}" for c in self.known.get(npc, [])],
             "player_clue_count": len(self.clues),

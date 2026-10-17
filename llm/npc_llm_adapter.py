@@ -19,6 +19,7 @@ from core.skills import Skill
 from core.tools import ToolRegistry
 from llm.base import LLMBackend
 from llm.messages import estimate_tokens, messages_tokens
+from core.guardrails import knowledge_boundary
 from llm.npc_stages import DEFAULT_APPRAISAL, annotate, appraise, audit
 from llm.schemas import SPEAK_SCHEMA, validate_npc_reply, validate_speak
 from models.personality import Personality
@@ -50,6 +51,35 @@ SECTION_TIERS = {"时间与场景": "pinned", "局势": "pinned", "你此刻的�
                  "你之前说过的设定": "retrieved", "这次谈话较早的内容": "pinned", "本轮相关的人物细节": "retrieved",
                  "本轮适用的技能": "retrieved", "你刚做过的小动作": "situational", "这句话你刚说过了": "situational",
                  "这一轮才用得上的规矩": "situational", "你上一版回答有问题": "situational", "你这一轮的心态": "situational", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
+
+
+PROTECTED = ("你这一轮的心态", "你上一版回答有问题", "刚给你看的东西", "说了你无法核实", "说起自己做过的事", "这句话你刚说过了",
+             "你最近的说话习惯", "这一轮才用得上的规矩", "你此刻的心思", "时间与场景", "局势", "你与")
+STATE_MAX_CHARS = 6500           # 本轮情境块的字数预算：超了就按层丢，先丢检索来的、再丢条件出现的，常驻与本轮关键的不丢
+
+
+def fit_state(state: str, max_chars: int = STATE_MAX_CHARS) -> tuple[str, list[str]]:
+    """情境块超预算时按层丢小节（成熟的做法是“活动条目预算”：常驻的先进、检索的最后进、超了就不进）。
+    返回 (处理后的情境块, 被丢掉的小节标题)。丢的顺序：retrieved 先于 situational，同层里先丢最长的；受保护的从不丢。"""
+    if len(state) <= max_chars:
+        return state, []
+    head, *secs = re.split(r"\n\n(?=## )", state)
+    info = []
+    for sec in secs:
+        m = re.match(r"## ([^\n：（]*)", sec)
+        title = m.group(1).strip() if m else ""
+        tier = next((v for k, v in SECTION_TIERS.items() if title.startswith(k)), "situational")
+        info.append([title, tier, sec, any(title.startswith(k) for k in PROTECTED)])
+    dropped: list[str] = []
+    for want in ("retrieved", "situational"):
+        while len(head) + sum(len(x[2]) + 2 for x in info) > max_chars:
+            cands = [x for x in info if x[1] == want and not x[3]]
+            if not cands:
+                break
+            worst = max(cands, key=lambda x: len(x[2]))
+            info.remove(worst)
+            dropped.append(worst[0])
+    return "\n\n".join([head] + [x[2] for x in info]), dropped
 
 
 def section_report(state: str) -> dict:
@@ -309,7 +339,7 @@ def player_input_tag(text: str, intent: Optional[str]) -> str:
 
 def build_messages(system: str, ctx: TurnContext, player_text: Optional[str], player_intent: Optional[str],
                    skills: list[Skill], flags: list[str], budget_tokens: int,
-                   details: Optional[list[tuple[str, str]]] = None) -> list[dict]:
+                   details: Optional[list[tuple[str, str]]] = None, sink: Optional[list] = None) -> list[dict]:
     hist: list[dict] = []
     for h in ctx.history:
         if h["speaker"] == "player":
@@ -319,7 +349,9 @@ def build_messages(system: str, ctx: TurnContext, player_text: Optional[str], pl
                 hist.append({"role": "user", "content": f"（{ctx.player_name}来到了这里。）"})
             hist.append({"role": "assistant", "content": json.dumps({"tool": "respond", "args": compact_reply(h["reply"])},
                                                                     ensure_ascii=False)})
-    state = build_state_block(ctx, skills, flags, details)
+    state, dropped = fit_state(build_state_block(ctx, skills, flags, details))
+    if dropped and sink is not None:
+        sink.extend(dropped)
     if player_text is None:
         hint = ctx.task.get("opening_hint") or "来见你"
         now = (f"# 现在\n场景开始：{ctx.player_name}{hint}。请你先开口——一两句就好，可以接着上次的话题、"
@@ -383,11 +415,13 @@ class NPCLLMAdapter:
             ctx.appraisal, used = appraise(self.backend, self.params, p, ctx, state, player_text, player_intent, meta,
                                            self.tracer, min(1, self.repair_attempts), persona)
             extra_tokens += used
+        dropped: list[str] = []
         msgs = build_messages(self.system(p, ctx.player_name, registry, skill_index), ctx, player_text,
-                              player_intent, skills, flags, self.budget_tokens, details)
+                              player_intent, skills, flags, self.budget_tokens, details, dropped)
         if self.tracer:
             self.tracer.log("context", npc=p.id, turn=ctx.turn, system=len(msgs[0]["content"]),
-                            history=sum(len(m["content"]) for m in msgs[1:-1]), sections=section_report(msgs[-1]["content"]))
+                            history=sum(len(m["content"]) for m in msgs[1:-1]), sections=section_report(msgs[-1]["content"]),
+                            dropped=dropped)
         def speak(messages: list[dict]) -> LoopResult:
             loop = ReActLoop(self.backend, registry, self.limits, self.params.temperature, self.params.max_tokens,
                              self.tracer, self.repair_attempts)
@@ -398,10 +432,16 @@ class NPCLLMAdapter:
         res = speak(msgs)
         if res.final is None:
             return res
-        if player_text is not None and allow_tools and not ctx.problems:          # ②′ 核对：矛盾 / 编造 / 说不通 → 带着意见重说一次
-            problems, used = audit(self.backend, self.params, p, ctx, res.final["speech"], res.final["action"],
-                                   player_text, meta, self.tracer)
-            extra_tokens += used
+        if player_text is not None and allow_tools and not ctx.problems:          # ②′ 核对：越界 / 矛盾 / 编造 / 说不通 → 带着意见重说一次
+            problems: list[str] = []
+            if not ctx.task.get("must_reveal"):                                    # 先过确定性的知识边界（不调模型）
+                recent = [h["text"] for h in ctx.history if h["speaker"] == "player"][-3:] + [player_text]
+                problems = knowledge_boundary(res.final["speech"], res.final["action"],
+                                              ctx.task.get("blocked_terms", {}), recent)
+            if not problems:                                                       # 再请核对员看矛盾和物理
+                problems, used = audit(self.backend, self.params, p, ctx, res.final["speech"], res.final["action"],
+                                       player_text, meta, self.tracer)
+                extra_tokens += used
             if problems:
                 if self.tracer:
                     self.tracer.log("audit", npc=p.id, turn=ctx.turn, speech=res.final["speech"], problems=problems)
