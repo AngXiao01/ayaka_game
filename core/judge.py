@@ -103,3 +103,29 @@ def unbacked(god: Any, footprint: str, texts: list[str]) -> Optional[set[int]]:
     if not out:
         return None
     return {i for i in range(len(texts)) if f"o{i}" in out and out[f"o{i}"].yes(SURE)}
+
+
+def conceded(god: Any, npc_name: str, speech: str, player_text: str, signals: list) -> Optional[list[str]]:
+    """NPC 这句话是不是已经亲口说出 / 承认了某件事（关键词没认出来的说法）。说出口就算，免得剧情和对话对不上。"""
+    d = _decider(god)
+    if not d or not signals or not speech.strip():
+        return None
+    qs = {s.id: {"type": "noul", "instructions": f"{npc_name}这句话是不是已经承认或说出了：{s.desc}？",
+                 "criteria": {"true": f"{npc_name}亲口承认 / 说出了这件事（换了说法也算），听的人会觉得这事他认了",
+                              "false": "没有承认，只是在反问、嘴硬、含糊其辞，或者说的是别的事"}}
+          for s in signals}
+    out = d.decide("conceded", {"speaker": npc_name, "player_said": player_text, "speaker_said": speech}, qs)
+    if not out:
+        return None
+    return [k for k, v in out.items() if v.yes(SURE)]
+
+
+def persuasion(god: Any, npc_name: str, point: str, lines: list[str]) -> Optional[int]:
+    """玩家前面几句的理由，对「{point}」有多有说服力：0 没讲理由 / 1 有点道理 / 2 很有说服力。"""
+    d = _decider(god)
+    if not d or not lines:
+        return None
+    out = d.decide("persuasion", {"listener": npc_name, "recent_dialogue": lines[-6:]}, {
+        "strength": {"type": "score", "instructions": f"玩家想让{npc_name}认下「{point}」。对话里玩家给出的理由有多有说服力？",
+                     "criteria": ["没讲什么理由，只是一口咬定", "有一点道理，但还说不太通", "理由很充分，换了谁都难以反驳"]}})
+    return out["strength"].answer if out and "strength" in out else None

@@ -505,7 +505,7 @@ class GodEnv:
         st, _ = self.signal_status(s, npc, None, 99)
         return st == "locked"
 
-    def press_chance(self, s: SignalDef, npc: str) -> tuple[float, list[str]]:
+    def press_chance(self, s: SignalDef, npc: str, strength: int = 0) -> tuple[float, list[str]]:
         """硬问的成功率：手上有多少相关证据（出示过的分量更重）、对方多信你、对方有没有起疑、刚被拒过又问。"""
         need = set(s.requires_known_any) | set(s.requires_clues_any)
         shown = need & set(self.known.get(npc, []))
@@ -518,6 +518,8 @@ class GodEnv:
         t = self.trust_lookup(npc)
         if t != 20:
             parts.append(("信任", (t - 20) * 0.01))
+        if strength:                                          # 前面讲的道理（模型判的说服力）
+            parts.append(("你的理由" + ("很充分" if strength >= 2 else "有些道理"), 0.2 * strength))
         if f"alerted:{npc}" in self.flags:
             parts.append(("对方起了戒心", -0.15))
         last = self.misses.get(f"press:{s.id}")
