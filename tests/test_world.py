@@ -141,3 +141,10 @@ def test_option_generator_drops_repeats():
                       history=[{"speaker": "player", "text": "那晚您看见的人长什么样"}])
     opts, _ = PlayerOptionGenerator(Stub()).generate(ctx, "阿缘", [])
     assert [o.text for o in opts] == ["这茶真香。", "今天天气不错呢。"] and opts[0].tone == "温和"
+
+
+def test_every_place_has_a_layout_sheet():
+    """NPC 说到门窗、位置、出入口时以格局为准：每个地点都要写，且都带「数字只以这里为准」的提醒。"""
+    for lid, loc in WORLD.locations.items():
+        assert loc.get("layout"), f"{lid} 没写格局"
+        assert any("数字" in x for x in loc["layout"]), f"{lid} 的格局缺少数字提醒"
