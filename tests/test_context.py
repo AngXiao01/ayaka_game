@@ -20,7 +20,7 @@ def fs(state, npc="ayaka"):
 
 
 def test_files_are_scoped_to_what_the_npc_knows():
-    g, f = fs({"act_id": "act2", "clues": ["c_case", "c_messenger", "c_seal_rubbing"]})
+    g, f = fs({"act_id": "act2", "clues": ["c_case", "c_bundle", "c_sample"]})
     assert "/地点/璃月" in f.ls("/地点") and "七八天" in f.read("/地点/璃月")
     assert "走路约" in f.read("/地点/离岛")
     g.known["ayaka"] = ["c_case"]
@@ -171,9 +171,8 @@ def test_style_tics_are_counted_not_judged():
 def test_claims_without_evidence_are_flagged_and_retries_reroll():
     from core.dice import roll
     g, _ = fs({"act_id": "act2", "clues": ["c_case"]})
-    flagged = g.unverified_claims("heizou", "货架上有短毛和泥爪印，布包是小吉抱着的，委托我记得")
-    assert "货架上的短毛" in flagged and "深夜的布包" in flagged and "失窃的委托" not in flagged   # 手上有的不算
-    g.mark_known("heizou", ["c_letter"]) if "c_letter" in g.clues else None
+    flagged = g.unverified_claims("heizou", "货架上有棕毛和圆爪印，布包是小吉抱着的，委托我记得")
+    assert "货架上的棕毛" in flagged and "深夜的布包" in flagged and "失窃的委托" not in flagged   # 手上有的不算
     outs = {roll(g, "press:x", 0.5, attempt=n)[0] for n in range(12)}
     assert outs == {True, False}                          # 同一分钟里重试，每次是独立的一掷
 

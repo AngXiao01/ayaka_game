@@ -18,21 +18,21 @@ def test_yohei_needs_to_see_the_commission():
     g.begin_conversation("yohei")
     assert ids(g) == [] and g.locked_signals()[0][1]          # 不知道失窃的事：锁住
     g.give_clue("c_case")
-    assert "rv_yohei_letter" not in ids(g)                      # 没看到凭据，不知道对方的来路
+    assert "rv_yohei_hair" not in ids(g)                      # 没看到凭据，不知道对方的来路
     assert g.useful_clues_for("yohei") == ["c_case"]
     g.mark_known("yohei", ["c_case"])                           # 出示绫华的委托
-    assert ids(g) == ["rv_yohei_letter"]
+    assert ids(g) == ["rv_yohei_hair"]
 
 
 def test_showing_clue_unlocks_thoma():
     g = make_god()
-    g.clues = ["c_case", "c_messenger"]
+    g.clues = ["c_case", "c_bundle"]
     g.begin_conversation("thoma")
-    assert ids(g) == [] and g.useful_clues_for("thoma") == ["c_messenger"]
-    g.mark_known("thoma", ["c_messenger"])                      # 那晚小吉抱着布包：托马想起他在茶室等过
-    assert ids(g) == ["rv_thoma_workshop"]
-    newly = g.apply_signals(["rv_thoma_workshop"])
-    assert newly[0]["clues"] == ["茶室里等过的人"] and "c_workshop" in g.known["thoma"]
+    assert ids(g) == [] and g.useful_clues_for("thoma") == ["c_bundle"]
+    g.mark_known("thoma", ["c_bundle"])                      # 那晚「小吉」抱着布包：托马想起夜里有个「小吉」折回来过
+    assert ids(g) == ["rv_thoma_gate"]
+    newly = g.apply_signals(["rv_thoma_gate"])
+    assert newly[0]["clues"] == ["夜里折回来的小吉"] and "c_gate_visitor" in g.known["thoma"]
 
 
 def test_act_progression_and_exclusive_decision():
@@ -41,9 +41,10 @@ def test_act_progression_and_exclusive_decision():
     g.conv["turns"] = 2
     g.apply_signals(["asked_purpose", "accepted_commission"])
     assert g.act_id == "act2" and {"c_case", "c_shops"} <= set(g.clues) and g.narrations
-    g.clues += ["c_messenger", "c_letter", "c_date"]
-    assert "reported_findings" not in ids(g)                    # 还没弄清「初雪」的下落，不能结案
-    g.clues += ["c_workshop", "c_seal_rubbing"]
+    g.clues += ["c_bundle", "c_tanuki_hair", "c_round_prints"]
+    g.clues += ["c_gate_visitor", "c_sample"]
+    assert "reported_findings" not in ids(g)                    # 还没找到碗，不能结案
+    g.clues += ["c_bowl_on_altar"]
     assert "reported_findings" in ids(g)
     g.apply_signals(["reported_findings"])
     assert g.act_id == "act3"
@@ -76,7 +77,7 @@ def test_time_deadline_and_endings():
     g.advance(10)
     assert g.deadline_reached() and g.compute_ending(30).id == "too_late"
     g2 = make_god()
-    g2.resolved, g2.flags, g2.clues = True, ["mercy", "ev_heart"], ["c_motive"]
+    g2.resolved, g2.flags, g2.clues = True, ["mercy", "ev_heart"], ["c_warm"]
     assert g2.compute_ending(70).id == "bond" and g2.compute_ending(50).id == "mercy"
 
 
@@ -110,23 +111,24 @@ def test_menu_and_actions():
     ex.move("hanamizaka")
     assert g.location == "hanamizaka" and g.clock_label() == "07:45"             # 走过去 45 分钟
     assert "print_workshop" not in [o.meta.get("dest") for o in ex.menu()]     # 没线索，找不到印坊
-    g.clues.append("c_workshop")
+    g.clues.append("c_gate_visitor")
     assert "print_workshop" in [o.meta.get("dest") for o in ex.menu()]
     ex.move("print_workshop")
     assert g.clock_label() == "07:55"                                            # 同一片区，走几步就到
-    _, gained = ex.examine("o_scrap_box")
-    assert gained == ["c_seal_rubbing"] and g.journal
+    g.misses["o_spoiled_proofs"] = 2                                             # 判定必成，这里只测规则
+    _, gained = ex.examine("o_spoiled_proofs")
+    assert gained == ["c_sample"] and g.journal
 
 
-def test_manifest_needs_messenger():
-    g = make_god({"location": "ritou"})
+def test_shrine_needs_the_prints():
+    g = make_god({"location": "chinju_forest"})
     ex = explorer(g)
-    assert ex.examine("o_manifest")[1] == []                    # 不知道小吉那晚往离岛去，找不到是哪艘船
-    g.clues.append("c_letter")
-    assert ex.examine("o_manifest")[1] == []                    # 狸猫那条线的线索帮不上忙
-    g.clues.append("c_messenger")
-    g.misses["o_manifest"] = 2                                   # 判定必成，这里只测规则
-    assert ex.examine("o_manifest")[1] == ["c_paper"]
+    assert ex.examine("o_shrine")[1] == []                   # 不知道脚印通向哪儿，不知道该翻哪个树洞
+    g.clues.append("c_tanuki_hair")
+    assert ex.examine("o_shrine")[1] == []                   # 货架上的棕毛帮不上忙
+    g.clues.append("c_round_prints")
+    g.misses["o_shrine"] = 2                                  # 判定必成，这里只测规则
+    assert ex.examine("o_shrine")[1] == ["c_den"]
 
 
 def test_option_generator_drops_repeats():

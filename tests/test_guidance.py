@@ -71,24 +71,24 @@ def test_accept_button_only_after_asking_purpose(tmp_path):
 
 def test_showing_evidence_forces_confession_and_no_lie(tmp_path):
     state = {"day": 1, "phase_idx": 1, "location": "ritou", "act_id": "act2",
-             "clues": ["c_case", "c_shops", "c_messenger"]}
-    eng, _ = engine(tmp_path, [TALK("soji"), {"kind": "show_menu"}, {"kind": "clue", "clue": "c_messenger"}, "q"],
+             "clues": ["c_case", "c_shops", "c_bundle"]}
+    eng, _ = engine(tmp_path, [TALK("soji"), {"kind": "show_menu"}, {"kind": "clue", "clue": "c_bundle"}, "q"],
                     state)
-    assert "c_soji" in eng.god.clues
+    assert "c_foxfire" in eng.god.clues
     assert not [t for t in eng.god.testimonies if t["kind"] == "lie"]
     turn = next(e for e in events(eng) if e["event"] == "turn" and e["player"] and e["player"]["kind"] == "clue")
-    assert turn["new_signals"] == ["rv_soji_confess"]
+    assert turn["new_signals"] == ["rv_soji_fire"]
 
 
 def test_yohei_shows_letter_once_he_sees_the_commission(tmp_path):
     state = {"day": 1, "phase_idx": 1, "location": "shimura_shop", "act_id": "act2", "clues": ["c_case", "c_shops"]}
     eng, _ = engine(tmp_path, [TALK("yohei"), {"kind": "show_menu"}, {"kind": "clue", "clue": "c_case"}, "q"], state)
-    assert "c_letter" in eng.god.clues
+    assert "c_tanuki_hair" in eng.god.clues
 
 
 def test_propose_decides_without_reviewer(tmp_path):
     state = {"day": 2, "phase_idx": 0, "location": "kamisato_estate", "act_id": "act3",
-             "clues": ["c_case", "c_shops", "c_messenger", "c_letter", "c_soji", "c_motive"],
+             "clues": ["c_case", "c_shops", "c_bundle", "c_tanuki_hair", "c_foxfire", "c_double"],
              "achieved": ["asked_purpose", "accepted_commission", "reported_findings"]}
     eng, out = engine(tmp_path, [TALK("ayaka"), {"kind": "propose", "flag": "proposed_mercy"}], state)
     assert eng.god.resolved and eng.god.ending == "mercy"
@@ -109,14 +109,13 @@ def test_leads_follow_the_investigation():
     assert any("阿缘" in x and "木漏茶室·清晨、午后、黄昏" in x for x in leads)
     assert any("与平" in x and "出示「失窃的委托」" in x for x in leads)
     assert ex.checklist_line().count("✘") == 3
-    g.clues += ["c_messenger", "c_letter"]
+    g.clues += ["c_bundle", "c_tanuki_hair"]
     leads = ex.leads()
-    assert any("离岛码头找找" in x and "出示「深夜的布包」" in x and "离岛·午后、黄昏、夜晚" in x for x in leads)
-    assert any("璃月商船" in x for x in leads)
+    assert any("离岛码头问问宗次" in x and "出示「深夜的布包」" in x and "离岛·午后、黄昏、夜晚" in x for x in leads)
     assert ex.checklist_line().count("✔") == 2
-    g.clues.append("c_soji")
+    g.clues.append("c_bowl_on_altar")
     leads = ex.leads()
-    assert any("向绫华汇报" in x for x in leads) and any("出示「宗次的话」" in x for x in leads)
+    assert any("向绫华汇报" in x for x in leads)
 
 
 def test_event_leads_show_affinity_progress():
@@ -125,10 +124,10 @@ def test_event_leads_show_affinity_progress():
     assert any("夜晚去神里屋敷走走" in x for x in explorer(g, 41).leads())
 
 
-def test_soji_testimony_unlocks_workshop():
-    assert WORLD.unlocked("print_workshop", ["c_soji"])
-    assert WORLD.unlocked("print_workshop", ["c_messenger"])          # 阿缘看见的是「印坊的学徒小吉」，也能找过去
-    assert not WORLD.unlocked("print_workshop", ["c_letter", "c_date"])   # 狸猫那条线指不到印坊
+def test_clues_that_point_at_the_apprentice_unlock_workshop():
+    assert WORLD.unlocked("print_workshop", ["c_gate_visitor"])    # 托马说夜里折回来的是「小吉」，能找到印坊去
+    assert WORLD.unlocked("print_workshop", ["c_bundle"])          # 阿缘看见的是「印坊的学徒小吉」，也能找过去
+    assert not WORLD.unlocked("print_workshop", ["c_tanuki_hair", "c_round_prints", "c_foxfire"])   # 狸猫那条线、海边的火都指不到印坊
     assert not WORLD.unlocked("print_workshop", [])
 
 

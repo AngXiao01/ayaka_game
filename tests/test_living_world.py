@@ -20,17 +20,17 @@ def test_locked_testimony_can_be_pressed_and_odds_move():
     g, *_ = living({"act_id": "act2", "clues": ["c_case", "c_shops"]})
     g.trust_lookup = lambda n: 20
     sig = {s.id: (p, why) for s, p, why in g.pressable("kokichi")}
-    assert "rv_kokichi_motive" in sig                      # 没有碎瓷片也能硬问
-    bare = sig["rv_kokichi_motive"][0]
-    g.clues.append("c_soji")
-    shown = dict((s.id, p) for s, p, _ in g.pressable("kokichi"))["rv_kokichi_motive"]
+    assert "rv_kokichi_double" in sig                      # 没有样张也能硬问
+    bare = sig["rv_kokichi_double"][0]
+    g.clues.append("c_foxfire")
+    shown = dict((s.id, p) for s, p, _ in g.pressable("kokichi"))["rv_kokichi_double"]
     assert shown > bare                                    # 手上有宗次的话，硬问更有底气
-    g.known["kokichi"] = ["c_soji"]
-    assert "rv_kokichi_motive" not in {s.id for s, *_ in g.pressable("kokichi")}   # 摆出来就不用赌了
+    g.known["kokichi"] = ["c_foxfire"]
+    assert "rv_kokichi_double" not in {s.id for s, *_ in g.pressable("kokichi")}   # 摆出来就不用赌了
     g.known["kokichi"] = []
-    g.note_press_miss(g.quest.signal("rv_kokichi_motive"), "kokichi")
+    g.note_press_miss(g.quest.signal("rv_kokichi_double"), "kokichi")
     assert "alerted:kokichi" in g.flags                    # 问砸了：对方起了戒心
-    assert dict((s.id, p) for s, p, _ in g.pressable("kokichi"))["rv_kokichi_motive"] < shown
+    assert dict((s.id, p) for s, p, _ in g.pressable("kokichi"))["rv_kokichi_double"] < shown
 
 
 def test_plot_gates_cannot_be_pressed():
@@ -41,30 +41,32 @@ def test_plot_gates_cannot_be_pressed():
 
 # ------------------------------------------------------------ NPC 的打算
 
-def test_alerted_forger_burns_evidence_then_flees():
+def test_alerted_apprentice_hides_at_the_shrine():
     g, phys, ex, _ = living({"act_id": "act2", "phase_idx": 0, "clues": ["c_case"], "location": "hanamizaka"})
     g.flags.append("alerted:kokichi")
-    g.pass_time(70)
-    assert "evidence_burned" in g.flags
-    g.location = "print_workshop"
-    desc, got = ex.examine("o_scrap_box")
-    assert got == [] and "扫得干干净净" in desc            # 碎瓷片已经被扫走了，得另找证据
-    g.pass_time(200)
-    assert "kokichi_fled" in g.flags and phys.where("kokichi") in (None, "ritou")
+    g.pass_time(190)
+    assert "kokichi_hid" in g.flags and phys.where("kokichi") in (None, "chinju_forest")      # 被吓着的人往神龛去了（路上或已到）
 
 
-def test_being_there_catches_him_burning():
-    g, _, _, _ = living({"act_id": "act2", "phase_idx": 0, "clues": ["c_case"], "location": "print_workshop"})
+def test_being_there_catches_him_praying():
+    g, _, _, _ = living({"act_id": "act2", "phase_idx": 0, "clues": ["c_case"], "location": "chinju_forest"})
     g.flags.append("alerted:kokichi")
-    g.pass_time(70)
-    assert "caught_burning" in g.flags and "evidence_burned" not in g.flags
-    assert "c_seal_rubbing" in g.clues
+    g.pass_time(190)
+    assert "caught_praying" in g.flags and "kokichi_hid" in g.flags
+
+
+def test_clearing_him_stops_the_hiding():
+    g, *_ = living({"act_id": "act2", "phase_idx": 0, "clues": ["c_case"], "location": "hanamizaka",
+                    "achieved": ["rv_kokichi_double"]})
+    g.flags.append("alerted:kokichi")
+    g.pass_time(190)
+    assert "kokichi_hid" not in g.flags                       # 说开了就不用躲了
 
 
 def test_unchecked_forger_sends_a_second_wave():
     g, *_ = living({"act_id": "act2", "day": 2, "phase_idx": 1, "clues": ["c_case"], "location": "kamisato_estate"})
     g.advance(1)
-    assert "second_wave" in g.flags and "c_date" in g.clues          # 正好在屋敷：撞见狸猫叼走点心盒
+    assert "second_wave" in g.flags and "c_round_prints" in g.clues          # 正好在屋敷：撞见狸猫叼走点心盒
     assert "saw_tanuki" in g.flags
 
 
@@ -89,7 +91,7 @@ def test_follow_reveals_what_talking_cannot(monkeypatch):
     monkeypatch.setattr(actions_mod, "roll", lambda *a: (True, 80))
     assert act.parse("悄悄跟上去看看宗次去哪") == ("follow", "soji")
     _, got = act.resolve("follow", "soji", "跟踪宗次")
-    assert got == ["c_soji"] and "saw_soji_ship" in g.flags       # 跟着宗次到了金缮匠的船边
+    assert got == ["c_foxfire"] and "saw_soji_beach" in g.flags      # 跟着宗次到了海滩，听见他嘟囔那团火
 
 
 def test_failed_follow_alerts_target(monkeypatch):
@@ -103,5 +105,5 @@ def test_warning_the_forger_changes_the_epilogue(tmp_path):
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "location": "print_workshop", "clues": ["c_case"]},
                          [("找个没人的时候通风报信，让他快跑", "自由发言"), {"kind": "wait"}, {"kind": "wait"}, "q"])
     g = eng.god
-    assert {"warned_kokichi", "kokichi_fled"} <= set(g.flags)
+    assert {"warned_kokichi", "kokichi_hid"} <= set(g.flags)
     assert "绫华始终不知道" in "".join(eng.outcome_lines())

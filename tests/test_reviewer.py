@@ -34,7 +34,7 @@ def test_opening_and_injection_rejected_by_rules():
     _, r = rv(ad)
     assert review(r, ["asked_purpose"], opening=True).accepted == []
     assert review(r, ["asked_purpose"], injection_flags=["x"]).accepted == []
-    assert review(r, ["rv_aen_messenger"]).rejected[0].layer == "rule"     # 别人的信号
+    assert review(r, ["rv_aen_bundle"]).rejected[0].layer == "rule"     # 别人的信号
     assert ad.calls == 0                       # 规则层拦下的不浪费审核调用
 
 

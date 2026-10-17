@@ -49,7 +49,7 @@ SECTION_TIERS = {"时间与场景": "pinned", "局势": "pinned", "你此刻的�
                  "你对对方说过的谎": "situational", "你可能会说的谎": "situational", "对质": "situational",
                  "你之前说过的设定": "retrieved", "这次谈话较早的内容": "pinned", "本轮相关的人物细节": "retrieved",
                  "本轮适用的技能": "retrieved", "你刚做过的小动作": "situational", "这句话你刚说过了": "situational",
-                 "这一轮才用得上的规矩": "situational", "你这一轮的心态": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
+                 "这一轮才用得上的规矩": "situational", "你这一轮的心态": "situational", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
 
 
 def section_report(state: str) -> dict:
@@ -249,6 +249,20 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     if t.get("unverified"):                        # 代码核对过：这些事玩家嘴上说了，手上没有任何东西能证明
         parts.append(f"## {player}说了你无法核实的事\n" + f"提到了：{'、'.join(t['unverified'])}。{player}没有拿出任何东西证明。"
                      "你可以好奇、追问凭据或让对方拿出来看；不要当成已经查清，也不要因此兑现人情、交换情报或改口认输。")
+    if t.get("claims"):                            # 玩家说自己做过的事：真假和「你知不知情」都是代码核对过的
+        lines = []
+        for c in t["claims"]:
+            what = f"「{c['text'] or c['name']}」"
+            if c["verdict"] == "false":
+                lines.append(f"- {what}：你能核实，而且**不是真的**——你清楚{player}并没有这么做过。这一轮你的话必须让对方听出"
+                             "你发现了这一点：可以委婉（「我怎么没见您去过？」）、可以不悦、可以冷下脸，但不能当没发生，"
+                             "也不能顺着他的话往下聊「细节」，更不能替他圆谎或把他说的内容当成你自己知道的事。")
+            elif c["verdict"] == "true":
+                lines.append(f"- {what}：你能核实，确有其事。")
+            else:
+                lines.append(f"- {what}：你没法核实（你不在场，也没人告诉过你）。既不能说它是真的，也不能说它是假的；"
+                             "按你的性格处理——相信、存疑或追问细节，但不要把它当成已经查实的事，也不要凭它兑现人情或交换情报。")
+        parts.append(f"## {player}说起自己做过的事\n" + "\n".join(lines))
     extra = situational_rules(ctx)
     if extra and not focus:
         parts.append("## 这一轮才用得上的规矩\n" + "\n".join(extra))

@@ -12,16 +12,16 @@ from tests.helpers import make_god
 def test_confront_outcomes_are_rule_based():
     g = make_god()
     lie = g.add_testimony("soji", "那晚我早睡了，谁也没见", "lie", truth="见过小吉", lie_id="soji_denial",
-                          contradicted_by=["c_messenger"])
-    assert g.confront(lie["id"], "c_letter", 20)["outcome"] == "unproven"
+                          contradicted_by=["c_bundle"])
+    assert g.confront(lie["id"], "c_tanuki_hair", 20)["outcome"] == "unproven"
     assert g.confront(lie["id"], None, 90)["outcome"] == "unproven"        # 有据可查的谎，光凭信任撬不开
-    assert g.confront(lie["id"], "c_messenger", 20)["outcome"] == "caught"
+    assert g.confront(lie["id"], "c_bundle", 20)["outcome"] == "caught"
     assert lie["caught"] and "caught:soji_denial" in g.flags and g.testimonies_of("soji") == []
     white = g.add_testimony("yohei", "门窗都锁得好好的", "lie", truth="后窗忘了关")
     assert g.confront(white["id"], None, 20)["outcome"] == "unproven"
     assert g.confront(white["id"], None, 45)["outcome"] == "caught"       # 临时的谎：够信任就心虚认了
     true = g.add_testimony("aen", "那晚看见小吉抱着布包往离岛去了", "truth")
-    assert g.confront(true["id"], "c_letter", 50)["outcome"] == "truth"
+    assert g.confront(true["id"], "c_tanuki_hair", 50)["outcome"] == "truth"
 
 
 def settings(tmp_path):
@@ -35,20 +35,20 @@ def start_at_ritou(tmp_path, name):
     save = tmp_path / "data/saves" / f"{name}.json"
     save.parent.mkdir(parents=True, exist_ok=True)
     save.write_text(json.dumps({"world": {"day": 2, "phase_idx": 1, "location": "ritou", "act_id": "act2",
-                                          "clues": ["c_case", "c_shops", "c_messenger", "c_letter"]}}))
+                                          "clues": ["c_case", "c_shops", "c_bundle", "c_tanuki_hair"]}}))
 
 
 def test_lie_then_caught_unlocks_confession(tmp_path):
     start_at_ritou(tmp_path, "lie")
-    script = [{"kind": "talk", "npc": "soji"}, ("丢东西那晚，小吉来找过你吧？", "推进任务"), ("真的谁也没见？", "试探"),
-              {"kind": "confront_menu"}, {"kind": "testimony"}, {"kind": "evidence", "clue": "c_messenger"},
-              ("那他找你帮什么忙？", "推进任务"), "q"]
+    script = [{"kind": "talk", "npc": "soji"}, ("丢东西那晚，海边有没有什么怪事？", "推进任务"), ("真的什么都没看见？", "试探"),
+              {"kind": "confront_menu"}, {"kind": "testimony"}, {"kind": "evidence", "clue": "c_bundle"},
+              ("那晚到底怎么回事？", "推进任务"), "q"]
     out = []
     eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(script), out=out.append, save_name="lie")
     eng.run()
     g = eng.god
-    assert g.testimonies[0]["said"] == "小吉？那晚我早睡了，谁也没见" and g.testimonies[0]["caught"]
-    assert "c_soji" in g.clues                                   # 拆穿之后撬开了嘴
+    assert g.testimonies[0]["said"] == "没有，那晚我早睡了，什么都没看见" and g.testimonies[0]["caught"]
+    assert "c_foxfire" in g.clues                                   # 拆穿之后撬开了嘴
     assert any("拆穿了宗次的谎" in j for j in g.journal) and any("拆穿" in o for o in out)
     ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
     prompts = [e["messages"][-1]["content"] for e in ev if e.get("task") == "npc_step"]
@@ -66,7 +66,7 @@ def test_false_accusation_costs_trust(tmp_path):
     eng.god.minute = eng.god.phase_start(2, 1) + 30
     trust0 = eng.npcs["aen"].relationship.trust
     eng.player = ScriptedPlayer([{"kind": "talk", "npc": "aen"}, {"kind": "confront_menu"}, {"kind": "testimony"},
-                                 {"kind": "evidence", "clue": "c_letter"}, "q"])
+                                 {"kind": "evidence", "clue": "c_tanuki_hair"}, "q"])
     eng.run()
     assert eng.npcs["aen"].relationship.trust <= trust0 - 2
 

@@ -75,7 +75,7 @@ def test_secret_outing_tells_no_one():
 
 
 def test_messages_take_time_by_distance():
-    g, phys, _ = world({"act_id": "act2", "phase_idx": 1, "location": "ritou", "clues": ["c_workshop"]})
+    g, phys, _ = world({"act_id": "act2", "phase_idx": 1, "location": "ritou", "clues": ["c_gate_visitor"]})
     got = []
     phys.on_deliver = got.append
     msg = phys.send("soji", "kokichi", "有人在查茶碗的事，你小心。")
@@ -107,8 +107,10 @@ def test_npc_view_present_and_mentioned():
 
 
 def test_absent_after_story_flag():
-    g, phys, _ = world({"act_id": "act3", "location": "print_workshop", "flags": ["expose"]})
-    assert phys.where("kokichi") is None                     # 去神里家当面认错了，不在印坊
+    g, phys, _ = world({"act_id": "act3", "location": "print_workshop", "flags": ["tenryou_arrest"]})
+    assert phys.where("kokichi") is None                     # 被天领奉行带走了，不在印坊
+    g2, phys2, _ = world({"act_id": "act3", "location": "chinju_forest", "phase_idx": 2, "flags": ["expose"]})
+    assert phys2.where("fox") is None                        # 碗被强行取走之后，守夜狐再没有出现过
 
 
 def settings(tmp_path):
@@ -140,7 +142,7 @@ def test_typed_invitation_then_walk_together(tmp_path):
 
 def test_game_goes_on_after_the_ending(tmp_path):
     state = {"act_id": "act3", "phase_idx": 0, "location": "kamisato_estate",
-             "clues": ["c_case", "c_shops", "c_messenger", "c_letter", "c_soji", "c_motive"],
+             "clues": ["c_case", "c_shops", "c_bundle", "c_tanuki_hair", "c_foxfire", "c_double"],
              "achieved": ["asked_purpose", "accepted_commission", "reported_findings"]}
     eng, res, out = engine(tmp_path, state, [{"kind": "talk", "npc": "ayaka"}, {"kind": "propose", "flag": "proposed_mercy"},
                                              {"kind": "wait"}, "q"])
@@ -153,26 +155,26 @@ def test_deadline_is_an_event_not_game_over(tmp_path):
     eng, res, out = engine(tmp_path, {"day": 3, "phase_idx": 2, "act_id": "act2", "clues": ["c_case"]},
                            [{"kind": "wait"}, {"kind": "view", "view": "clues"}, "q"])
     assert "deadline_passed" in eng.god.flags and eng.god.ending is None
-    assert any("雪落无声" in line for line in out) and any("还可以接着查" in line for line in out)
+    assert any("无人知晓的金线" in line for line in out) and any("还可以接着查" in line for line in out)
     assert any("线索本" in line for line in out)                # 茶会过后还能继续操作
 
 
 def test_stating_the_truth_sends_someone_to_check(tmp_path):
     # 玩家玩过一遍，直接说出真相：绫华不当真，但会派托马去查；托马走过去、查完、托人带话，证据到手
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("茶碗是印坊的小吉拿走的，他把碗磕坏了，我很确定。", "自由发言"),
+                         [{"kind": "talk", "npc": "ayaka"}, ("那晚折回来的小吉是假的，有东西变成了他的样子，我很确定。", "自由发言"),
                           {"kind": "leave"}, {"kind": "wait"}, "q"])
     g, phys = eng.god, eng.god.physical
     assert any("派托马去辰巳印坊" in line for line in out)
-    assert {"c_workshop", "c_seal_rubbing"} <= set(g.clues)
+    assert {"c_gate_visitor", "c_sample"} <= set(g.clues)
     assert any("托马托人带话" in line for line in out)
-    assert "dispatched:h_workshop" in g.flags
-    assert g.hypothesis_for("ayaka", "就是小吉拿走的茶碗") is None          # 同一件事不会派第二次
+    assert "dispatched:h_double" in g.flags
+    assert g.hypotheses_for("ayaka", "折回来的小吉是假的，有东西变成了他的样子") == []          # 同一件事不会派第二次
 
 
 def test_dispatched_agent_is_really_away():
     g, phys, ex = world({"act_id": "act2", "phase_idx": 0})
-    phys.dispatch("thoma", "print_workshop", 30, ["player"], "查过了", ["c_seal_rubbing"], "h")
+    phys.dispatch("thoma", "print_workshop", 30, ["player"], "查过了", ["c_sample"], "h")
     g.pass_time(10)
     assert phys.where("thoma") is None                                   # 在路上
     g.pass_time(40)
@@ -182,23 +184,23 @@ def test_dispatched_agent_is_really_away():
     g.pass_time(30)                                                      # 查完，托人带话（印坊到屋敷还要 45 分钟）
     assert not got
     g.pass_time(45)
-    assert got and got[0]["clues"] == ["c_seal_rubbing"]
+    assert got and got[0]["clues"] == ["c_sample"]
 
 
 def test_one_sentence_sends_thoma_along_several_stops(tmp_path):
     # 一句话说中狸猫和印坊：托马先去镇守之森找狸窝，再去印坊，两处的证据都送回来
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("花见坂那些东西是狸猫叼走的，茶碗是印坊的小吉拿走的。", "自由发言"),
+                         [{"kind": "talk", "npc": "ayaka"}, ("花见坂那些东西是狸猫叼走的，那晚折回来的小吉是假的，是有东西变成了他的样子。", "自由发言"),
                           {"kind": "leave"}, {"kind": "wait"}, {"kind": "wait"}, "q"])
     g = eng.god
-    assert {"dispatched:h_letter", "dispatched:h_workshop"} <= set(g.flags)
-    assert {"c_date", "c_tanuki", "c_workshop", "c_seal_rubbing"} <= set(g.clues)
+    assert {"dispatched:h_tanuki", "dispatched:h_double"} <= set(g.flags)
+    assert {"c_round_prints", "c_den", "c_gate_visitor", "c_sample"} <= set(g.clues)
 
 
 def test_trusted_player_skips_the_investigation(tmp_path):
     # 好感、信任够高：绫华直接信，进入处置，留下「没查实」的标记
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("茶碗是印坊的小吉拿走的，他把碗磕坏了，我很确定。", "自由发言"), "q"],
+                         [{"kind": "talk", "npc": "ayaka"}, ("那晚折回来的小吉是假的，有东西变成了他的样子，我很确定。", "自由发言"), "q"],
                          rels={"ayaka": {"affinity": 60, "trust": 45}})
     g = eng.god
     assert "unverified" in g.flags and g.act_id == "act3"
@@ -207,6 +209,6 @@ def test_trusted_player_skips_the_investigation(tmp_path):
 
 def test_low_trust_still_dispatches(tmp_path):
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
-                         [{"kind": "talk", "npc": "ayaka"}, ("茶碗是印坊的小吉拿走的，他把碗磕坏了。", "自由发言"), "q"],
+                         [{"kind": "talk", "npc": "ayaka"}, ("那晚折回来的小吉是假的，有东西变成了他的样子。", "自由发言"), "q"],
                          rels={"ayaka": {"affinity": 40, "trust": 20}})
-    assert "unverified" not in eng.god.flags and "dispatched:h_workshop" in eng.god.flags
+    assert "unverified" not in eng.god.flags and "dispatched:h_double" in eng.god.flags

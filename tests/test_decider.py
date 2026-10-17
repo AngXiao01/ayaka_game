@@ -109,10 +109,10 @@ def test_branch_uses_jev_before_llm():
 
 def test_judged_hypothesis_dispatches_thoma(tmp_path):
     say = "我总觉得，那天傍晚来送东西的那个孩子跟茶碗的事脱不了干系。"
-    d = ScriptedDecider({"turn": {"h_workshop": (True, 0.9), "threat": (False, 0.9), "specific": (1, 1.0)}})
+    d = ScriptedDecider({"turn": {"h_double": (True, 0.9), "threat": (False, 0.9), "specific": (1, 1.0)}})
     eng, _, out = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case", "c_shops"]},
                          [{"kind": "talk", "npc": "ayaka"}, (say, "自由发言"), "q"], decider=d)
-    assert "dispatched:h_workshop" in eng.god.flags                         # 关键词认不出，Jev 认出来了
+    assert "dispatched:h_double" in eng.god.flags                         # 关键词认不出，Jev 认出来了
     assert any(tag == "turn" for tag, *_ in d.calls)
 
 

@@ -9,7 +9,7 @@ from llm.mock_backend import MockBackend
 from tests.helpers import QUEST, make_god
 
 TALK_AYAKA = {"kind": "talk", "npc": "ayaka"}
-ACT3 = {"act_id": "act3", "clues": ["c_case", "c_shops", "c_letter", "c_soji", "c_motive"],
+ACT3 = {"act_id": "act3", "clues": ["c_case", "c_shops", "c_tanuki_hair", "c_foxfire", "c_double"],
         "achieved": ["greeted_properly", "asked_purpose", "accepted_commission", "reported_findings"]}
 
 
@@ -69,5 +69,5 @@ def test_ungrounded_evidence_is_rejected():
 
 def test_rules_refuse_ambiguous_text():
     props = QUEST.proposals
-    assert rules_classify("是不追究还是让他赔偿，我拿不准", props)["proposal"] == "none"
-    assert rules_classify("还是让他当面认错吧", props)["proposal"] == "proposed_expose"
+    assert rules_classify("是让她把碗修完，还是现在就取回来，我拿不准", props)["proposal"] == "none"
+    assert rules_classify("还是现在就把碗取回来吧", props)["proposal"] == "proposed_expose"

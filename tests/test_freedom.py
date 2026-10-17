@@ -23,15 +23,15 @@ def test_saying_who_sent_you_counts_as_showing_the_commission(tmp_path):
     # trace：玩家打字「是神里小姐托我来的」，与平软化了，却还要再点一次「出示线索」
     eng = engine(tmp_path, [{"kind": "talk", "npc": "yohei"}, ("是神里小姐托我来的，想看看丢东西的货架。", "自由发言"), "q"],
                  {"day": 1, "phase_idx": 1, "location": "shimura_shop", "act_id": "act2", "clues": ["c_case", "c_shops"]})
-    assert "c_letter" in eng.god.clues and "c_case" in eng.god.known["yohei"]
+    assert "c_tanuki_hair" in eng.god.clues and "c_case" in eng.god.known["yohei"]
 
 
 def test_only_clues_the_player_has_can_be_told():
     g = make_god({"act_id": "act2", "clues": ["c_case"]})
     g.begin_conversation("soji")
     assert g.mentioned_clues("soji", "那晚小吉抱着布包来找过你吧？") == []          # 还没拿到「深夜的布包」
-    g.clues.append("c_messenger")
-    assert g.mentioned_clues("soji", "那晚小吉抱着布包来找过你吧？") == ["c_messenger"]
+    g.clues.append("c_bundle")
+    assert g.mentioned_clues("soji", "那晚小吉抱着布包来找过你吧？") == ["c_bundle"]
 
 
 def test_npc_saying_it_counts_even_without_the_button():
@@ -39,26 +39,26 @@ def test_npc_saying_it_counts_even_without_the_button():
     g = make_god({"act_id": "act2", "clues": ["c_case", "c_shops"]})
     g.begin_conversation("aen")
     heard = g.spoken_signals("那晚夜深了，我看见印坊的小吉抱着个布包，慌慌张张往离岛去了。", "（拿出线索「失窃的委托」给对方看）")
-    assert heard == ["rv_aen_messenger"]
+    assert heard == ["rv_aen_bundle"]
     assert g.apply_signals(heard, heard=True)[0]["clues"] == ["深夜的布包"]
 
 
 def test_npc_leak_while_locked_still_counts():
-    # trace：给托马看了「货架上的短毛」（不是他要的线索），他还是说出了小吉那天在茶室里等过
-    g = make_god({"act_id": "act2", "clues": ["c_case", "c_shops", "c_letter"]})
+    # trace：给托马看了「货架上的短毛」（不是他要的线索），他还是说出了夜里「小吉」折回来敲过后门
+    g = make_god({"act_id": "act2", "clues": ["c_case", "c_shops", "c_tanuki_hair"]})
     g.begin_conversation("thoma")
-    g.mark_known("thoma", ["c_letter"])
-    assert "rv_thoma_workshop" not in g.available_ids(check_turns=False)
-    speech = "短毛？说起来……那天傍晚印坊的小吉来送请柬样张，我让他在茶室里等了一会儿。不会跟他有关吧？"
+    g.mark_known("thoma", ["c_tanuki_hair"])
+    assert "rv_thoma_gate" not in g.available_ids(check_turns=False)
+    speech = "短毛？说起来……那天夜里「小吉」折回来敲过后门，说落了东西，我让他在门房等着，人就不见了。不会跟他有关吧？"
     assert g.apply_signals(g.spoken_signals(speech, "志村屋丢纸的货架上留着几根棕色的短毛"), heard=True)
-    assert "c_workshop" in g.clues
+    assert "c_gate_visitor" in g.clues
 
 
 def test_echoing_the_player_is_not_a_confession():
-    g = make_god({"act_id": "act2", "clues": ["c_case", "c_messenger"], "location": "ritou", "phase_idx": 1})
+    g = make_god({"act_id": "act2", "clues": ["c_case", "c_bundle"], "location": "ritou", "phase_idx": 1})
     g.begin_conversation("soji")
-    assert g.spoken_signals("我、我不知道什么金缮，也没补过什么！", "是你带小吉去找金缮匠补茶碗的吧？") == []
-    assert g.spoken_signals("……他抱着一只缺了口的碗，我带他去找了船上的金缮匠。", "那晚小吉找你做什么？") == ["rv_soji_confess"]
+    assert g.spoken_signals("我、我不知道什么青白的火，也没看见什么人影！", "是你在海边看见青白的火和蹲着的人影吧？") == []
+    assert g.spoken_signals("……是一团青白的火，有个人影蹲在滩上，拾着什么。", "那晚海边有没有什么怪事？") == ["rv_soji_fire"]
 
 
 def test_private_time_does_not_spend_time(tmp_path):

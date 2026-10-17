@@ -68,7 +68,7 @@ class DialogueSession:
                  world: World, settings: Settings, reviewer: SignalReviewer, budget: Budget,
                  event: Optional[EventDef] = None, compressor: Optional[Callable[[str, list[str]], str]] = None,
                  out: Callable[[str], None] = print, tracer: Any = None, branch: Any = None,
-                 player_view: Optional[Callable[[str, Optional[str]], dict]] = None):
+                 player_view: Optional[Callable[[str, Optional[str]], dict]] = None, claims: Any = None):
         self.npc = npc
         self.player_view = player_view  # 玩家视角（Explorer.player_view）：选项 agent 只能看这个，看不到 NPC 的心思
         self.npc_names = set(god.physical.personas) if god.physical is not None else set()
@@ -83,6 +83,7 @@ class DialogueSession:
         self.event = event
         self.out = out
         self.tracer = tracer
+        self.claims = claims            # 声明核对（core/claims.py）：玩家说自己做过什么，对着真实足迹核对
         self.branch = branch            # 分支 agent：自由输入里的处置方案 → 预设方案（可为 None）
         self.wm = WorkingMemory(self.cfg.history_turns, self.cfg.player_name, npc.name, compressor,
                                 self.h.compress_mode, tracer)
@@ -615,6 +616,12 @@ class DialogueSession:
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
         ctx.task["shown"] = [{"name": n, "desc": d} for n, d in shown]
         ctx.task["unverified"] = g.unverified_claims(nid, guard.text) if action.kind == "say" and not guard.suspicious else []
+        ctx.task["claims"] = []
+        if self.claims is not None and action.kind == "say" and not guard.suspicious and not self.event:
+            ctx.task["claims"] = self.claims.check(nid, guard.text)       # 抽取归模型，真假和知不知情归代码
+            if ctx.task["claims"]:
+                self._log("claim_check", npc=nid, text=guard.text, claims=[
+                    {k: c[k] for k in ("kind", "target", "name", "verifiable", "verdict")} for c in ctx.task["claims"]])
         self._log("guard", raw=text, text=guard.text, flags=guard.flags, truncated=guard.truncated)
         if guard.suspicious and self.cfg.debug:
             self.out(f"    · 输入防护：{'；'.join(guard.flags)}（本轮不计进展）")

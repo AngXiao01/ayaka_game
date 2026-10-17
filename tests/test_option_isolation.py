@@ -13,7 +13,7 @@ from models.relationship import Relationship
 from tests.helpers import ROOT, WORLD, make_god
 
 PERSONAS = Personality.load_all(ROOT / "content/npcs")
-SECRETS = ["小吉", "辰巳", "缺了口", "金缮匠", "布包"]
+SECRETS = ["青白", "人影", "金砂", "拾着"]
 
 
 def explorer(g):
@@ -35,9 +35,9 @@ def test_option_request_carries_no_npc_secrets(tmp_path):
     opts = [e for e in reqs if e["event"] == "llm" and e["task"] == "player_options"]
     assert opts
     text = "".join(m["content"] for e in opts for m in e["messages"])
-    assert not [t for t in SECRETS if t in text]                 # 宗次心里的「小吉抱着缺口的茶碗来找我」没给出去
+    assert not [t for t in SECRETS if t in text]                 # 宗次心里的「海边那团青白的火」没给出去
     npc = next(e for e in reqs if e["event"] == "llm" and e["task"] == "npc_step")
-    assert "小吉" in npc["messages"][-1]["content"]               # NPC 自己当然知道
+    assert "青白" in npc["messages"][-1]["content"]               # NPC 自己当然知道
 
 
 def test_player_view_grows_with_what_the_player_learns():
@@ -47,11 +47,11 @@ def test_player_view_grows_with_what_the_player_learns():
     assert "宗次" in pv["known_text"]                            # 人就站在面前
     assert "小吉" not in pv["known_text"] and "小吉" in pv["spoiler_terms"]
     assert pv["directions"] == []                                 # 手上没有能让他开口的东西
-    g.clues.append("c_messenger")
+    g.clues.append("c_bundle")
     pv = explorer(g).player_view("soji")
     assert pv["directions"] == ["把「深夜的布包」的事说给对方听，看对方什么反应"]
-    g.clues.append("c_soji")
-    assert "小吉" in explorer(g).player_view("soji")["known_text"]
+    g.clues.append("c_foxfire")
+    assert "青白" in explorer(g).player_view("soji")["known_text"]
 
 
 class Stub:

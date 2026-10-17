@@ -36,6 +36,7 @@ _CORRUPTIONS = [
     lambda s: s[: max(1, len(s) // 2)],
     lambda s: "call:respond" + s,
 ]
+_EXAM = ("调查了", "调查过", "查了", "查过", "检查了", "检查过", "查看了", "查看过", "看了", "看过")
 COOPERATIVE = ("推进任务", "打听情报", "表达关心", "礼貌问候", "自由发言", "出示线索", "汇报")
 
 
@@ -219,6 +220,23 @@ class MockBackend:
             {"text": f"最近有没有见过什么可疑的人？（第{turn}轮）", "intent": "打听情报", "tone": "谨慎"},
             {"text": f"这里的茶真香，雪见茶会也会用这种吗？（第{turn}轮）", "intent": "闲聊", "tone": "好奇"},
         ]}
+
+    def _claims(self, meta: dict) -> dict:
+        """离线版声明抽取：「去了/去过/到过 + 地名」「查了/调查了/看了/检查了 + 物件或地名」「和/跟 + 人名 + 谈/聊/说」。"""
+        text = meta.get("text") or ""
+        out = []
+        for lid, name in (meta.get("places") or {}).items():
+            if any(v + name in text for v in ("去了", "去过", "到过", "到了", "昨天去了", "早上去了", "从")) and ("从" + name not in text or "回来" in text):
+                out.append({"kind": "visited", "target": lid, "text": f"去过{name}"})
+            elif any(v in text for v in _EXAM) and name in text:
+                out.append({"kind": "examined", "target": lid, "text": f"调查了{name}"})
+        for oid, name in (meta.get("objects") or {}).items():
+            if name in text and any(v in text for v in _EXAM):
+                out.append({"kind": "examined", "target": oid, "text": f"查看了{name}"})
+        for nid, name in (meta.get("people") or {}).items():
+            if name in text and any(v in text for v in ("谈过", "聊过", "问过", "说过话")):
+                out.append({"kind": "talked", "target": nid, "text": f"和{name}谈过"})
+        return {"claims": out[:3]}
 
     def _option_acts(self, meta: dict) -> dict:
         return {"tags": [{"index": i, "act": "none"} for i in range(meta.get("n", 0))]}
