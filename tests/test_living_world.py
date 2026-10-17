@@ -129,3 +129,17 @@ def test_good_argument_raises_press_odds():
     base, _ = g.press_chance(s, "heizou")
     strong, why = g.press_chance(s, "heizou", 2)
     assert strong >= base + 0.39 and any("理由很充分" in w for w in why)
+
+
+def test_crime_scene_is_open_after_the_commission():
+    # 请人来查案，就得让人看现场：接下委托后能进茶室，查到瓷渣和窗台的痕迹，拿给托马看能让他想起那天谁等过
+    g, phys, ex, _ = living({"act_id": "act1", "location": "kamisato_estate"})
+    assert not WORLD.unlocked("tearoom", g.clues)                     # 还没接委托，不便进主人家的茶室
+    g.clues += ["c_case", "c_shops"]
+    assert "tearoom" in [o.meta["dest"] for o in ex.menu() if o.kind == "move"]
+    ex.move("tearoom")
+    g.misses.update({"o_tatami": 2, "o_tearoom_window": 2})          # 判定必成，这里只测规则
+    assert ex.examine("o_tatami")[1] == ["c_chip"] and ex.examine("o_tearoom_window")[1] == ["c_window"]
+    g.act_id = "act2"
+    g.known["thoma"] = ["c_chip"]
+    assert g.signal_status(g.quest.signal("rv_thoma_workshop"), "thoma", None, 99)[0] == "available"
