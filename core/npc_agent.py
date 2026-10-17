@@ -25,6 +25,7 @@ from models.personality import Personality
 from models.relationship import Relationship
 from models.retrieval import bigram_jaccard, coverage
 
+REFLECT_AT = 6                    # 上次反思以来新记忆的重要度累计到这个数才反思（一条摘要约 3，一条事实约 4）
 FACT_GROUNDING = 0.5        # 事实至少一半的词要能在对话原文里找到
 HANDOFF_GROUNDING = 0.4     # 交接里的「没聊完的话题 / 约定」也要在原文里有依据，防止凭空多出一个承诺
 REPEAT_THRESHOLD = 0.7     # 和自己最近几句话相似到这个程度，就算复读
@@ -322,8 +323,15 @@ class NPCAgent:
         """谈话够长就反思一次：合成“我对对方的看法 / 疑问”，只留最近 3 条，下次见面放进上下文。"""
         if self.reflector is None or turns < 2:
             return
+        # 生成式智能体的做法：记忆的重要度累计到阈值才反思（而不是每次都反思）；反思的结论要挂着依据的记忆编号
+        last_ts = max([m.ts for m in self.memory.items if m.kind == "reflection"], default=0.0)
+        fresh = [m for m in self.memory.items if m.kind in ("dialogue_summary", "fact") and m.ts > last_ts]
+        if sum(m.importance for m in fresh) < REFLECT_AT:
+            if self.tracer:
+                self.tracer.log("reflection_skipped", npc=self.p.id, accumulated=sum(m.importance for m in fresh), need=REFLECT_AT)
+            return
         previous = [m.text for m in self.memory.items if m.kind == "reflection"][-2:]
-        r = self.reflector.reflect(self.name, ctx.player_name, transcript, previous)
+        r = self.reflector.reflect(self.name, ctx.player_name, transcript, previous, [m.text for m in fresh][-8:])
         if not r:
             return
         text = f"我对{ctx.player_name}的看法：{r['impression']}"
@@ -331,8 +339,10 @@ class NPCAgent:
             text += "；我的疑问：" + "；".join(r["doubts"])
         if r["next"]:
             text += "；下次我打算：" + r["next"]
+        shown = fresh[-8:]
         self.memory.add(MemoryItem(text=text, kind="reflection", importance=4, world_time=world_time,
-                                   topics=["看法", "疑问"], extra=dict(provenance)))
+                                   topics=["看法", "疑问"],
+                                   extra={**provenance, "evidence": [shown[i].id for i in r.get("evidence", []) if i < len(shown)]}))
         old = [m for m in self.memory.items if m.kind == "reflection"]
         for m in old[:-3]:
             self.memory.items.remove(m)

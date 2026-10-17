@@ -18,6 +18,7 @@ from core.context import TurnContext
 from core.god_env import EventDef, GodEnv
 from core import judge
 from core.beats import pick_beat
+from models.retrieval import bigram_jaccard
 from core.dice import roll, tag
 from core.guard import inspect_player_input
 from core.npc_agent import NPCAgent, NPCReply
@@ -360,6 +361,18 @@ class DialogueSession:
                   budget=self.budget.snapshot())
         return newly
 
+    def _repeated_question(self, text: str, kind: str) -> Optional[dict]:
+        """玩家把已经问过的话又问了一遍：找到上次的问法和 NPC 当时的回答（PLAYER* 的“重复提问收益递减”）。"""
+        if kind in ("clue", "report", "leave", "invite", "dismiss", "propose") or len(text) < 6:
+            return None
+        entries = list(self.wm.entries)
+        for i in range(len(entries) - 1, -1, -1):
+            e = entries[i]
+            if e["speaker"] == "player" and bigram_jaccard(e["text"], text) >= 0.55:
+                nxt = next((x for x in entries[i + 1:] if x["speaker"] == "npc"), None)
+                return {"asked": e["text"], "answered": nxt["text"] if nxt else ""}
+        return None
+
     def _world_moves(self, r: NPCReply, flags: list[str]) -> None:
         """NPC 在回复里说要托人带话（tell）、说完要去别处（go_to）：代码校验后落到物理世界。"""
         phys, nid = self.god.physical, self.npc.p.id
@@ -637,6 +650,9 @@ class DialogueSession:
         ctx.task["beat"] = beat                               # None = 这一轮什么都不提；不设 beat（开场等）则沿用“列出全部”
         if scored:
             self._log("beat", npc=nid, picked=beat["id"] if beat else None, scored=scored[:4])
+        ctx.task["repeated"] = self._repeated_question(guard.text, action.kind) if not guard.suspicious else None
+        if ctx.task["repeated"]:
+            self._log("repeat_question", npc=nid, text=guard.text, earlier=ctx.task["repeated"]["asked"])
         ctx.task["claims"] = []
         if self.claims is not None and action.kind == "say" and not guard.suspicious and not self.event:
             ctx.task["claims"] = self.claims.check(nid, guard.text)       # 抽取归模型，真假和知不知情归代码

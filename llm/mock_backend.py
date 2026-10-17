@@ -100,7 +100,7 @@ class MockBackend:
                                      "wants_to_end")}, "plan": ""}
 
     def _reflect(self, meta: dict) -> dict:
-        return {"impression": "对方举止得体，说话有分寸，值得继续观察", "doubts": ["对方为什么愿意帮一个刚认识的人"], "next": "下次问问对方的看法"}
+        return {"impression": "对方举止得体，说话有分寸，值得继续观察", "doubts": ["对方为什么愿意帮一个刚认识的人"], "next": "下次问问对方的看法", "evidence": [0]}
 
     def _npc_audit(self, meta: dict) -> dict:
         return {"problems": []}

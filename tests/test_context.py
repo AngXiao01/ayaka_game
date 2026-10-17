@@ -330,8 +330,10 @@ def test_state_block_drops_by_tier_when_over_budget():
     assert kept == state and none == []
 
 
-def test_single_purpose_stages_use_the_small_model_tier(tmp_path):
+def test_single_purpose_stages_use_the_small_model_tier(tmp_path, monkeypatch):
+    import core.npc_agent as na
     from llm.router import ModelRouter
+    monkeypatch.setattr(na, "REFLECT_AT", 0)                       # 这条只测路由；触发阈值在下面单独测
 
     class Tagged(MockBackend):
         def __init__(self, tag):
@@ -386,3 +388,39 @@ def test_prompt_carries_only_the_chosen_beat(tmp_path):
     prompts = [m["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step" for m in e["messages"]
                if "这一轮可以顺势提起的一件事" in m["content"]]
     assert prompts and "rv_aen_prints" in prompts[-1] and "rv_aen_bundle" not in prompts[-1]
+
+
+def test_reflection_waits_for_enough_new_memory_and_cites_its_evidence(tmp_path, monkeypatch):
+    import core.npc_agent as na
+    save = tmp_path / "data/saves/c.json"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(json.dumps({"world": {"act_id": "act2", "phase_idx": 1, "clues": ["c_case", "c_shops"]}}))
+    script = [{"kind": "talk", "npc": "ayaka"}, ("你好，聊聊茶会吧。", "闲聊"), ("再聊聊。", "闲聊"), {"kind": "leave"}, "q"]
+    eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(script), out=lambda s: None, save_name="c")
+    eng.run()
+    ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
+    skipped = [e for e in ev if e["event"] == "reflection_skipped"]
+    assert skipped and skipped[0]["accumulated"] < skipped[0]["need"]            # 一次短谈话，重要度不够，不反思
+    monkeypatch.setattr(na, "REFLECT_AT", 1)
+    save2 = tmp_path / "data/saves/d.json"
+    save2.write_text(save.read_text())
+    eng2 = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(script), out=lambda s: None, save_name="d")
+    eng2.run()
+    refl = [m for m in eng2.npcs["ayaka"].memory.items if m.kind == "reflection"]
+    ids = {m.id for m in eng2.npcs["ayaka"].memory.items}
+    assert refl and refl[0].extra["evidence"] and set(refl[0].extra["evidence"]) <= ids      # 结论挂着依据的记忆
+
+
+def test_asking_the_same_thing_again_is_noticed(tmp_path):
+    save = tmp_path / "data/saves/c.json"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(json.dumps({"world": {"act_id": "act2", "phase_idx": 1, "clues": ["c_case", "c_shops"]}}))
+    q = "丢碗那天夜里，有没有谁来敲过后门？"
+    eng = GameEngine(settings(tmp_path), MockBackend(seed=0), ScriptedPlayer(
+        [{"kind": "talk", "npc": "thoma"}, (q, "打听情报"), ("那天夜里到底有没有谁来敲过后门？", "打听情报"), {"kind": "leave"}, "q"]),
+        out=lambda s: None, save_name="c")
+    eng.run()
+    ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
+    assert [e["earlier"] for e in ev if e["event"] == "repeat_question"] == [q]
+    prompts = [m["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step" for m in e["messages"] if "在重复问你已经答过的事" in m["content"]]
+    assert prompts and q in prompts[0]

@@ -17,35 +17,50 @@ SYSTEM = """你是{npc}的内心。刚和{player}谈完一次话，请你以第�
 - impression：你现在怎么看{player}——是个什么样的人，值不值得信任，哪里让你放心或不放心。一句话，不超过 40 字。要有谈话里的依据，不要凭空下结论。
 - doubts：你心里还没解开的疑问（最多 3 条，每条一句话）。比如对方为什么这么做、某句话对不上、想再问的事。没有就留空。
 - next：下次见面你打算怎么做（一句话，可留空）。
+- evidence：你的看法和疑问是根据下面「最近的记忆」里的哪几条得出的（写它们的编号，至少 1 条）。
 
-不要复述谈话的经过。只输出一个 JSON 对象：{{"impression": "……", "doubts": ["……"], "next": "……"}}，不要任何其他文字。"""
+不要复述谈话的经过。只输出一个 JSON 对象：{{"impression": "……", "doubts": ["……"], "next": "……", "evidence": [0, 2]}}，不要任何其他文字。"""
 
 SCHEMA = {"type": "object", "properties": {"impression": {"type": "string"}, "doubts": {"type": "array", "items": {"type": "string"}},
-                                           "next": {"type": "string"}}, "required": ["impression", "doubts", "next"]}
+                                           "next": {"type": "string"}, "evidence": {"type": "array", "items": {"type": "integer"}}},
+          "required": ["impression", "doubts", "next", "evidence"]}
 
 
-def validate_reflection(obj: Any) -> dict:
+def validate_reflection(obj: Any, n_memories: int = 0) -> dict:
     if not isinstance(obj, dict):
         raise ValidationError("顶层必须是 JSON 对象")
     impression = _str(obj.get("impression"))[:80]
     if not impression:
         raise ValidationError("impression 为空")
-    return {"impression": impression, "doubts": [x[:60] for x in _str_list(obj.get("doubts"))[:3]], "next": _str(obj.get("next"))[:60]}
+    ev = []
+    for x in obj.get("evidence") or []:
+        try:
+            i = int(x)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < n_memories and i not in ev:
+            ev.append(i)
+    if n_memories and not ev:
+        raise ValidationError("evidence 必须写出依据的记忆编号（0~%d）" % (n_memories - 1))
+    return {"impression": impression, "doubts": [x[:60] for x in _str_list(obj.get("doubts"))[:3]],
+            "next": _str(obj.get("next"))[:60], "evidence": ev}
 
 
 class ReflectionLLMAdapter:
     def __init__(self, backend: LLMBackend, params: TaskParams, tracer: Any = None, repair_attempts: int = 1):
         self.backend, self.params, self.tracer, self.repair_attempts = backend, params, tracer, repair_attempts
 
-    def reflect(self, npc: str, player: str, transcript: str, previous: list[str]) -> dict:
+    def reflect(self, npc: str, player: str, transcript: str, previous: list[str], memories: list[str] | None = None) -> dict:
         prev = "\n".join(f"- {x}" for x in previous) or "（这是第一次）"
+        mems = memories or []
+        listing = "\n".join(f"{i}. {m}" for i, m in enumerate(mems)) or "（无）"
         req = LLMRequest(task="reflect", messages=[
             {"role": "system", "content": SYSTEM.format(npc=npc, player=player)},
-            {"role": "user", "content": f"# 你之前琢磨出的看法\n{prev}\n\n# 这次谈话\n{transcript[-2500:]}"}],
+            {"role": "user", "content": f"# 你之前琢磨出的看法\n{prev}\n\n# 最近的记忆（编号）\n{listing}\n\n# 这次谈话\n{transcript[-2500:]}"}],
             temperature=self.params.temperature, max_tokens=min(400, self.params.max_tokens),
             json_schema=SCHEMA, schema_name="reflection", meta={"npc": npc, "player_name": player, "transcript": transcript[:300]})
         try:
-            return call_json(self.backend, req, validate_reflection, self.tracer, self.repair_attempts)
+            return call_json(self.backend, req, lambda o: validate_reflection(o, len(mems)), self.tracer, self.repair_attempts)
         except LLMError as e:
             if self.tracer:
                 self.tracer.log("fallback", where="reflect", error=str(e))

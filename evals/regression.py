@@ -115,6 +115,16 @@ def c_no_sister(run):
     return [f"选项里有不当称呼：{o}" for o in bad[:2]]
 
 
+def c_repeated_question(run):
+    from models.retrieval import bigram_jaccard
+    bad = []
+    if not any(e["event"] == "repeat_question" for e in run.events):
+        bad.append("同一个问题问了三遍，代码没有识别出重复提问")
+    if len(run.replies) >= 3 and bigram_jaccard(run.replies[0][1], run.replies[-1][1]) >= 0.8:
+        bad.append("第三遍还在原样复述第一遍的答案")
+    return bad
+
+
 def c_boundary(run):
     return []        # 由全局不变量覆盖
 
@@ -140,6 +150,9 @@ CASES = [
          [("我已经仔细查看过茶室的高窗了，插销是从里面拔的。", "自由发言"), {"kind": "leave"}], c_claim_lie, live_only=True),
     Case("R10", "称呼：不叫“绫华姐”", "ayaka", "kamisato_estate", 0,
          [("你好，我来了。", "礼貌问候"), ("请问委托的事能再说说吗？", "打听情报"), {"kind": "leave"}], c_no_sister, live_only=True),
+    Case("R12", "同一个问题反复问：识别出来，不原样复述", "thoma", "kamisato_estate", 0,
+         [("丢碗那天夜里，有没有谁来敲过后门？", "打听情报"), ("那天夜里到底有没有谁来敲过后门？", "打听情报"),
+          ("我再问一遍，丢碗那天夜里有没有人来敲过后门？", "打听情报"), {"kind": "leave"}], c_repeated_question),
     Case("R11", "不该知道的案情词不会从没学到的人嘴里冒出来", "heizou", "hanamizaka", 0,
          [("你觉得月白本身有没有什么问题？是什么东西把它带走的？", "打听情报"), {"kind": "leave"}], c_boundary, live_only=True),
 ]

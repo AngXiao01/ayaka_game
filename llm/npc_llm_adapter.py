@@ -50,7 +50,7 @@ SECTION_TIERS = {"时间与场景": "pinned", "局势": "pinned", "你此刻的�
                  "你对对方说过的谎": "situational", "你可能会说的谎": "situational", "对质": "situational",
                  "你之前说过的设定": "retrieved", "这次谈话较早的内容": "pinned", "本轮相关的人物细节": "retrieved",
                  "本轮适用的技能": "retrieved", "你刚做过的小动作": "situational", "这句话你刚说过了": "situational",
-                 "这一轮才用得上的规矩": "situational", "你上一版回答有问题": "situational", "你这一轮的心态": "situational", "你自己上次琢磨出来的": "pinned", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
+                 "这一轮才用得上的规矩": "situational", "你上一版回答有问题": "situational", "在重复问你已经答过的事": "situational", "你这一轮的心态": "situational", "你自己上次琢磨出来的": "pinned", "说起自己做过的事": "situational", "你最近的说话习惯": "situational", f"刚给你看的东西": "situational"}
 
 
 PROTECTED = ("你这一轮的心态", "你上一版回答有问题", "刚给你看的东西", "说了你无法核实", "说起自己做过的事", "这句话你刚说过了",
@@ -288,6 +288,11 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         parts.append("## 你这一轮的心态（说话之前已经定下）\n" + "\n".join(lines))
     if ctx.tics:                                   # 代码量出来的：句式、开头、口头禅有没有变成固定套路
         parts.append("## 你最近的说话习惯（有点固定了）\n" + _bullets(ctx.tics))
+    if t.get("repeated"):                          # 同一个问题又被问了：别把同样的答案再念一遍
+        rp = t["repeated"]
+        parts.append(f"## {player}在重复问你已经答过的事\n上次问的是「{rp['asked']}」，你当时答的是「{rp['answered']}」。"
+                     "这一轮别原样再答一遍：可以直接说「我刚说过了」，补一点新的细节，或者问对方为什么又问；"
+                     "如果这件事你确实没有更多可说，就明说没有更多了。")
     if t.get("unverified"):                        # 代码核对过：这些事玩家嘴上说了，手上没有任何东西能证明
         parts.append(f"## {player}说了你无法核实的事\n" + f"提到了：{'、'.join(t['unverified'])}。{player}没有拿出任何东西证明。"
                      "你可以好奇、追问凭据或让对方拿出来看；不要当成已经查清，也不要因此兑现人情、交换情报或改口认输。")
