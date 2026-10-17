@@ -215,3 +215,29 @@ def test_auditor_sends_a_contradicting_line_back_once(tmp_path):
     steps = [e for e in ev if e["event"] == "llm" and e["task"] == "npc_step"]
     told = [m["content"] for e in steps for m in e["messages"] if "你上一版回答有问题" in m["content"]]
     assert told and "编造了窗台上的灰尘" in told[0]                 # 重说的那一版看得到核对员的意见
+
+
+def test_questions_and_invented_fragments_are_not_claims():
+    from llm.claim_llm_adapter import validate_claims
+    ids = {"o_tearoom_window", "ayaka"}
+    q = "这茶室的锁平时是怎样的？绫华小姐，夜里是谁最后离开的？"
+    bad = {"claims": [{"kind": "examined", "target": "o_tearoom_window", "text": "查看了茶室的高窗"}]}   # 模型自己改写的，原话里没有
+    assert validate_claims(bad, ids, q) == []
+    still = {"claims": [{"kind": "examined", "target": "o_tearoom_window", "text": "茶室的锁"}]}          # 有原文，但整句是问句，没有“已经做过”的口气
+    assert validate_claims(still, ids, q) == []
+    real = "我已经仔细查看过茶室的高窗了。"
+    good = {"claims": [{"kind": "examined", "target": "o_tearoom_window", "text": "仔细查看过茶室的高窗"}]}
+    assert validate_claims(good, ids, real) == [{"kind": "examined", "target": "o_tearoom_window", "text": "仔细查看过茶室的高窗"}]
+
+
+def test_talking_to_someone_is_not_a_claim_of_having_talked_to_them():
+    from core.claims import ClaimChecker
+    g, _ = fs({"act_id": "act2"})
+    checker = ClaimChecker(g, WORLD, PERSONAS, lambda text, pl, ob, pe: [{"kind": "talked", "target": "ayaka", "text": "和绫华谈过"}])
+    assert checker.check("ayaka", "绫华小姐，我和你谈过了。") == []
+
+
+def test_options_address_each_npc_properly():
+    for nid, p in PERSONAS.items():
+        assert p.addressed_as, f"{nid} 没写称呼"
+    assert "绫华小姐" in PERSONAS["ayaka"].addressed_as and not any("姐" in x and x != "绫华小姐" and x != "神里小姐" for x in PERSONAS["ayaka"].addressed_as)

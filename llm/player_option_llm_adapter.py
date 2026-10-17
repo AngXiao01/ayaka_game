@@ -30,6 +30,7 @@ SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地�
    不要编造{player}做过、看到过的事：「去过」「看见」「刚从……回来」只能用足迹里有的；线索本里的事如果是听人说的，就只能说「听说」「据说」，不能说成自己亲眼见到。没去过的地方，可以说想去、问在哪，不能说去过。提到案子时，只能引用线索本里的内容，或者提出疑问。
 8. 不出戏：每句都是{player}在稻妻当面说出口的话。不提「游戏」「玩家」「剧情」「任务」「选项」「系统」这类说法；不提这个故事里没有出场的同伴（比如派蒙）；不搬出与眼前无关的原作剧情。
 10. 告别是例外，不是默认选项：谈话还在进行（对方在答话、还有话题没聊完、刚抛出新线索）时一律不写告别的句子。只有对话已经自然收尾——事情谈完了、对方在送客或催着走、{player}说了要去别处——才可以写一句，而且要贴着此刻的情境，不要套「先聊到这儿」「我先告辞了」这类固定客套。
+11. 称呼：{player}说话时称呼{npc}只用「{address}」；不要自创别的称呼，尤其不要叫「姐」「妹」「亲」「大佬」。
 9. 有分寸：对初次见面或还不熟的人礼貌克制；亲昵、调情或带私人感情的话，只在对方是神里绫华、且关系到了「友好」以上时才用，最多一句。
 
 只输出一个 JSON 对象，不要任何其他文字，不要代码块：
@@ -95,7 +96,7 @@ class PlayerOptionLLMAdapter:
 请给出 0~{n} 句。"""
         req = LLMRequest(
             task="player_options",
-            messages=[{"role": "system", "content": SYSTEM.format(player=player, npc=npc_name, n=n,
+            messages=[{"role": "system", "content": SYSTEM.format(player=player, npc=npc_name, n=n, address="」「".join(pv.get("address") or [npc_name]),
                                                                   tones="、".join(PLAYER_TONES),
                                                                   intents="、".join(OPTION_INTENTS))},
                       {"role": "user", "content": user}],

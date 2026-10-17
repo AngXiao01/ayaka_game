@@ -152,6 +152,7 @@ class Explorer:
           known_text     玩家看到过的文字（开场、线索、证词、日志、见过的人、到过的地方……），过滤剧透用
           spoiler_terms  玩家没听说过就不该出现在台词里的词（案情关键词 + 人名）"""
         g, w, q = self.god, self.world, self.god.quest
+        address = list(getattr(self.personas.get(npc_id), "addressed_as", []) or [])
         directions = []
         for s in q.signals:
             if s.npc != npc_id or s.id in g.achieved or g.missing_prereqs(s.id):
@@ -183,7 +184,7 @@ class Explorer:
         terms = list(dict.fromkeys(q.spoiler_terms + [p.name for p in self.personas.values()]))
         return {"clues": [f"{q.clue_name(c)}：{q.clues[c]['desc']}" for c in g.clues],
                 "directions": directions, "known_text": "\n".join(parts), "spoiler_terms": terms,
-                "footprint": self.footprint()}
+                "footprint": self.footprint(), "address": address}
 
     def footprint(self) -> str:
         """玩家亲身经历过什么：去过哪、和谁说过话、查看过什么。线索本里「听说」的事不等于亲眼见过。"""

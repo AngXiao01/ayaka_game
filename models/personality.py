@@ -48,6 +48,7 @@ class Personality:
     anecdotes: list[str] = field(default_factory=list)         # 可以随口讲的小事、往事（让聊天有细节）
     days: dict[str, str] = field(default_factory=dict)         # 第几天 -> 今天的近况与心情（让聊天有「当下」）
     curiosities: list[str] = field(default_factory=list)       # 想问对方的事（让聊天是双向的）
+    addressed_as: list[str] = field(default_factory=list)      # 玩家（一个有礼貌的外来旅行者）该怎么称呼他 / 她，选项台词只许用这些
     aliases: list[str] = field(default_factory=list)           # 别人怎么称呼他（「大小姐」「白鹭公主」），用来认出话里提到的人
     outing: dict = field(default_factory=dict)                 # 能不能和玩家一起出门：min_affinity / phases / tell / secret / note …
     confidants: list[str] = field(default_factory=list)        # 见过玩家之后会去跟谁说（托人带话）

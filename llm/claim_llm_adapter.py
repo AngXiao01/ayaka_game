@@ -21,7 +21,8 @@ SYSTEM = """你从{player}的一句话里，找出他**声称自己已经做过*
 1. target 只能从下面给出的编号里选（地点、物件、人物），对不上就不要记。
 2. 只记「已经做过」的：计划（我打算去）、疑问（你去过吗）、假设（如果我去了）、别人做的事，都不算。
 3. 一句话最多记 3 条。没有就 {{"claims": []}}。
-4. text 写这一条声称的原话片段，不超过 30 字。
+4. text 必须是{player}原话里的一段原文（照抄，不要改写），不超过 30 字。
+5. 整句是提问、闲聊、没说自己做过什么的，一律 {{"claims": []}}。例：「这茶室的锁平时是怎样的？夜里是谁最后离开的？」没有任何声称，不要记。
 
 只输出一个 JSON 对象：{{"claims": [{{"kind": "visited", "target": "编号", "text": "……"}}]}}，不要任何其他文字。"""
 
@@ -31,14 +32,20 @@ SCHEMA = {"type": "object", "properties": {"claims": {"type": "array", "items": 
     "required": ["kind", "target", "text"]}}}, "required": ["claims"]}
 
 
-def validate_claims(obj: Any, targets: set[str]) -> list[dict]:
+PAST_MARKERS = ("了", "过", "已经", "刚", "昨", "那天", "早上", "之前", "才从")
+
+
+def validate_claims(obj: Any, targets: set[str], source: str = "") -> list[dict]:
     items = obj.get("claims") if isinstance(obj, dict) else obj
     if not isinstance(items, list):
         return []
     out = []
     for it in items:
         if isinstance(it, dict) and it.get("kind") in ("visited", "examined", "talked") and str(it.get("target")) in targets:
-            out.append({"kind": it["kind"], "target": str(it["target"]), "text": str(it.get("text") or "")[:40]})
+            frag = str(it.get("text") or "")[:40]
+            if source and (frag not in source or not any(m in source for m in PAST_MARKERS)):
+                continue                      # 没有原文依据（模型自己改写 / 编的），或整句没有“已经做过”的口气：不算声明
+            out.append({"kind": it["kind"], "target": str(it["target"]), "text": frag})
     return out[:3]
 
 
@@ -58,6 +65,6 @@ class ClaimLLMAdapter:
             meta={"text": text, "places": places, "objects": objects, "people": people})
         ids = set(places) | set(objects) | set(people)
         try:
-            return call_json(self.backend, req, lambda o: validate_claims(o, ids), self.tracer, self.repair_attempts)
+            return call_json(self.backend, req, lambda o: validate_claims(o, ids, text), self.tracer, self.repair_attempts)
         except LLMError:
             return []

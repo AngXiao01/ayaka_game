@@ -53,6 +53,8 @@ class ClaimChecker:
         people = {nid: p.name for nid, p in self.personas.items()}
         out = []
         for c in self.extract(text, places, objects, people):
+            if c["kind"] == "talked" and c["target"] == npc:
+                continue                                   # 正在和他说话，不存在「说自己和他谈过」
             known = self.could_know(npc, c["kind"], c["target"])
             real = self.truth(c["kind"], c["target"])
             name = places.get(c["target"]) or objects.get(c["target"]) or people.get(c["target"], "")
