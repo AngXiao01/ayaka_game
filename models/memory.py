@@ -7,9 +7,9 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
-import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -28,8 +28,13 @@ class MemoryItem:
     topics: list[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
     hits: int = 1                       # 被合并的次数
-    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
-    ts: float = field(default_factory=lambda: round(time.time(), 3))
+    accessed: int = 0                   # 最近一次被取用（检索到）的世界回合；时近性按它和创建时间里较晚的算
+    id: str = ""                        # 由内容生成（同一局重放得到同样的编号，反思的证据才对得上）
+    ts: float = field(default_factory=lambda: round(time.time(), 3))     # 墙钟，只供人看；先后顺序以库里的位置为准
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = hashlib.sha1(f"{self.kind}|{self.world_time}|{self.text}".encode()).hexdigest()[:12]
 
 
 class MemoryStore:
@@ -44,12 +49,19 @@ class MemoryStore:
                     except (TypeError, ValueError):
                         continue    # 坏行跳过，不让一行脏数据毁掉整个存档
         self._index: Optional[BM25] = None
+        self._dirty = False             # 有条目的“最近取用时间”变了，文件里的还是旧的
+
+    def flush(self) -> None:
+        """把检索时刷新的“最近取用”写回文件。每次检索都重写整个文件太浪费，所以攒到会话结束 / 存档时一起写。"""
+        if self._dirty:
+            self._rewrite()
 
     def _rewrite(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text("".join(json.dumps(asdict(m), ensure_ascii=False) + "\n" for m in self.items), encoding="utf-8")
         tmp.replace(self.path)       # 原子替换，写一半崩溃也不会留下半个文件
+        self._dirty = False
 
     def add(self, item: MemoryItem) -> tuple[MemoryItem, bool]:
         """返回 (落库的条目, 是否为合并)。"""
@@ -69,7 +81,9 @@ class MemoryStore:
             f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
         return item, False
 
-    def retrieve(self, query: str, k: int = 5, now: Optional[int] = None) -> list[MemoryItem]:
+    def retrieve(self, query: str, k: int = 5, now: Optional[int] = None, exclude_kinds: tuple = (), touch: bool = True) -> list[MemoryItem]:
+        """取最相关的 k 条（按时间顺序给模型看）。取到的条目会刷新“最近被用到”的时间（touch=False 则只看不动），
+        经常被想起的事就不会因为发生得早而沉下去——生成式智能体里 recency 也是按最近取用算的。"""
         if not self.items or k <= 0:
             return []
         if self._index is None:
@@ -80,8 +94,13 @@ class MemoryStore:
 
         def score(i: int) -> float:
             m = self.items[i]
-            recency = 1.0 / (1.0 + max(0, now - m.world_time) / 20.0)
+            recency = 1.0 / (1.0 + max(0, now - max(m.world_time, m.accessed)) / 20.0)
             return 0.6 * rel[i] / top + 0.25 * m.importance / 5 + 0.15 * recency
 
-        ranked = sorted(range(len(self.items)), key=score, reverse=True)[:k]
-        return sorted((self.items[i] for i in ranked), key=lambda m: m.world_time)   # 按时间顺序给模型看
+        ranked = [i for i in sorted(range(len(self.items)), key=score, reverse=True) if self.items[i].kind not in exclude_kinds][:k]
+        got = [self.items[i] for i in ranked]
+        if touch:
+            for m in got:
+                if now > m.accessed:
+                    m.accessed, self._dirty = now, True
+        return sorted(got, key=lambda m: m.world_time)

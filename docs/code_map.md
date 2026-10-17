@@ -19,10 +19,10 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 目录 | 干什么 | 重点文件 |
 |---|---|---|
 | `content/` | 全部剧情数据 | `quests/ayaka_main.json`（线索、信号、幕、结局、议程）、`world.json`（地点、物件、格局）、`npcs/*.json`（角色卡）、`skills/*.md`、`lore/*.md`（设定资料）、`_design/story_bible.md`（剧情大纲，只给人看） |
-| `core/` | 世界规则与状态 | `god_env.py`（**状态的唯一真相**：时间、线索、信号、幕、结局）、`dialogue_session.py`（**一次谈话的主循环**）、`explorer.py`（地点层菜单）、`physical.py`（谁在哪、传话）、`npc_agent.py`（一个 NPC 的大脑）、`agent_loop.py`（带工具的循环）、`claims.py`、`agendas.py`、`actions.py` |
+| `core/` | 世界规则与状态 | `god_env.py`（**状态的唯一真相**：时间、线索、信号、幕、结局）、`dialogue_session.py`（**一次谈话的主循环**）、`eventlog.py`（状态差异与重建）、`explorer.py`（地点层菜单）、`physical.py`（谁在哪、传话）、`npc_agent.py`（一个 NPC 的大脑）、`agent_loop.py`（带工具的循环）、`claims.py`、`agendas.py`、`actions.py` |
 | `models/` | 数据对象 | `personality.py`（角色卡）、`memory.py`（长期记忆）、`relationship.py`（好感与信任）、`retrieval.py`（检索） |
-| `llm/` | 模型调用 | `npc_llm_adapter.py`（一句回复的三步）、`npc_stages.py`（评估、核对、记录）、`player_option_llm_adapter.py`（替玩家想台词）、`gemma_client.py`（HTTP 客户端）、`free_first.py`、`mock_backend.py`（离线假模型，测试用）、`schemas.py`（所有结构化输出的格式与校验） |
-| `engine/` | 外壳 | `game_engine.py`（组装一切、地点层主循环、存档）、`trace.py`（把每一步记成 JSON 行） |
+| `llm/` | 模型调用 | `npc_llm_adapter.py`（一句回复的三步）、`npc_stages.py`（评估、核对、记录）、`player_option_llm_adapter.py`（替玩家想台词）、`gemma_client.py`（HTTP 客户端）、`free_first.py`、`mock_backend.py`（离线假模型，测试用）、`replay.py`（用 trace 里记下的回答重放）、`schemas.py`（所有结构化输出的格式与校验） |
+| `engine/` | 外壳 | `game_engine.py`（组装一切、地点层主循环、存档）、`trace.py`（把每一步记成 JSON 行）、`recording.py`（记录玩家输入和状态差异，供重放） |
 | `web/` | 网页版 | `server.py`、`index.html` |
 | `config/` | 配置 | `settings.py`（所有环境变量） |
 | `tests/` `evals/` | 测试与评测 | `tests/`（离线，用假模型）、`evals/claim_cases.py`（真话/谎话用例） |
@@ -57,6 +57,7 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 加一个新的判断（是不是 X） | `core/judge.py`（便宜的类型化判断）或 `llm/` 下新加一个单一职责的 agent |
 | 改记忆、检索 | `models/memory.py`、`core/working_memory.py`、`core/context_fs.py` |
 | 看某一局发生了什么 | `data/traces/*.jsonl`，用 `python3 tools/view_trace.py <文件>` |
+| 把一局原样重放 / 看第 N 步时的世界 | `python3 tools/replay_game.py <文件> [--state-at N]`，原理见 `core/eventlog.py` |
 | 加测试 | `tests/`，用 `MockBackend`，不花钱 |
 
 ## 建议的阅读顺序
@@ -76,3 +77,4 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 - 离线测试：`~/miniforge3/envs/torch_arm/bin/python -m pytest -q`
 - 离线跑一局：`python3 main.py --mock --auto cooperative`
 - 看 trace：`python3 tools/view_trace.py data/traces/<文件>.jsonl`
+- 重放一局：`python3 tools/replay_game.py data/traces/<文件>.jsonl`（只对新版本录的 trace 有效）

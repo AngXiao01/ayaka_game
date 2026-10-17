@@ -35,6 +35,7 @@ from core.reviewer import SignalReviewer
 from core.scene import SceneAgent
 from core.skills import SkillLibrary
 from core.world import World
+from engine.recording import RecordingDecider, RecordingPlayer
 from engine.trace import Tracer
 from llm.base import LLMBackend
 from llm.branch_llm_adapter import BranchLLMAdapter
@@ -112,6 +113,7 @@ class GameEngine:
         self.god.tracer_log = lambda kind, **kw: self.tracer.log(kind, **kw)
         # 主线结束（结局）、截止时间到了之后还能继续玩；自动玩家 / 评测跑到结局就停
         self.continue_after_ending = g.continue_after_ending and not getattr(player, "stops_at_ending", False)
+        self.player = RecordingPlayer(player, self)      # 录制每次输入和两次输入之间的状态差异（见 core/eventlog.py）
         rels = state.get("relationships", {})
 
         r, t, rep = self.router, self.tracer, lp.json_repair_attempts
@@ -156,7 +158,7 @@ class GameEngine:
             DirectorLLMAdapter(r.backend("director"), r.params("director"), t, min(rep, 1)),
             mode=h.director_mode, max_actions=h.director_max_actions, tracer=t)
         # 便宜的分支判定（Jev）：这句话是哪个动词、说中了哪条推测、是不是在威胁……没开或出错时一律退回关键词规则
-        self.decider = decider or make_decider(settings, backend.name, t, (r.backend("branch"), r.params("branch")))
+        self.decider = RecordingDecider(decider or make_decider(settings, backend.name, t, (r.backend("branch"), r.params("branch"))), t)
         self.god.decider = self.decider
         self.option_gen.verify = lambda fp, texts: judge.unbacked(self.god, fp, texts)
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
@@ -209,7 +211,31 @@ class GameEngine:
         if q.companion not in self.personas:
             raise ValueError(f"主角色 {q.companion} 没有人物卡")
 
+    def snapshot(self) -> dict:
+        """这一刻的完整状态（世界、关系、各 NPC 的长期记忆和共享设定）。存档只存前两样；事件溯源要把记忆也算上。"""
+        return {"world": json.loads(json.dumps(self.god.to_dict(), ensure_ascii=False, default=str)),
+                "relationships": {nid: a.relationship.to_dict() for nid, a in self.npcs.items()},
+                "memories": {nid: [self._plain_memory(m) for m in a.memory.items] for nid, a in self.npcs.items()},
+                "world_canon": [self._plain_memory(m) for m in self.world_canon.items]}
+
+    @staticmethod
+    def _plain_memory(m) -> dict:
+        from dataclasses import asdict
+        return {k: v for k, v in asdict(m).items() if k != "ts"}              # 墙钟不进状态：同样的局面重放出同样的记录
+
+    def replay_settings(self) -> dict:
+        """重放需要的设置：游戏与 harness 的开关（不含路径）、判断器种类。"""
+        def plain(obj):
+            return {k: v for k, v in ((f, getattr(obj, f)) for f in obj.__dataclass_fields__)
+                    if isinstance(v, (str, int, float, bool, type(None)))}
+        return {"game": plain(self.settings.game), "harness": plain(self.settings.harness),
+                "decider": getattr(self.decider, "name", "off"), "backend": self.backend.name,
+                "stops_at_ending": bool(getattr(self.player, "stops_at_ending", False))}
+
     def save(self) -> None:
+        for a in self.npcs.values():
+            a.memory.flush()                                  # 检索时刷新的“最近取用”随存档一起落盘
+        self.world_canon.flush()
         self.save_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.save_path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"world": self.god.to_dict(),
@@ -258,6 +284,12 @@ class GameEngine:
         self.god.notices.clear()
 
     def run(self, max_actions: int = 400) -> GameResult:
+        try:
+            return self._run_loop(max_actions)
+        finally:
+            getattr(self.player, "finish", lambda: None)()        # 最后一次输入之后世界的变化（玩家被换掉时没有录制器，跳过）
+
+    def _run_loop(self, max_actions: int) -> GameResult:
         g = self.god
         result = GameResult(ending=g.ending)
         if g.ending and not self.continue_after_ending:

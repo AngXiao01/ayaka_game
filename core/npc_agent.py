@@ -324,14 +324,16 @@ class NPCAgent:
         if self.reflector is None or turns < 2:
             return
         # 生成式智能体的做法：记忆的重要度累计到阈值才反思（而不是每次都反思）；反思的结论要挂着依据的记忆编号
-        last_ts = max([m.ts for m in self.memory.items if m.kind == "reflection"], default=0.0)
-        fresh = [m for m in self.memory.items if m.kind in ("dialogue_summary", "fact") and m.ts > last_ts]
+        items = self.memory.items
+        last = max((i for i, m in enumerate(items) if m.kind == "reflection"), default=-1)       # 库里只追加：位置就是先后
+        fresh = [m for m in items[last + 1:] if m.kind in ("dialogue_summary", "fact")]
         if sum(m.importance for m in fresh) < REFLECT_AT:
             if self.tracer:
                 self.tracer.log("reflection_skipped", npc=self.p.id, accumulated=sum(m.importance for m in fresh), need=REFLECT_AT)
             return
         previous = [m.text for m in self.memory.items if m.kind == "reflection"][-2:]
-        r = self.reflector.reflect(self.name, ctx.player_name, transcript, previous, [m.text for m in fresh][-8:])
+        shown, groups, focus = self._focal_pool(ctx, fresh, transcript, world_time)
+        r = self.reflector.reflect(self.name, ctx.player_name, transcript, previous, [m.text for m in shown], groups)
         if not r:
             return
         text = f"我对{ctx.player_name}的看法：{r['impression']}"
@@ -339,16 +341,43 @@ class NPCAgent:
             text += "；我的疑问：" + "；".join(r["doubts"])
         if r["next"]:
             text += "；下次我打算：" + r["next"]
-        shown = fresh[-8:]
         self.memory.add(MemoryItem(text=text, kind="reflection", importance=4, world_time=world_time,
                                    topics=["看法", "疑问"],
-                                   extra={**provenance, "evidence": [shown[i].id for i in r.get("evidence", []) if i < len(shown)]}))
+                                   extra={**provenance, "evidence": [shown[i].id for i in r.get("evidence", []) if i < len(shown)],
+                                          **({"focus": focus} if focus else {})}))
         old = [m for m in self.memory.items if m.kind == "reflection"]
         for m in old[:-3]:
             self.memory.items.remove(m)
         self.memory._rewrite()
         if self.tracer:
             self.tracer.log("reflection", npc=self.p.id, text=text)
+
+    def _focal_pool(self, ctx: TurnContext, fresh: list, transcript: str, world_time: int):
+        """焦点问题 → 各自检索 → 合并成一份带编号的记忆池。返回 (记忆池, [(问题, [池里的下标])], 问题列表)。
+        模型挑不出问题 / 检索不到东西，就退回只看最近几条（原来的做法）。"""
+        recent = fresh[-8:]
+        ask = getattr(self.reflector, "focal_questions", None)
+        questions = ask(self.name, ctx.player_name, [m.text for m in recent], transcript) if ask else []
+        pool: list = []
+        groups: list[tuple[str, list[int]]] = []
+        for q in questions:
+            idx = []
+            for m in self.memory.retrieve(q, k=4, now=world_time, exclude_kinds=("reflection",)):
+                at = next((j for j, p in enumerate(pool) if p is m), None)
+                if at is None:
+                    pool.append(m)
+                    at = len(pool) - 1
+                idx.append(at)
+            if idx:
+                groups.append((q, idx))
+        if not pool:
+            return recent, [], []
+        pool = pool[:10]
+        groups = [(q, [i for i in idx if i < len(pool)]) for q, idx in groups]
+        if self.tracer:
+            self.tracer.log("reflection_focus", npc=self.p.id, questions=[q for q, _ in groups],
+                            retrieved=[{"q": q, "memories": [pool[i].id for i in idx]} for q, idx in groups])
+        return pool, [g for g in groups if g[1]], [q for q, _ in groups]
 
     def latest_reflection(self) -> str:
         items = [m.text for m in self.memory.items if m.kind == "reflection"]
