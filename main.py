@@ -56,6 +56,25 @@ def build_llm(cfg, model: str = "") -> GemmaClient:
 build_gemma = build_llm          # 旧名字
 
 
+def with_free_first(cfg, backend, tracer=None):
+    """FREE_FIRST=1 时给付费后端套一层“免费优先”：先试 FREE_MODELS 里第一个模型列表里真有的免费模型，
+    失败这一次回落付费。挑不到免费模型、或没开，原样返回。"""
+    from llm.free_first import FreeFirstBackend
+    if not getattr(cfg, "free_first", False) or cfg.backend != "openrouter":
+        return backend
+    try:
+        have = {m.get("id") for m in backend.list_models()}
+    except LLMError:
+        have = set()
+    pick = next((m for m in cfg.free_models if m in have), "")
+    if not pick:
+        return backend
+    free = build_llm(cfg, pick)
+    free.max_retries = 0                 # 免费那条线失败要快：不退避不重试，直接回落付费
+    cfg.model_note = (cfg.model_note + "；" if cfg.model_note else "") + f"免费优先：{pick}（失败回落 {backend.model}）"
+    return FreeFirstBackend(free, backend, tracer)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="神里绫华 · 叙事 Agent 游戏")
     ap.add_argument("--mock", action="store_true", help="用离线 Mock 后端")
@@ -105,6 +124,7 @@ def main(argv=None) -> int:
             return 1
         if settings.llm.model_note:
             print(f"[{settings.llm.backend}] 自动选模型：{settings.llm.model_note}")
+        backend = with_free_first(settings.llm, backend)
         router = ModelRouter(backend, settings.llm, lambda m: build_llm(settings.llm, m))
 
     if args.auto in ("idler", "injector", "steer"):
@@ -122,6 +142,8 @@ def main(argv=None) -> int:
         g.data_dir = Path(tmpdir)
     engine = GameEngine(settings, backend, player, save_name=args.save, new_game=args.new or args.incognito,
                         router=router, trace=not args.incognito)
+    if hasattr(backend, "free"):
+        backend.tracer = engine.tracer                      # 免费回落的时候写进 trace
     try:
         engine.run(max_actions=args.max_actions)
     except KeyboardInterrupt:
@@ -132,6 +154,8 @@ def main(argv=None) -> int:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
     print(f"\n[{backend.name}] {engine.stats_line()}")
+    if hasattr(backend, "free"):
+        print("免费优先：" + backend.summary())
     if engine.tracer.path:
         print(f"trace：{engine.tracer.path}\n可视化：python3 tools/view_trace.py {engine.tracer.path}")
     return 0

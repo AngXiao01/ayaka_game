@@ -137,6 +137,8 @@ class LLMSettings:
     reasoning_effort: str = ""                  # OpenRouter 的 reasoning.effort；默认 none（关掉推理，省钱也不吃 max_tokens）
     cheapest_vendors: tuple = ()                # model=cheapest 时只在这些厂商里挑；空 = 用 model_picker 的默认名单
     model_note: str = ""                        # 自动选模型时的说明（main 打印）
+    free_first: bool = False                    # 免费优先：先试免费模型，失败这一次回落付费（FREE_FIRST=1）
+    free_models: tuple = ("nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free")
     timeout: float = 120.0
     max_retries: int = 3
     merge_system: bool = False                  # 模板不认 system 角色时打开
@@ -233,6 +235,8 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         headers=dict(pv.headers),
         reasoning_effort=_env(f"{P}_REASONING_EFFORT", pv.reasoning_effort) if backend == "openrouter" else "",
         cheapest_vendors=tuple(v.strip() for v in _env(f"{P}_CHEAPEST_VENDORS", "").split(",") if v.strip()),
+        free_first=_env_bool("FREE_FIRST", False) and backend == "openrouter",
+        free_models=tuple(v.strip() for v in _env("FREE_MODELS", ",".join(LLMSettings.free_models)).split(",") if v.strip()),
         timeout=_env_float(f"{P}_TIMEOUT", d.timeout),
         max_retries=_env_int(f"{P}_MAX_RETRIES", d.max_retries),
         merge_system=_env_bool(f"{P}_MERGE_SYSTEM", False),

@@ -139,23 +139,28 @@ class Game:
             router = ModelRouter(backend, settings.llm)
         else:
             from llm.diagnostics import start_hint
-            from main import build_llm
+            from main import build_llm, with_free_first
             try:
                 backend = build_llm(settings.llm)
                 backend.list_models()
+                backend = with_free_first(settings.llm, backend)
             except LLMError as e:
                 io.error = f"连不上 {settings.llm.backend}（{settings.llm.base_url}）：{e}。{start_hint(settings.llm.backend)}"
                 io.finished = True
                 return
             router = ModelRouter(backend, settings.llm, lambda m: build_llm(settings.llm, m))
+        self._free_first = backend if hasattr(backend, "free") else None
         self.engine = GameEngine(settings, backend, WebPlayer(io, settings.game.player_name), out=io.write,
                                  save_name=self.save, new_game=new_game, router=router,
                                  trace=not self.args.incognito)
+        if self._free_first is not None:
+            self._free_first.tracer = self.engine.tracer       # 回落的时候写进 trace
 
         def run():
             try:
                 self.engine.run(max_actions=1000)
-                io.write(f"\n[{backend.name}] {self.engine.stats_line()}", "meta")
+                io.write(f"\n[{backend.name}] {self.engine.stats_line()}"
+                         + (f"\n免费优先：{self._free_first.summary()}" if self._free_first is not None else ""), "meta")
             except Exception as e:  # noqa: BLE001
                 io.error = f"{type(e).__name__}: {e}"
                 io.write(traceback.format_exc(), "meta")

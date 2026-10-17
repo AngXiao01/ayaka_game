@@ -40,6 +40,9 @@ python3 main.py --auto steer --new --save or_test --debug
   最便宜那一档每局只差几分钱，真正拉开差距的是结构化稳定性和延迟：输出里有中位延迟和「一局模型耗时」，
   `--max-latency 8` 可以再加一条延迟上限。`--check` 也会把结构化探测跑 3 次，失败时给出 finish_reason、
   输出 token 数和正文长度，区分「写太长被截断」和「空白死循环 / 推理吃掉预算」。
+- **免费优先**：`FREE_FIRST=1`。先试免费模型（`FREE_MODELS` 里第一个列表里有的，默认 nemotron），失败（限流 / 日额度用尽 / 超时）
+  这一次回落到付费模型；连败 3 次断路 5 分钟，日额度用尽断 6 小时；JSON 写坏后的“修复重写”直接走付费。局末打印“免费接住几次、回落几次”，
+  trace 里有 `free_fallback`。免费档每天 50 次请求（充值后 1000 次），一局一般用不完一个模型的额度，用完自动回落。
 - `OPENROUTER_MODEL=cheapest-free` 连免费档一起挑（每天 50 次请求，充值 10 美元后 1000 次，每分钟 20 次；一局 100~130 次）。
 - 推理默认关（`OPENROUTER_REASONING_EFFORT=none`）：推理 token 按输出计费，还会吃掉 200~700 的 max_tokens
   让正文变空；模型不接受时自动去掉这个参数。
