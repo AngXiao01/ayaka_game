@@ -89,7 +89,7 @@ def test_follow_reveals_what_talking_cannot(monkeypatch):
     monkeypatch.setattr(actions_mod, "roll", lambda *a: (True, 80))
     assert act.parse("悄悄跟上去看看宗次去哪") == ("follow", "soji")
     _, got = act.resolve("follow", "soji", "跟踪宗次")
-    assert got == ["c_soji"] and "saw_soji_ship" in g.flags       # 跟着宗次到了金缮匠的船边
+    assert got == ["c_soji"] and "saw_soji_ship" in g.flags       # 跟着宗次到了补碗匠的船边
 
 
 def test_failed_follow_alerts_target(monkeypatch):

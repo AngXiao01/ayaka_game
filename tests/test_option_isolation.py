@@ -13,7 +13,7 @@ from models.relationship import Relationship
 from tests.helpers import ROOT, WORLD, make_god
 
 PERSONAS = Personality.load_all(ROOT / "content/npcs")
-SECRETS = ["小吉", "辰巳", "缺了口", "金缮匠", "布包"]
+SECRETS = ["小吉", "辰巳", "缺了口", "补碗匠", "布包"]
 
 
 def explorer(g):

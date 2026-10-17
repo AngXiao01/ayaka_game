@@ -57,8 +57,8 @@ def test_npc_leak_while_locked_still_counts():
 def test_echoing_the_player_is_not_a_confession():
     g = make_god({"act_id": "act2", "clues": ["c_case", "c_messenger"], "location": "ritou", "phase_idx": 1})
     g.begin_conversation("soji")
-    assert g.spoken_signals("我、我不知道什么金缮，也没补过什么！", "是你带小吉去找金缮匠补茶碗的吧？") == []
-    assert g.spoken_signals("……他抱着一只缺了口的碗，我带他去找了船上的金缮匠。", "那晚小吉找你做什么？") == ["rv_soji_confess"]
+    assert g.spoken_signals("我、我不知道什么补碗，也没补过什么！", "是你带小吉去找补碗匠补茶碗的吧？") == []
+    assert g.spoken_signals("……他抱着一只缺了口的碗，我带他去找了船上的补碗匠。", "那晚小吉找你做什么？") == ["rv_soji_confess"]
 
 
 def test_private_time_does_not_spend_time(tmp_path):
