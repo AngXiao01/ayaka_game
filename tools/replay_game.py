@@ -3,6 +3,11 @@
   python3 tools/replay_game.py data/traces/xxx.jsonl                 用记下的输入和模型回答把整局重放一遍，逐步核对状态
   python3 tools/replay_game.py data/traces/xxx.jsonl --state-at 12   不跑引擎：重建第 12 次输入之前的世界状态
   python3 tools/replay_game.py data/traces/xxx.jsonl --diff-at 12    看第 12 次输入之前世界发生了哪些变化
+  python3 tools/replay_game.py --make-golden tests/golden/mock_game.jsonl.gz   重录“金标准局”（见下）
+
+金标准局：仓库里存了一局固定的 mock 对局（只留重放需要的事件，gzip 后十几 KB），测试每次都把它重放一遍。
+改了规则、内容或流程之后，只要世界的走向变了，重放就对不上、测试变红——这是有意的：它在告诉你“行为变了”。
+确认变得对，就用上面那条命令重录一份。
 
 重放一致 = 代码对同样的输入给出同样的世界；不一致会指出是第几次输入、哪些字段不同——
 改了规则之后拿几局老 trace 跑一遍，就知道有没有改坏别的地方。
@@ -11,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import shutil
 import sys
@@ -24,7 +30,53 @@ from core import eventlog  # noqa: E402
 
 
 def load(path) -> list[dict]:
-    return [json.loads(l) for l in Path(path).read_text(encoding="utf-8").splitlines() if l.strip()]
+    path = Path(path)
+    text = gzip.decompress(path.read_bytes()).decode("utf-8") if path.suffix == ".gz" else path.read_text(encoding="utf-8")
+    return [json.loads(l) for l in text.splitlines() if l.strip()]
+
+
+REPLAY_EVENTS = {"state_init", "input", "state_delta", "decide_io", "llm"}
+LLM_KEEP = ("event", "task", "output", "finish_reason", "error", "usage", "latency_s")
+
+
+def compact(events: list[dict]) -> list[dict]:
+    """只留重放用得上的：状态、输入、判断、模型回答（不要发出去的提示词，那是 trace 里最大的部分）。"""
+    out = []
+    for e in events:
+        if e.get("event") not in REPLAY_EVENTS:
+            continue
+        if e["event"] == "llm":
+            out.append({k: e[k] for k in LLM_KEEP if k in e})
+        else:
+            out.append({k: v for k, v in e.items() if k not in ("seq", "ts", "run", "span")})
+    return out
+
+
+def write_events(events: list[dict], path) -> None:
+    text = "\n".join(json.dumps(e, ensure_ascii=False) for e in events) + "\n"
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gzip.compress(text.encode("utf-8"), mtime=0) if path.suffix == ".gz" else text.encode("utf-8"))
+
+
+def record_mock_game(out_path) -> dict:
+    """用固定种子的 mock 后端 + 自动玩家录一局，压缩后写到 out_path。返回 {inputs, ending}。"""
+    from config.settings import load_settings
+    from core.player_agent import AutoPlayer
+    from engine.game_engine import GameEngine
+    from llm.mock_backend import MockBackend
+
+    tmp = Path(tempfile.mkdtemp(prefix="ayaka_golden_"))
+    try:
+        settings = load_settings(env_file=tmp / "none.env")
+        settings.game.data_dir, settings.game.seed, settings.harness.game_token_budget = tmp / "data", 1, 0
+        eng = GameEngine(settings, MockBackend(seed=1), AutoPlayer(seed=1, out=lambda s: None), out=lambda s: None, save_name="golden")
+        res = eng.run()
+        events = load(eng.tracer.path)
+        write_events(compact(events), out_path)
+        return {"inputs": sum(e.get("event") == "input" for e in events), "ending": res.ending}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _deltas(events: list[dict]) -> list[tuple[int, list[dict]]]:
@@ -101,10 +153,17 @@ def describe(state: dict) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="整局重放与时间旅行")
-    ap.add_argument("trace")
+    ap.add_argument("trace", nargs="?")
+    ap.add_argument("--make-golden", metavar="OUT", help="录一局固定的 mock 对局并压缩写到 OUT（.jsonl.gz）")
     ap.add_argument("--state-at", type=int)
     ap.add_argument("--diff-at", type=int)
     args = ap.parse_args(argv)
+    if args.make_golden:
+        r = record_mock_game(args.make_golden)
+        print(f"已写入 {args.make_golden}：{r['inputs']} 次输入，结局 {r['ending']}")
+        return 0
+    if not args.trace:
+        ap.error("要给一个 trace 文件（或用 --make-golden）")
     if args.state_at is not None:
         state, n = eventlog.reconstruct(load(args.trace), args.state_at)
         print(f"（共 {n} 次输入；下面是第 {args.state_at} 次输入之前的世界）\n" + describe(state))

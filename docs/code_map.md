@@ -19,7 +19,7 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 目录 | 干什么 | 重点文件 |
 |---|---|---|
 | `content/` | 全部剧情数据 | `quests/ayaka_main.json`（线索、信号、幕、结局、议程）、`world.json`（地点、物件、格局）、`npcs/*.json`（角色卡）、`skills/*.md`、`lore/*.md`（设定资料）、`_design/story_bible.md`（剧情大纲，只给人看） |
-| `core/` | 世界规则与状态 | `god_env.py`（**状态的唯一真相**：时间、线索、信号、幕、结局）、`dialogue_session.py`（**一次谈话的主循环**）、`eventlog.py`（状态差异与重建）、`explorer.py`（地点层菜单）、`physical.py`（谁在哪、传话）、`npc_agent.py`（一个 NPC 的大脑）、`agent_loop.py`（带工具的循环）、`claims.py`、`agendas.py`、`actions.py` |
+| `core/` | 世界规则与状态 | `god_env.py`（**状态的唯一真相**：时间、线索、信号、幕、结局）、`dialogue_session.py`（**一次谈话的主循环**）、`eventlog.py`（状态差异与重建）、`story_lint.py`（剧情内容的静态校验）、`explorer.py`（地点层菜单）、`physical.py`（谁在哪、传话）、`npc_agent.py`（一个 NPC 的大脑）、`agent_loop.py`（带工具的循环）、`claims.py`、`agendas.py`、`actions.py` |
 | `models/` | 数据对象 | `personality.py`（角色卡）、`memory.py`（长期记忆）、`relationship.py`（好感与信任）、`retrieval.py`（检索） |
 | `llm/` | 模型调用 | `npc_llm_adapter.py`（一句回复的三步）、`npc_stages.py`（评估、核对、记录）、`player_option_llm_adapter.py`（替玩家想台词）、`gemma_client.py`（HTTP 客户端）、`free_first.py`、`mock_backend.py`（离线假模型，测试用）、`replay.py`（用 trace 里记下的回答重放）、`schemas.py`（所有结构化输出的格式与校验） |
 | `engine/` | 外壳 | `game_engine.py`（组装一切、地点层主循环、存档）、`trace.py`（把每一步记成 JSON 行）、`recording.py`（记录玩家输入和状态差异，供重放） |
@@ -57,6 +57,9 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 加一个新的判断（是不是 X） | `core/judge.py`（便宜的类型化判断）或 `llm/` 下新加一个单一职责的 agent |
 | 改记忆、检索 | `models/memory.py`、`core/working_memory.py`、`core/context_fs.py` |
 | 看某一局发生了什么 | `data/traces/*.jsonl`，用 `python3 tools/view_trace.py <文件>` |
+| 检查剧情内容有没有漏洞（拿不到的线索、见不到的人、作证的人不在场） | `python3 tools/lint_story.py`，逻辑在 `core/story_lint.py` |
+| 给信号加“被问到又不能说”的腔调 / 硬问失败时的口风 | 信号里写 `lock_style`（direct / hesitate / deflect / bargain）、`partial`（`core/god_env.py` 的 `LOCK_STYLES`）；线索里写 `witness: {npc, phase, at, off_routine?}` |
+| 改了规则后确认没改坏别的 | `pytest` 里的金标准局会重放；有意改变行为后重录：`python3 tools/replay_game.py --make-golden tests/golden/mock_game.jsonl.gz` |
 | 看某个 NPC 此刻会收到什么提示词 / 某个词有没有进他的提示词 | `python3 tools/preview_prompt.py <存档> <npc> [--say …] [--find 词1,词2]`，不调模型 |
 | 把一局原样重放 / 看第 N 步时的世界 | `python3 tools/replay_game.py <文件> [--state-at N]`，原理见 `core/eventlog.py` |
 | 加测试 | `tests/`，用 `MockBackend`，不花钱 |
@@ -79,4 +82,5 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 - 离线跑一局：`python3 main.py --mock --auto cooperative`
 - 看 trace：`python3 tools/view_trace.py data/traces/<文件>.jsonl`
 - 预览提示词：`python3 tools/preview_prompt.py web thoma --say "那晚有谁敲过后门？" --intent 打听情报 --no-system --find 守夜狐`（在存档的临时副本上跑，不动存档，不联网）
+- 检查剧情内容：`python3 tools/lint_story.py`（有 error 退出码为 1；`--strict` 连疑点也算失败）
 - 重放一局：`python3 tools/replay_game.py data/traces/<文件>.jsonl`（只对新版本录的 trace 有效）

@@ -115,6 +115,7 @@
       ]
     },
     "c_tanuki_hair": {
+      "witness": {"npc": "yohei", "phase": "清晨", "at": "shimura_shop"},
       "name": "货架上的棕毛",
       "desc": "志村屋的与平说，丢纸的货架上留着几根棕色的短毛和一串圆圆的小泥爪印，高处值钱的漆器一样没少——不像是人干的。",
       "keywords": [
@@ -125,6 +126,7 @@
       ]
     },
     "c_round_prints": {
+      "witness": {"npc": "aen", "phase": "清晨", "at": "komore_teahouse"},
       "name": "小小的脚印",
       "desc": "阿缘说，丢油豆腐那晚，后门外的薄雪上有一串圆圆的小脚印，一路往镇守之森去了。",
       "keywords": [
@@ -154,6 +156,7 @@
       ]
     },
     "c_gate_visitor": {
+      "witness": {"npc": "thoma", "phase": "夜晚", "at": "kamisato_estate"},
       "name": "夜里折回来的小吉",
       "desc": "托马说，失窃那天傍晚真的小吉来送过请柬样张；夜里「小吉」又来敲后门说落了东西，手里的样张只印了一半。托马让他在门房等着，转身去拿灯笼，回来人就不见了。",
       "keywords": [
@@ -164,6 +167,7 @@
       ]
     },
     "c_ping": {
+      "witness": {"npc": "thoma", "phase": "夜晚", "at": "kamisato_estate"},
       "name": "夜里茶室的「叮」声",
       "desc": "托马说，这几天夜里茶室里偶尔有细细的「叮」的一声，他当是老鼠，没在意。",
       "keywords": [
@@ -173,6 +177,7 @@
       ]
     },
     "c_bundle": {
+      "witness": {"npc": "aen", "phase": "夜晚", "at": "komore_teahouse"},
       "name": "深夜的布包",
       "desc": "木漏茶室的阿缘说，失窃那晚夜深了，看见「小吉」抱着一个白纸包着的东西往林子那边走，走路发飘，灯笼下耳朵好像是尖的，喊他也不应。",
       "keywords": [
@@ -193,6 +198,7 @@
       ]
     },
     "c_foxfire": {
+      "witness": {"npc": "soji", "phase": "夜晚", "at": "ritou"},
       "name": "那晚的青白灯火",
       "desc": "离岛的搬运工宗次说，失窃那晚退潮时海滩上有一团青白色的火，一个提灯的人影蹲在滩上用手拾着什么，后来那团火顺着海岸往镇守之森飘走了。",
       "keywords": [
@@ -203,6 +209,7 @@
       ]
     },
     "c_double": {
+      "witness": {"npc": "kokichi", "phase": "夜晚", "at": "chinju_forest", "off_routine": "偷偷溜出印坊去神龛给师傅祈福"},
       "name": "另一个自己",
       "desc": "小吉说，那晚他偷偷溜出印坊去神龛给师傅祈福，在林子边看见另一个自己提着灯笼往神龛走，吓得转身就跑，一直不敢说。他前两天还喂过后巷一只胖狸猫。",
       "keywords": [
@@ -322,6 +329,8 @@
     },
     {
       "id": "rv_yohei_hair",
+      "partial": "货架那边的事，我倒是留意过，可我还没想好该不该跟外人说。",
+      "lock_style": "bargain",
       "npc": "yohei",
       "requires_clues": [
         "c_case"
@@ -458,6 +467,8 @@
     },
     {
       "id": "rv_soji_fire",
+      "partial": "那晚海边……有件事我一直没敢提，说出来怕被你们笑话。",
+      "lock_style": "hesitate",
       "npc": "soji",
       "requires_known_any": [
         "c_bundle",
@@ -489,6 +500,7 @@
     },
     {
       "id": "rv_kokichi_double",
+      "lock_style": "deflect",
       "npc": "kokichi",
       "requires_known_any": [
         "c_sample",
@@ -520,6 +532,8 @@
     },
     {
       "id": "rv_heizou_sill",
+      "partial": "现场我看过一遍，有两处连我自己都还没想通。",
+      "lock_style": "bargain",
       "npc": "heizou",
       "requires_known_any": [
         "c_tanuki_hair",
@@ -587,6 +601,8 @@
     },
     {
       "id": "rv_fox_truth",
+      "partial": "你们能找到这里，倒是我没想到的……再多的，我现在不能说。",
+      "lock_style": "deflect",
       "npc": "fox",
       "acts": [
         "act2"

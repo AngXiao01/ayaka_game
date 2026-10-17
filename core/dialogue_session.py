@@ -114,7 +114,7 @@ class DialogueSession:
         canon = self.npc.recall_canon(topic or self.god.act.objective, 3, self.god.total_turns)
         memories = [m for m in memories if not any(m in c for c in canon)]
         handoff = self.npc.handoff()
-        reflection = self.npc.latest_reflection()
+        reflection = self.npc.latest_reflection(self.god.total_turns)
         if handoff.get("minute") is not None:
             handoff["ago"] = self.god.elapsed_since(handoff["minute"])
             handoff["same_place"] = handoff.get("where") == self.scene_id
@@ -504,7 +504,8 @@ class DialogueSession:
             p, why = g.press_chance(s, nid, strength)
             prev = g.misses.get(f"press:{s.id}")
             ok, pct = roll(g, f"press:{s.id}", p, attempt=prev["n"] if isinstance(prev, dict) else 0)
-            press = {"ok": ok, "desc": s.desc, "line": tag(pct, ok, why)}
+            press = {"ok": ok, "desc": s.desc, "line": tag(pct, ok, why),
+                     "slip": s.partial if not ok and not isinstance(prev, dict) else ""}      # 第一次问崩了才漏口风，再逼也不会重复漏
             if ok:
                 forced = [s.id]
             else:

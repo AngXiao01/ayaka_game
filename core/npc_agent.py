@@ -26,6 +26,9 @@ from models.relationship import Relationship
 from models.retrieval import bigram_jaccard, coverage
 
 REFLECT_AT = 6                    # 上次反思以来新记忆的重要度累计到这个数才反思（一条摘要约 3，一条事实约 4）
+REFLECTION_TTL = 80               # 反思的保鲜期（世界回合数）：太久以前琢磨出的看法不再带进上下文，也不再当“之前的看法”给模型看
+SAME_QUESTION = 0.5               # 两个焦点问题字面相似到这个程度，就算同一个问题：新的结论替换旧的，而不是越攒越多
+MAX_REFLECTIONS = 3               # 同一个人最多留几条反思
 FACT_GROUNDING = 0.5        # 事实至少一半的词要能在对话原文里找到
 HANDOFF_GROUNDING = 0.4     # 交接里的「没聊完的话题 / 约定」也要在原文里有依据，防止凭空多出一个承诺
 REPEAT_THRESHOLD = 0.7     # 和自己最近几句话相似到这个程度，就算复读
@@ -331,7 +334,7 @@ class NPCAgent:
             if self.tracer:
                 self.tracer.log("reflection_skipped", npc=self.p.id, accumulated=sum(m.importance for m in fresh), need=REFLECT_AT)
             return
-        previous = [m.text for m in self.memory.items if m.kind == "reflection"][-2:]
+        previous = [m.text for m in self._live_reflections(world_time)][-2:]
         shown, groups, focus = self._focal_pool(ctx, fresh, transcript, world_time)
         r = self.reflector.reflect(self.name, ctx.player_name, transcript, previous, [m.text for m in shown], groups)
         if not r:
@@ -341,16 +344,30 @@ class NPCAgent:
             text += "；我的疑问：" + "；".join(r["doubts"])
         if r["next"]:
             text += "；下次我打算：" + r["next"]
-        self.memory.add(MemoryItem(text=text, kind="reflection", importance=4, world_time=world_time,
-                                   topics=["看法", "疑问"],
-                                   extra={**provenance, "evidence": [shown[i].id for i in r.get("evidence", []) if i < len(shown)],
-                                          **({"focus": focus} if focus else {})}))
-        old = [m for m in self.memory.items if m.kind == "reflection"]
-        for m in old[:-3]:
-            self.memory.items.remove(m)
-        self.memory._rewrite()
+        item, _ = self.memory.add(MemoryItem(text=text, kind="reflection", importance=4, world_time=world_time,
+                                             topics=["看法", "疑问"],
+                                             extra={**provenance, "evidence": [shown[i].id for i in r.get("evidence", []) if i < len(shown)],
+                                                    **({"focus": focus} if focus else {})}))
+        retired = self._retire_reflections(item, focus, world_time)
         if self.tracer:
-            self.tracer.log("reflection", npc=self.p.id, text=text)
+            self.tracer.log("reflection", npc=self.p.id, text=text, retired=retired)
+
+    def _live_reflections(self, now: int) -> list:
+        return [m for m in self.memory.items if m.kind == "reflection" and now - m.world_time <= REFLECTION_TTL]
+
+    def _retire_reflections(self, keep: MemoryItem, focus: list[str], now: int) -> list[dict]:
+        """旧反思的去留：问的是同一个问题的，新结论替换旧结论；过了保鲜期的，丢；剩下的最多留 MAX_REFLECTIONS 条。
+        （Talemate 的“强化”也是这样：同一个问题的新答案覆盖旧答案，而不是追加。）"""
+        gone: list[tuple[MemoryItem, str]] = []
+        for m in [m for m in self.memory.items if m.kind == "reflection" and m is not keep]:
+            if any(bigram_jaccard(q, o) >= SAME_QUESTION for q in focus for o in m.extra.get("focus", [])):
+                gone.append((m, "same_question"))
+            elif now - m.world_time > REFLECTION_TTL:
+                gone.append((m, "expired"))
+        left = [m for m in self.memory.items if m.kind == "reflection" and all(m is not g for g, _ in gone)]
+        gone += [(m, "overflow") for m in left[:-MAX_REFLECTIONS]]
+        self.memory.drop([m for m, _ in gone])
+        return [{"id": m.id, "why": why} for m, why in gone]
 
     def _focal_pool(self, ctx: TurnContext, fresh: list, transcript: str, world_time: int):
         """焦点问题 → 各自检索 → 合并成一份带编号的记忆池。返回 (记忆池, [(问题, [池里的下标])], 问题列表)。
@@ -379,6 +396,7 @@ class NPCAgent:
                             retrieved=[{"q": q, "memories": [pool[i].id for i in idx]} for q, idx in groups])
         return pool, [g for g in groups if g[1]], [q for q, _ in groups]
 
-    def latest_reflection(self) -> str:
-        items = [m.text for m in self.memory.items if m.kind == "reflection"]
+    def latest_reflection(self, now: Optional[int] = None) -> str:
+        """最近一次琢磨出的看法。给了 now 就跳过过了保鲜期的。"""
+        items = [m.text for m in (self._live_reflections(now) if now is not None else self.memory.items) if m.kind == "reflection"]
         return items[-1] if items else ""

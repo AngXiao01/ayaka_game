@@ -32,11 +32,25 @@ class SignalDef:
     grants: list[str] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
     lock_hint: str = ""
+    partial: str = ""                           # 硬问没问出来时，对方被逼得漏的一句口风：只给方向、不给内容，不算达成
+    lock_style: str = ""                        # 被问到又不能说时的躲法：direct（默认，直说现在不方便）/ hesitate / deflect / bargain
     # 给玩家的引导（不懂设定也能玩）：
     lead: str = ""                              # 「下一步」里的一句：去找谁、做什么
     ask: Optional[dict] = None                  # {label, text}：条件满足时对话里出现的关键问题按钮
     reveal: str = ""                            # 由动作直接达成时，告诉 NPC 这一轮要说出口的事
     evidence: list[list[str]] = field(default_factory=list)   # NPC 自己说出口就算数：每组至少一个词出现在 NPC 的话里
+
+
+# 锁着的事被问到时怎么躲。同一句“现在不说”，换几种躲法，NPC 才不会每次都是一个腔调。
+# 共同的底线：不漏内容、不装作不知道有这件事、不答非所问（先接住对方这句话）。
+LOCK_STYLES = {
+    "direct": "被问到时用你自己的话直接说明这个态度，不要岔开话题，也不要装作不知道",
+    "hesitate": "被问到时露出犹豫：欲言又止，先说半句又收住，让对方看出你有话没说；不要把内容漏出来，也不要装作不知道",
+    "deflect": "被问到时先接住对方这句话（反问一句、说记不清、说手头有事都行），再把话头自然带开；不要把内容漏出来，"
+               "不要凭空编新的事实，也不要答非所问",
+    "bargain": "被问到时说明你开口的条件，像做交易那样：只说需要对方拿出什么样的东西（不要透露内容本身），"
+               "比如先让你看看对方手里有什么",
+}
 
 
 @dataclass
@@ -701,7 +715,8 @@ class GodEnv:
         return [{"id": s.id, "desc": s.desc, "requires": s.requires} for s, _ in self._conv_signals("available")]
 
     def locked_signals(self) -> list[tuple[dict, str]]:
-        return [({"id": s.id, "desc": s.desc, "topic": self._topic(s)}, why) for s, why in self._conv_signals("locked")]
+        return [({"id": s.id, "desc": s.desc, "topic": self._topic(s), "style": s.lock_style or "direct"}, why)
+                for s, why in self._conv_signals("locked")]
 
     @staticmethod
     def _topic(s: "SignalDef") -> str:
@@ -888,8 +903,8 @@ class GodEnv:
             "npc_stance": ev.stance if ev else self.stance_of(persona),
             "event": {"title": ev.title, "premise": ev.premise} if ev else None,
             "info_goals": [d["desc"] for d in pending],
-            "locked_info": [f"关于「{d['topic']}」你知道一些，现在不说，因为：{why}。被问到时用你自己的话直接说明这个态度，不要岔开话题，也不要装作不知道" if d.get("topic")
-                            else f"{d['desc']}（{why}）" for d, why in locked],
+            "locked_info": [f"关于「{d['topic']}」你知道一些，现在不说，因为：{why}。{LOCK_STYLES.get(d.get('style'), LOCK_STYLES['direct'])}"
+                            if d.get("topic") else f"{d['desc']}（{why}）" for d, why in locked],
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
             "blocked_terms": self.blocked_terms(persona.id),
             "prior_clues": [self.quest.clues[c]["desc"] for c in getattr(persona, "knows_clues", []) if c in self.quest.clues],

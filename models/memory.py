@@ -81,6 +81,13 @@ class MemoryStore:
             f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
         return item, False
 
+    def drop(self, gone: list) -> None:
+        """按对象本身（不是按内容相等）删掉几条，索引作废，文件重写。"""
+        if gone:
+            self.items[:] = [m for m in self.items if all(m is not g for g in gone)]
+            self._index = None
+            self._rewrite()
+
     def retrieve(self, query: str, k: int = 5, now: Optional[int] = None, exclude_kinds: tuple = (), touch: bool = True) -> list[MemoryItem]:
         """取最相关的 k 条（按时间顺序给模型看）。取到的条目会刷新“最近被用到”的时间（touch=False 则只看不动），
         经常被想起的事就不会因为发生得早而沉下去——生成式智能体里 recency 也是按最近取用算的。"""
