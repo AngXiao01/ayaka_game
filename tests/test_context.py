@@ -65,16 +65,20 @@ def run(tmp_path, script, decider=None):
     return eng
 
 
-def test_npc_judges_fit_before_speaking(tmp_path):
-    # 接不接得上由 NPC 模型自己判（fit 放在回复的第一个字段，先判后说），不再用代码匹配地名
-    from llm.schemas import npc_reply_schema, validate_npc_reply
-    assert list(npc_reply_schema([])["properties"])[0] == "fit"
+def test_one_reply_is_three_separate_calls(tmp_path):
+    # 评估 / 说话 / 记录各管一件事：接不接得上由评估这一步判，说话那一步的提示里不再背着记账字段
+    from llm.schemas import validate_npc_reply
     assert validate_npc_reply({"speech": "嗯？", "fit": "毫不相干"}, [])["fit"] == "毫不相干"
-    assert validate_npc_reply({"speech": "嗯。"}, [])["fit"] == "接得上"
     eng = run(tmp_path, [{"kind": "talk", "npc": "ayaka"}, ("好的，那我先去璃月了", "自由发言"), "q"])
     ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
-    system = next(e["messages"][0]["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step")
-    assert "毫不相干" in system and '"fit"' in system and "read" in system
+    tasks = [e["task"] for e in ev if e["event"] == "llm"]
+    assert tasks.index("npc_appraise") < tasks.index("npc_step", tasks.index("npc_appraise")) \
+        < tasks.index("npc_annotate")                                    # 先评估，再说话，最后记账
+    appraise_sys = next(e["messages"][0]["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_appraise")
+    assert "毫不相干" in appraise_sys and "wants_to_end" in appraise_sys
+    speak_sys = next(e["messages"][0]["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step")
+    assert "task_signals" not in speak_sys and "affinity_delta" not in speak_sys and "new_facts" not in speak_sys
+    assert "read" in speak_sys                                           # 说话那步仍然可以翻看资料
 
 
 def test_abrupt_topic_jump_judged_by_jev(tmp_path):
@@ -172,3 +176,13 @@ def test_claims_without_evidence_are_flagged_and_retries_reroll():
     g.mark_known("heizou", ["c_letter"]) if "c_letter" in g.clues else None
     outs = {roll(g, "press:x", 0.5, attempt=n)[0] for n in range(12)}
     assert outs == {True, False}                          # 同一分钟里重试，每次是独立的一掷
+
+
+def test_persona_examples_carry_no_case_facts():
+    """语气示例会被小模型原样抄出口：里面不能有案情关键词（会在不该说的时候把秘密说出来）。"""
+    import json as _json
+    guard = _json.loads((ROOT / "content/quests/ayaka_main.json").read_text(encoding="utf-8"))["canon_guard_terms"]
+    for nid, p in PERSONAS.items():
+        for line in p.style_examples:
+            hit = [t for t in guard if t in line]
+            assert not hit, f"{nid} 的语气示例带了案情词 {hit}：{line}"

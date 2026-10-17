@@ -9,8 +9,9 @@ from typing import Any
 
 from config.settings import TaskParams
 from core.context import TurnContext
-from llm.base import LLMBackend, LLMRequest
-from llm.schemas import PLAYER_OPTIONS_SCHEMA, PLAYER_TONES, PLAYER_INTENTS, validate_player_options
+from llm.base import LLMBackend, LLMError, LLMRequest
+from llm.schemas import (PLAYER_OPTIONS_SCHEMA, PLAYER_TONES, PLAYER_INTENTS, act_tag_schema, validate_act_tags,
+                         validate_player_options)
 from llm.structured import call_json
 
 OPTION_INTENTS = [i for i in PLAYER_INTENTS if i != "冒犯"]   # 想冒犯的话玩家可以自己打字，不往嘴里塞
@@ -28,12 +29,20 @@ SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地�
 7. 只用{player}已经知道的事：「{player}已经知道的事」里列的线索，和对话里对方亲口说过的话。{player}还没听说过的人名、地点、案情细节一律不提，也不要替{player}猜出答案——{player}只能问，不能先知道。
    不要编造{player}做过、看到过的事：「去过」「看见」「刚从……回来」只能用足迹里有的；线索本里的事如果是听人说的，就只能说「听说」「据说」，不能说成自己亲眼见到。没去过的地方，可以说想去、问在哪，不能说去过。提到案子时，只能引用线索本里的内容，或者提出疑问。
 8. 不出戏：每句都是{player}在稻妻当面说出口的话。不提「游戏」「玩家」「剧情」「任务」「选项」「系统」这类说法；不提这个故事里没有出场的同伴（比如派蒙）；不搬出与眼前无关的原作剧情。
-10. 「现在可以做的事」里的事，选项可以顺带做：一句话本身就是在做其中一件（告辞、邀对方同行、问那个关键问题、汇报、提出方案），就在这句上写 "act": 对应的编号，这句话会直接起作用；只是聊天就不写 act。每件事最多一句，不要硬凑。
-    告别是例外，不是默认选项：谈话还在进行（对方在答话、还有话题没聊完、刚抛出新线索）时一律不给告别的句子。只有对话已经自然收尾——事情谈完了、对方在送客或催着走、{player}说了要去别处——才可以给一句，而且要换成贴着此刻情境的说法，不要套「先聊到这儿」「我先告辞了」这类固定客套。真给了告别的句子，就带上告辞的编号。
+10. 告别是例外，不是默认选项：谈话还在进行（对方在答话、还有话题没聊完、刚抛出新线索）时一律不写告别的句子。只有对话已经自然收尾——事情谈完了、对方在送客或催着走、{player}说了要去别处——才可以写一句，而且要贴着此刻的情境，不要套「先聊到这儿」「我先告辞了」这类固定客套。
 9. 有分寸：对初次见面或还不熟的人礼貌克制；亲昵、调情或带私人感情的话，只在对方是神里绫华、且关系到了「友好」以上时才用，最多一句。
 
 只输出一个 JSON 对象，不要任何其他文字，不要代码块：
-{{"options": [{{"text": "……", "intent": "打听情报", "tone": "好奇"}}, {{"text": "……", "intent": "告别", "tone": "温和", "act": "leave"}}, …]}}"""
+{{"options": [{{"text": "……", "intent": "打听情报", "tone": "好奇"}}, {{"text": "……", "intent": "闲聊", "tone": "温和"}}, …]}}"""
+
+
+ACT_TAG_SYSTEM = """你是台词标注员。下面每句话是玩家对{npc}可能说的，你只判断：这句话**本身**是不是就在做「可以做的事」里的某一件。
+
+- 只有话本身明确做了那件事才算：告别的话（说了要走、先告辞）算「告辞」；邀对方此刻一起去某处算「邀请」；问出了那个关键问题算对应的「问题」；把查到的事告诉对方算「汇报」；明确提出处置办法算「提议」。
+- 只是聊天、追问细节、玩笑、顺口一提「以后」，都不算，填 none。拿不准就填 none。
+- 一句话最多对应一件事；一件事最多只给一句话。
+
+只输出一个 JSON 对象：{{"tags": [{{"index": 0, "act": "编号或 none"}}, …]}}，每句话一条，不要任何其他文字。"""
 
 
 def _render_history(ctx: TurnContext, npc_name: str, last_n: int = 8) -> str:
@@ -77,9 +86,6 @@ class PlayerOptionLLMAdapter:
 # {npc_name}对{player}的态度
 {ctx.relationship['tier']}（好感 {ctx.relationship['affinity']}，信任 {ctx.relationship['trust']}）
 
-# 现在可以做的事（编号: 说明）
-{chr(10).join(f"- {a['id']}: {a['desc']}" for a in pv.get('actions', [])) or '（无）'}
-
 # 最近的对话
 {_render_history(ctx, npc_name)}
 
@@ -97,4 +103,25 @@ class PlayerOptionLLMAdapter:
             json_schema=PLAYER_OPTIONS_SCHEMA, schema_name="player_options",
             meta={"objective": t["objective"] or t["stage_title"], "turn": ctx.turn},
         )
-        return call_json(self.backend, req, validate_player_options, self.tracer, self.repair_attempts)
+        lines = call_json(self.backend, req, validate_player_options, self.tracer, self.repair_attempts)
+        return self._tag_acts(ctx, npc_name, lines, pv.get("actions", []))
+
+    def _tag_acts(self, ctx: TurnContext, npc_name: str, lines: list[dict], actions: list[dict]) -> list[dict]:
+        """第二次调用：哪几句话「本身就在做」某件事（告辞、邀同行、问那个关键问题、汇报、提方案）。
+        写台词的那一步看不到这张清单——它只管把话写得像人，告别不会因为按钮摆在那儿就每轮都来一句。"""
+        if not lines or not actions:
+            return lines
+        ids = [a["id"] for a in actions]
+        listing = "\n".join(f"- {a['id']}: {a['desc']}" for a in actions)
+        said = "\n".join(f"{i}. {o['text']}" for i, o in enumerate(lines))
+        req = LLMRequest(
+            task="option_acts",
+            messages=[{"role": "system", "content": ACT_TAG_SYSTEM.format(npc=npc_name)},
+                      {"role": "user", "content": f"# 可以做的事（编号: 说明）\n{listing}\n\n# {ctx.player_name}可能说的话\n{said}\n\n请逐句判断。只输出 JSON。"}],
+            temperature=0.0, max_tokens=300, json_schema=act_tag_schema(ids), schema_name="option_acts",
+            meta={"n": len(lines), "acts": ids, "lines": [o["text"] for o in lines]})
+        try:
+            tags = call_json(self.backend, req, lambda o: validate_act_tags(o, len(lines), ids), self.tracer, 1)
+        except LLMError:
+            return lines
+        return [{**o, "act": tags.get(i, "")} for i, o in enumerate(lines)]

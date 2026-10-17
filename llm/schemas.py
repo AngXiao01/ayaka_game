@@ -103,6 +103,61 @@ def npc_reply_schema(signal_ids: list[str], lie_ids: Optional[list[str]] = None)
     }
 
 
+# ---------------------------------------------------------------- NPC 回复的三段式：评估 / 说话 / 记录
+# 原来一次调用要同时「判断对方这句话、决定心态、写台词、给自己记账（信号/新设定/谎/带话）」，
+# 台词质量被记账字段挤掉。现在拆成三次调用，各管一件事，最后由 validate_npc_reply 合成同一个 NPCReply。
+
+def appraise_schema() -> dict:
+    return {"type": "object", "properties": {
+        "fit": {"type": "string", "enum": FITS}, "emotion": {"type": "string", "enum": EMOTIONS},
+        "intent": {"type": "string"}, "plan": {"type": "string"},
+        "affinity_delta": {"type": "integer"}, "trust_delta": {"type": "integer"}, "tension_delta": {"type": "number"},
+        "wants_to_end": {"type": "boolean"}},
+        "required": ["fit", "emotion", "intent", "plan", "affinity_delta", "trust_delta", "tension_delta", "wants_to_end"]}
+
+
+def validate_appraisal(obj: Any) -> dict:
+    if not isinstance(obj, dict):
+        raise ValidationError("顶层必须是 JSON 对象")
+    fit, emotion = _str(obj.get("fit")), _str(obj.get("emotion"))
+    return {"fit": fit if fit in FITS else FITS[0], "emotion": emotion if emotion in EMOTIONS else "平静",
+            "intent": _str(obj.get("intent"))[:40], "plan": _str(obj.get("plan"))[:80],
+            "affinity_delta": _int(obj.get("affinity_delta"), -5, 5), "trust_delta": _int(obj.get("trust_delta"), -5, 5),
+            "tension_delta": round(_float(obj.get("tension_delta"), -0.2, 0.2), 3),
+            "wants_to_end": _bool(obj.get("wants_to_end", False))}
+
+
+SPEAK_SCHEMA = {"type": "object", "properties": {"action": {"type": "string"}, "speech": {"type": "string"}},
+                "required": ["action", "speech"]}
+
+
+def validate_speak(obj: Any) -> dict:
+    """说话这一步只交台词和动作；其余字段即使模型多给了也不收。"""
+    if not isinstance(obj, dict):
+        raise ValidationError("顶层必须是 JSON 对象")
+    speech = _strip_quotes(_str(obj.get("speech") or obj.get("dialogue") or obj.get("text")))
+    if not speech:
+        raise ValidationError("speech 字段为空，必须写出角色说的话")
+    if len(speech) > MAX_SPEECH_CHARS:
+        raise ValidationError(f"speech 太长了（{len(speech)} 字），像真人聊天那样压缩到一两句、不超过 {MAX_SPEECH_CHARS} 字")
+    speech, action = split_stage_directions(speech, _strip_quotes(_str(obj.get("action"))))
+    return {"action": action if len(action) <= MAX_ACTION_CHARS else "", "speech": speech}
+
+
+def annotate_schema(signal_ids: list[str], lie_ids: Optional[list[str]] = None) -> dict:
+    full = npc_reply_schema(signal_ids, lie_ids)["properties"]
+    keys = ("task_signals", "new_facts", "lies", "tell", "go_to")
+    return {"type": "object", "properties": {k: full[k] for k in keys}, "required": ["task_signals", "new_facts", "lies"]}
+
+
+def validate_annotation(obj: Any, signal_ids: list[str], lie_ids: Optional[list[str]] = None) -> dict:
+    if not isinstance(obj, dict):
+        raise ValidationError("顶层必须是 JSON 对象")
+    return {"task_signals": [x for x in dict.fromkeys(_str_list(obj.get("task_signals"))) if x in signal_ids],
+            "new_facts": _new_facts(obj.get("new_facts")), "lies": _lies(obj.get("lies"), lie_ids or []),
+            "tell": _tell(obj.get("tell")), "go_to": _str(obj.get("go_to"))[:20]}
+
+
 _STAGE_DIR = re.compile(r"[（(]([^）)\n]{1,%d})[）)]\s*" % MAX_ACTION_CHARS)
 
 
@@ -208,7 +263,6 @@ PLAYER_OPTIONS_SCHEMA = {
                     "text": {"type": "string"},
                     "intent": {"type": "string", "enum": PLAYER_INTENTS},
                     "tone": {"type": "string", "enum": PLAYER_TONES},
-                    "act": {"type": "string"},
                 },
                 "required": ["text", "intent", "tone"],
             },
@@ -238,6 +292,30 @@ def validate_player_options(obj: Any, max_len: int = 60) -> list[dict]:
     return out                  # 0~3 句都可以：不是每一轮都需要替玩家想台词
 
 
+def act_tag_schema(act_ids: list[str]) -> dict:
+    return {"type": "object", "properties": {"tags": {"type": "array", "items": {
+        "type": "object", "properties": {"index": {"type": "integer"},
+                                          "act": {"type": "string", "enum": list(act_ids) + ["none"]}},
+        "required": ["index", "act"]}}}, "required": ["tags"]}
+
+
+def validate_act_tags(obj: Any, n: int, act_ids: list[str]) -> dict[int, str]:
+    """{第几句: 动作编号}。每句最多一件事、每件事最多一句；认不得的编号一律当没有。"""
+    items = obj.get("tags") if isinstance(obj, dict) else obj
+    if not isinstance(items, list):
+        raise ValidationError("缺少 tags 数组")
+    out: dict[int, str] = {}
+    used: set[str] = set()
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        i, act = _int(it.get("index"), 0, max(0, n - 1), -1), _str(it.get("act"))
+        if 0 <= i < n and act in act_ids and act not in used and i not in out:
+            out[i] = act
+            used.add(act)
+    return out
+
+
 # ---------------------------------------------------------------- 对话摘要
 
 SUMMARY_SCHEMA = {
@@ -247,12 +325,9 @@ SUMMARY_SCHEMA = {
         "topics": {"type": "array", "items": {"type": "string"}},
         "player_intent": {"type": "string"},
         "npc_feeling": {"type": "string"},
-        "facts": {"type": "array", "items": {"type": "string"}},
         "importance": {"type": "integer"},
-        "open_threads": {"type": "array", "items": {"type": "string"}},
-        "promises": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["summary", "topics", "player_intent", "npc_feeling", "facts", "importance", "open_threads", "promises"],
+    "required": ["summary", "topics", "player_intent", "npc_feeling", "importance"],
 }
 
 
@@ -272,6 +347,13 @@ def validate_summary(obj: Any) -> dict:
         "open_threads": _str_list(obj.get("open_threads"))[:4],     # 交接字段宽容解析：缺了就是 []
         "promises": _str_list(obj.get("promises"))[:4],
     }
+
+
+def validate_commitments(obj: Any) -> dict:
+    if not isinstance(obj, dict):
+        raise ValidationError("顶层必须是 JSON 对象")
+    return {"facts": _str_list(obj.get("facts"))[:8], "open_threads": _str_list(obj.get("open_threads"))[:4],
+            "promises": _str_list(obj.get("promises"))[:4]}
 
 
 # ---------------------------------------------------------------- 进度审核（Reviewer）

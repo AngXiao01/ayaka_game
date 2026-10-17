@@ -666,7 +666,13 @@ class GodEnv:
         return [{"id": s.id, "desc": s.desc, "requires": s.requires} for s, _ in self._conv_signals("available")]
 
     def locked_signals(self) -> list[tuple[dict, str]]:
-        return [({"id": s.id, "desc": s.desc}, why) for s, why in self._conv_signals("locked")]
+        return [({"id": s.id, "desc": s.desc, "topic": self._topic(s)}, why) for s, why in self._conv_signals("locked")]
+
+    @staticmethod
+    def _topic(s: "SignalDef") -> str:
+        """锁着的事只给话题、不给内容：小模型看见内容就会在被逼问时说漏（或者替玩家「确认」玩家随口猜到的）。"""
+        label = (s.ask or {}).get("label", "") if getattr(s, "ask", None) else ""
+        return label.split("：", 1)[-1].strip() if label else ""
 
     def preview_pending(self, npc: str, event: Optional[str] = None) -> int:
         """不在对话中时，估计和某人聊有几件事「有戏」（给菜单提示与自动玩家用）：
@@ -847,7 +853,8 @@ class GodEnv:
             "npc_stance": ev.stance if ev else self.stance_of(persona),
             "event": {"title": ev.title, "premise": ev.premise} if ev else None,
             "info_goals": [d["desc"] for d in pending],
-            "locked_info": [f"{d['desc']}（{why}）" for d, why in locked],
+            "locked_info": [f"关于「{d['topic']}」你知道一些，但现在不会说（{why}）" if d.get("topic")
+                            else f"{d['desc']}（{why}）" for d, why in locked],
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
             "known_clues": [f"{self.quest.clue_name(c)}：{self.quest.clues[c]['desc']}" for c in self.known.get(npc, [])],
             "player_clue_count": len(self.clues),

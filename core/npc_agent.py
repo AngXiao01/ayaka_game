@@ -232,8 +232,10 @@ class NPCAgent:
     def _call(self, ctx: TurnContext, text: Optional[str], intent: Optional[str], skills: list[Skill],
               flags: list[str], allow_tools: bool) -> NPCReply:
         ctx.tics = self.style_tics(ctx) if text is not None else []
+        names = [] if self.fs is None else [q.name for n, q in self.fs.personas.items() if n != self.p.id]
+        places = [] if self.fs is None else [self.fs.world.name(l) for l in self.fs.world.locations]
         res: LoopResult = self.adapter.reply(self.p, ctx, text, intent, self.registry, self.skills.index(),
-                                             skills, flags, allow_tools)
+                                             skills, flags, allow_tools, names, places)
         info = {"stop": res.stop.value, "forced_by": res.forced_by.value if res.forced_by else None,
                 "steps": len(res.steps), "tools": [s.tool for s in res.steps if s.tool != "respond"],
                 "tokens": res.tokens, "elapsed_s": res.elapsed_s}

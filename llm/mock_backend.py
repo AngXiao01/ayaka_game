@@ -47,6 +47,7 @@ class MockBackend:
         self.corrupt_every = corrupt_every
         self.misbehave = misbehave
         self.calls = 0
+        self._pending: Optional[tuple] = None
 
     def complete(self, req: LLMRequest) -> LLMResponse:
         self.calls += 1
@@ -80,7 +81,26 @@ class MockBackend:
                     return {"thought": "核对一下茶会的设定", "tool": "lookup_lore", "args": {"topic": "雪见茶会"}}
                 if meta.get("player_intent") == "打听情报":
                     return {"thought": "回想一下之前谈过什么", "tool": "recall_memory", "args": {"query": text[:20]}}
-        return {"thought": "回应对方", "tool": "respond", "args": self._reply(meta)}
+        return {"thought": "回应对方", "tool": "respond", "args": self._take(meta)}
+
+    def _take(self, meta: dict) -> dict:
+        """一轮里评估、说话、记录三次调用共用同一份剧本：评估时生成，说话时取走，记录时读同一份。"""
+        key = (meta.get("opening"), meta.get("player_text"), meta.get("player_intent"))
+        if self._pending is not None and self._pending[0] == key:
+            reply = self._pending[1]
+        else:
+            reply = self._reply(meta)
+        self._pending = (key, reply)
+        return reply
+
+    def _npc_appraise(self, meta: dict) -> dict:
+        r = self._take(meta)
+        return {**{k: r[k] for k in ("fit", "emotion", "intent", "affinity_delta", "trust_delta", "tension_delta",
+                                     "wants_to_end")}, "plan": ""}
+
+    def _npc_annotate(self, meta: dict) -> dict:
+        r = self._take(meta)
+        return {"task_signals": r["task_signals"], "new_facts": r["new_facts"], "lies": r["lies"], "tell": [], "go_to": ""}
 
     def _reply(self, meta: dict) -> dict:
         player = meta.get("player_name", "旅行者")
@@ -200,6 +220,9 @@ class MockBackend:
             {"text": f"这里的茶真香，雪见茶会也会用这种吗？（第{turn}轮）", "intent": "闲聊", "tone": "好奇"},
         ]}
 
+    def _option_acts(self, meta: dict) -> dict:
+        return {"tags": [{"index": i, "act": "none"} for i in range(meta.get("n", 0))]}
+
     def _summary(self, meta: dict) -> dict:
         player = meta.get("player_name", "旅行者")
         return {"summary": f"我与{player}谈了{meta.get('turns', 0)}轮，对方举止得体，值得信赖。",
@@ -207,6 +230,10 @@ class MockBackend:
                 "facts": [f"{player}愿意帮忙调查失窃案", "旅行者其实来自至冬国的皇室"], "importance": 3,
                 "open_threads": self._thread(meta.get("transcript") or ""),
                 "promises": ["约好三天后在雪见茶会上碰面"]}
+
+    def _commitments(self, meta: dict) -> dict:
+        r = self._summary(meta)
+        return {k: r[k] for k in ("facts", "open_threads", "promises")}
 
     @staticmethod
     def _thread(transcript: str) -> list[str]:
