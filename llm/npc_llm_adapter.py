@@ -19,7 +19,7 @@ from core.skills import Skill
 from core.tools import ToolRegistry
 from llm.base import LLMBackend
 from llm.messages import estimate_tokens, messages_tokens
-from core.guardrails import knowledge_boundary
+from core.guardrails import knowledge_boundary, slip_missing
 from llm.npc_stages import DEFAULT_APPRAISAL, annotate, appraise, audit
 from llm.schemas import SPEAK_SCHEMA, validate_npc_reply, validate_speak
 from models.personality import Personality
@@ -261,11 +261,14 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         parts.append("## 对方在威胁你\n你被吓到了，也起了戒心：话会变少、更想躲开，不会因为被吓就把藏着的事说出来。")
     pr = t.get("press")
     if pr and not pr["ok"]:                        # 硬问没问出来：代码掷过骰，这次不松口
-        parts.append(f"## 对方在逼问：{pr['desc']}\n这次你没有松口。用你的方式回避——岔开话题、推说不知道、"
-                     "或者明显地紧张起来，但不要说出这件事。你心里起了戒心。"
-                     "和你刚才说过的话保持一致：刚才已经让过步的，不要突然翻脸不认，可以说「话虽如此……」再把话收回来一点。"
-                     + (f"\n被逼得有点绷不住，你漏了一点口风，大意是：「{pr['slip']}」——只说这个意思，不要展开细节，也不要借此把事情说出来。"
-                        if pr.get("slip") else ""))
+        if pr.get("slip"):                          # 第一次问崩了：必须漏一点口风（只给方向），其余照常回避；此时“推说不知道”会和口风自相矛盾，所以不给这个选项
+            how = ("这次你没有松口，不会把这件事说出来。但被逼得绷不住，你这一句话里必须漏出一点口风，大意是："
+                   f"「{pr['slip']}」——用你自己的话说出这个意思（一句就够，不要展开细节，也不要借此把事情说出来）。"
+                   "其余的部分照常回避：岔开话题、推托或明显地紧张都行，但不要说「没有」「不知道」把这个意思否掉。")
+        else:
+            how = "这次你没有松口。用你的方式回避——岔开话题、推说不知道、或者明显地紧张起来，但不要说出这件事。"
+        parts.append(f"## 对方在逼问：{pr['desc']}\n{how}你心里起了戒心。"
+                     "和你刚才说过的话保持一致：刚才已经让过步的，不要突然翻脸不认，可以说「话虽如此……」再把话收回来一点。")
     dsp = t.get("dispatch")
     if dsp:
         parts.append(f"## 对方说出了一个推测：{dsp['desc']}\n没有凭据，你不会就此认定；但这值得查一查。"
@@ -452,6 +455,9 @@ class NPCLLMAdapter:
                 recent = [h["text"] for h in ctx.history if h["speaker"] == "player"][-3:] + [player_text]
                 problems = knowledge_boundary(res.final["speech"], res.final["action"],
                                               ctx.task.get("blocked_terms", {}), recent)
+            press = ctx.task.get("press") or {}
+            if not problems and press.get("slip") and not press.get("ok"):          # 硬问失败那一轮规定要漏口风：代码查有没有漏
+                problems = slip_missing(res.final["speech"], press["slip"])
             if not problems and not ctx.task.get("must_reveal"):                  # 再请核对员看矛盾和物理（必须说出口的那轮不核对）
                 problems, used = audit(self.small_backend, self.small_params, p, ctx, res.final["speech"], res.final["action"],
                                        player_text, meta, self.tracer)
@@ -469,6 +475,14 @@ class NPCLLMAdapter:
                         res = again
                 finally:
                     ctx.problems = []
+        press = ctx.task.get("press") or {}
+        if player_text is not None and allow_tools and press.get("slip") and not press.get("ok") \
+                and slip_missing(res.final["speech"], press["slip"]):
+            # 重说之后仍然没带上口风：这句话是代码决定要透露的（事实归代码），模型不肯说就由代码把原文接在后面
+            tail = res.final["speech"].rstrip()
+            res.final["speech"] = tail + ("" if tail[-1:] in ("。", "！", "？", "…", "") else "。") + press["slip"]
+            if self.tracer:
+                self.tracer.log("slip_forced", npc=p.id, turn=ctx.turn, slip=press["slip"])
         ap = ctx.appraisal or DEFAULT_APPRAISAL
         note = {}
         if player_text is not None and allow_tools:                         # ③ 记录

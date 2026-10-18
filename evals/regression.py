@@ -18,9 +18,11 @@ import argparse
 import json
 import re
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
+from unittest import mock as umock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -32,6 +34,7 @@ class Run:
     events: list[dict]                        # trace
     god: object
     options: list[str] = field(default_factory=list)   # 替玩家想的台词
+    engine: Any = None
 
 
 @dataclass
@@ -45,6 +48,7 @@ class Case:
     check: Callable[[Run], list[str]]         # 返回问题列表，空 = 通过
     clues: list[str] = field(default_factory=lambda: ["c_case", "c_shops"])
     live_only: bool = False                   # 要真模型的话才有意义
+    patch: dict = field(default_factory=dict) # {"模块.属性": 新值}：只在这条用例运行期间生效（比如把反思阈值调低、让硬问必败）
 
 
 def _replies(run: Run) -> str:
@@ -92,7 +96,7 @@ def c_no_invented_scene(run):
 
 
 def c_layout(run):
-    text = _replies(run)
+    text = re.sub(r"(没有?|并没有?|不是|不会有)[^，。！？]{0,3}[第]?三把", "", _replies(run))      # “没有第三把”是对的，别当成编造
     return [f"门窗格局出错：说了「{w}」" for w in ("丈", "兄长的那把", "第三把", "三把钥匙", "三把") if w in text]
 
 
@@ -129,6 +133,76 @@ def c_boundary(run):
     return []        # 由全局不变量覆盖
 
 
+def _leaks(text: str, words) -> list[str]:
+    return [f"漏了不该说的内容「{w}」" for w in words if w in text]
+
+
+HESITATE = ("……", "…", "这个", "怕", "不好说", "说不好", "笑话", "没敢", "不敢", "不方便", "算了", "唔", "嗯……")
+BARGAIN = ("凭据", "凭证", "证明", "委托", "社奉行", "身份", "来路", "什么人", "哪位", "你先", "先让我", "先给我", "交换", "拿出",
+           "信得过", "信不过", "不认识", "外人", "陌生", "凭什么", "怎么证明")
+
+
+def c_soji_hesitates(run):
+    text = _replies(run)
+    bad = _leaks(text, ("青白", "灯火", "人影", "蹲", "拾", "狐火", "金砂"))
+    if not _any(text, HESITATE):
+        bad.append("宗次（lock_style=hesitate）被问到怕被笑话的事，回答里看不出犹豫 / 欲言又止")
+    return bad
+
+
+def c_yohei_bargains(run):
+    text = _replies(run)
+    bad = _leaks(text, ("棕色", "短毛", "棕毛", "泥爪", "爪印"))
+    if not _any(text, BARGAIN):
+        bad.append("与平（lock_style=bargain）没有说出开口的条件（凭据 / 身份 / 交换）")
+    return bad
+
+
+def c_kokichi_deflects(run):
+    text = _replies(run)
+    return _leaks(text, ("祈福", "另一个自己", "溜出", "神龛", "狐"))
+
+
+def c_press_slip(run):
+    text = _replies(run)
+    bad = _leaks(text, ("青白", "灯火", "人影", "蹲", "拾", "狐火"))
+    if "rv_soji_fire" in run.god.achieved:
+        bad.append("硬问明明失败了（强制必败），信号却被记成达成")
+    if not _any(text, ("笑话", "没敢", "不敢", "一直没", "怕")):
+        bad.append("第一次硬问失败，宗次没有漏出那句口风（说出来怕被笑话 / 一直没敢提）")
+    if not any(e["event"] == "press" and not e.get("ok") for e in run.events):
+        bad.append("trace 里没有失败的硬问记录，这条用例没测到东西")
+    return bad
+
+
+def c_aen_late_return(run):
+    text = _replies(run)
+    bad = []
+    if "rv_aen_bundle" not in run.god.achieved:
+        bad.append("被直接问到那晚见过谁，阿缘没有说出小吉的事")
+    if "收门帘" in text:
+        bad.append("阿缘说自己是“收门帘时”看见的，和设定（那晚回来得晚、在巷子里撞见）不一致")
+    if "小吉" in text and not _any(text, ("回来", "晚", "巷", "路过", "店门口", "夜深")):
+        bad.append("说了小吉，却没交代自己是在什么情形下看见的")
+    return bad
+
+
+def c_reflection_focus(run):
+    bad = []
+    focus = [e for e in run.events if e["event"] == "reflection_focus"]
+    if not focus:
+        bad.append("谈话结束后没有“焦点问题 → 检索”这一步（模型没挑出问题，或根本没反思）")
+    refl = [m for m in run.engine.npcs["ayaka"].memory.items if m.kind == "reflection"]
+    if not refl:
+        bad.append("没有写下反思")
+    else:
+        ids = {m.id for m in run.engine.npcs["ayaka"].memory.items}
+        ev = refl[-1].extra.get("evidence") or []
+        if not ev or not set(ev) <= ids:
+            bad.append("反思没有挂依据的记忆编号，或编号不存在")
+    return bad
+
+
 CASES = [
     Case("R1", "清晨不说“天快亮了”", "ayaka", "kamisato_estate", 0,
          [("我现在就出发去花见坂，路上需要带灯吗？", "打听情报"), {"kind": "leave"}], c_daylight, live_only=True),
@@ -153,6 +227,22 @@ CASES = [
     Case("R12", "同一个问题反复问：识别出来，不原样复述", "thoma", "kamisato_estate", 0,
          [("丢碗那天夜里，有没有谁来敲过后门？", "打听情报"), ("那天夜里到底有没有谁来敲过后门？", "打听情报"),
           ("我再问一遍，丢碗那天夜里有没有人来敲过后门？", "打听情报"), {"kind": "leave"}], c_repeated_question),
+    Case("R13", "宗次怕被笑话：犹豫，但不漏内容", "soji", "ritou", 1,
+         [("那晚海边有没有什么怪事？你看见了什么？", "打听情报"), {"kind": "leave"}], c_soji_hesitates, live_only=True),
+    Case("R14", "与平不认识你：谈条件，不漏内容", "yohei", "shimura_shop", 1,
+         [("丢白纸的那个货架上有什么痕迹吗？让我看看。", "打听情报"), {"kind": "leave"}], c_yohei_bargains,
+         clues=["c_shops"], live_only=True),
+    Case("R15", "小吉被问到那晚去哪了：不漏内容", "kokichi", "print_workshop", 1,
+         [("失窃那晚你到底去了哪里？有人说见过你。", "打听情报"), {"kind": "leave"}], c_kokichi_deflects,
+         clues=["c_case", "c_shops", "c_gate_visitor"], live_only=True),
+    Case("R16", "硬问失败：只漏一句口风", "soji", "ritou", 1,
+         [{"kind": "press", "signal": "rv_soji_fire"}, {"kind": "leave"}], c_press_slip,
+         patch={"core.dialogue_session.roll": lambda g, key, p, attempt=0: (False, 15)}, live_only=True),
+    Case("R17", "阿缘是晚归路过时看见的", "aen", "komore_teahouse", 1,
+         [{"kind": "ask", "signal": "rv_aen_bundle"}, {"kind": "leave"}], c_aen_late_return, live_only=True),
+    Case("R18", "反思：先挑焦点问题、各自检索、再带依据下结论", "ayaka", "kamisato_estate", 1,
+         [("你好，聊聊茶会的准备吧。", "闲聊"), ("你为什么偏偏请我来查这件事？", "打听情报"), ("好，我明白了。", "闲聊"),
+          {"kind": "leave"}], c_reflection_focus, patch={"core.npc_agent.REFLECT_AT": 1}, live_only=True),
     Case("R11", "不该知道的案情词不会从没学到的人嘴里冒出来", "heizou", "hanamizaka", 0,
          [("你觉得月白本身有没有什么问题？是什么东西把它带走的？", "打听情报"), {"kind": "leave"}], c_boundary, live_only=True),
 ]
@@ -217,11 +307,14 @@ def run_case(case: Case, mock: bool) -> Run:
     g.location, g.act_id = case.where, "act2"
     g.minute = g.phase_start(g.day, case.phase) + 30
     g.clues += [c for c in case.clues if c not in g.clues]
-    eng.run(max_actions=4)
+    with ExitStack() as stack:
+        for target, value in case.patch.items():
+            stack.enter_context(umock.patch(target, value))
+        eng.run(max_actions=4)
     events = [json.loads(l) for l in eng.tracer.path.read_text(encoding="utf-8").splitlines()]
     turns = [e for e in events if e["event"] == "turn" and e["turn"] > 0]
     replies = [((e.get("player") or {}).get("text") or "", e["reply"]["speech"]) for e in turns]
-    return Run(replies, events, g, seen)
+    return Run(replies, events, g, seen, engine=eng)
 
 
 def main(argv=None) -> int:
@@ -229,6 +322,7 @@ def main(argv=None) -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--only", default="")
+    ap.add_argument("--show", action="store_true", help="不管过没过，都打印 NPC 的回答，方便人读")
     args = ap.parse_args(argv)
     cases = [c for c in CASES if not args.only or c.id in args.only.split(",")]
     if args.list:
@@ -246,9 +340,9 @@ def main(argv=None) -> int:
         print(f"{'✘' if problems else '✔'} {c.id} {c.title}")
         for pr in problems:
             print(f"    · {pr}")
-        if problems and not args.mock:
+        if (problems or args.show) and not args.mock:
             for p_, r in run.replies:
-                print(f"    {c.npc}：{r[:90]}")
+                print(f"    玩家：{p_[:60]}\n    {c.npc}：{r[:160]}")
     print(f"\n{len(cases) - bad}/{len(cases)} 条通过" + ("（离线只含确定性检查）" if args.mock else ""))
     return 1 if bad else 0
 

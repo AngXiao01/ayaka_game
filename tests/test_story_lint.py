@@ -25,12 +25,12 @@ def codes(findings, level=None):
 def test_real_content_has_no_structural_errors(content):
     findings = lint(*content)
     assert not [str(f) for f in findings if f.level == "error"]
-    assert codes(findings) <= {"witness_absent"}                      # 剩下的只能是“说不通、要作者决定”的疑点
+    assert codes(findings) <= {"witness_absent"}                      # 就算有，也只能是“说不通、要作者决定”的疑点，不能是结构问题
 
 
 def test_cli_exit_code(content, capsys):
     assert lint_story.main([]) == 0
-    assert "错误" in capsys.readouterr().out
+    assert capsys.readouterr().out.strip()                          # 有结论输出（没问题时是“没有发现问题”）
 
 
 def test_an_npc_who_is_never_anywhere_breaks_the_chain(content):

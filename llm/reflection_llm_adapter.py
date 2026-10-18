@@ -18,7 +18,8 @@ from llm.structured import call_json
 
 SYSTEM = """你是{npc}的内心。刚和{player}谈完一次话，请你以第一人称，琢磨出两样东西：
 
-- impression：你现在怎么看{player}——是个什么样的人，值不值得信任，哪里让你放心或不放心。一句话，不超过 40 字。要有谈话里的依据，不要凭空下结论。
+- impression：你现在怎么看{player}——是个什么样的人，值不值得信任，哪里让你放心或不放心。一句话，不超过 40 字。
+  只能依据对方实际说过、做过的事。对方没说出口的心思（沉默、离开时在想什么），你并不知道，不要当成结论写在这里——要写，就放进 doubts 当疑问。
 - doubts：你心里还没解开的疑问（最多 3 条，每条一句话）。比如对方为什么这么做、某句话对不上、想再问的事。没有就留空。
 - next：下次见面你打算怎么做（一句话，可留空）。
 - evidence：你的看法和疑问是根据下面「最近的记忆」里的哪几条得出的（写它们的编号，至少 1 条）。
@@ -26,7 +27,9 @@ SYSTEM = """你是{npc}的内心。刚和{player}谈完一次话，请你以第�
 不要复述谈话的经过。只输出一个 JSON 对象：{{"impression": "……", "doubts": ["……"], "next": "……", "evidence": [0, 2]}}，不要任何其他文字。"""
 
 FOCUS_SYSTEM = """你是{npc}的内心。下面是你最近的几条记忆。请想一想：凭这些，你此刻最想弄明白的 2~3 个问题是什么？
-问题要具体、有指向——关于{player}这个人，或者眼下这件事里对不上、想验证的地方（例如“他为什么……”“她说的……是不是真的”）。
+问题要具体、有指向，而且要能靠“他实际做过、说过的事”去回答——关于{player}这个人，或者眼下这件事里对不上、想验证的地方
+（例如“他先前说的……和后来做的对得上吗”“他到底知不知道……”）。
+不要揣测对方没说出口的心思（比如沉默时在想什么、转身时是什么意思）——那没法用记忆回答。每个问题 30 字以内。
 不要问已经有答案的事，不要复述记忆。只输出一个 JSON 对象：{{"questions": ["……", "……"]}}，不要任何其他文字。"""
 
 FOCUS_SCHEMA = {"type": "object", "properties": {"questions": {"type": "array", "items": {"type": "string"}}}, "required": ["questions"]}
@@ -65,7 +68,7 @@ def validate_focus(obj: Any) -> list[str]:
         raise ValidationError("顶层必须是 JSON 对象")
     out: list[str] = []
     for q in _str_list(obj.get("questions")):
-        q = q.strip()[:40]
+        q = q.strip()[:60]
         if len(q) >= 4 and q not in out:
             out.append(q)
     if not out:

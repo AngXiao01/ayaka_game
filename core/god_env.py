@@ -885,6 +885,8 @@ class GodEnv:
         met = self.met.get(npc, 1)
         forced = [self.quest.signal(sid) for sid in (self.conv or {}).get("forced", [])]
         must_reveal = [s.reveal or s.desc for s in forced if s]
+        press = (self.conv or {}).get("press") or {}
+        slipping = bool(press.get("slip")) and not press.get("ok")      # 这一轮要漏口风：现成的谎话和口风自相矛盾，不给
         in_party = self.physical is not None and npc in self.physical.party
         if ev:
             opening = ev.premise
@@ -924,7 +926,7 @@ class GodEnv:
             "threatened": bool((self.conv or {}).get("threatened")),
             "incongruous": (self.conv or {}).get("incongruous") or [],   # 对方这话不对劲（代码 / Jev 看出来的）            # 对方硬问了一件事：代码掷过骰，告诉你松不松口  # 关系够深：你直接信了对方说的真相
             # 这一轮要说出实情，就不再给可以说的谎（不然模型可能用谎话把该说的事搪塞过去）
-            "lies_available": [] if must_reveal else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
+            "lies_available": [] if (must_reveal or slipping) else [{"id": x.id, "when": x.when, "said": x.said, "truth": x.truth}
                                                       for x in self.lies_available(npc)],
             "lies_told": [{"said": t["said"], "truth": t["truth"]} for t in self.lies_told(npc)],
             "confrontation": (self.conv or {}).get("confrontation"),
