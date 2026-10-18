@@ -22,6 +22,7 @@ import urllib.error
 import urllib.request
 from typing import Callable, Optional
 
+from llm import http_pool
 from llm.base import ContextLengthError, LLMError, LLMRequest, LLMResponse, RetryableError
 from llm.json_utils import strip_thinking as _strip_thinking
 
@@ -113,10 +114,8 @@ class GemmaClient:
         headers = {"Content-Type": "application/json", **self.headers}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(self.base_url + path, data=data, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                return json.loads(r.read().decode())
+            return json.loads(http_pool.request(method, self.base_url + path, data=data, headers=headers, timeout=self.timeout).decode())
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="ignore")
             if e.code == 400 and _CTX_RE.search(body):

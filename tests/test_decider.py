@@ -58,16 +58,16 @@ class FakeHTTP:
     def __init__(self, body=None, fail=False):
         self.body, self.fail, self.sent = body, fail, []
 
-    def __call__(self, req, timeout=0):
-        self.sent.append(json.loads(req.data.decode()))
+    def __call__(self, method, url, data=None, headers=None, timeout=0):          # 替换 http_pool.request
+        self.sent.append(json.loads(data.decode()))
         if self.fail:
             raise urllib.error.URLError("down")
-        return io.BytesIO(json.dumps(self.body).encode())
+        return json.dumps(self.body).encode()
 
 
 def test_jev_request_format_cost_and_cache(monkeypatch):
     http = FakeHTTP({"decisions": {"is_bug": {"answer": True, "probabilities": {"true": 0.95}}}, "usage": {"cost": 1e-6}})
-    monkeypatch.setattr(decider_mod.urllib.request, "urlopen", http)
+    monkeypatch.setattr(decider_mod.http_pool, "request", http)
     logs = []
     d = JevDecider("sk-or-v1-x", tracer=type("T", (), {"log": lambda self, k, **kw: logs.append((k, kw))})())
     out = d.decide("t", {"ticket": "x"}, {"is_bug": Q["is_bug"]})
@@ -80,7 +80,7 @@ def test_jev_request_format_cost_and_cache(monkeypatch):
 
 def test_jev_failure_falls_back_and_disables(monkeypatch):
     http = FakeHTTP(fail=True)
-    monkeypatch.setattr(decider_mod.urllib.request, "urlopen", http)
+    monkeypatch.setattr(decider_mod.http_pool, "request", http)
     d = JevDecider("k", max_failures=2)
     assert d.decide("t", {"a": 1}, {"is_bug": Q["is_bug"]}) is None
     assert d.decide("t", {"a": 2}, {"is_bug": Q["is_bug"]}) is None
@@ -171,3 +171,13 @@ def test_not_leaving_keeps_talking(tmp_path):
     eng, res, _ = engine(tmp_path, {"act_id": "act2", "phase_idx": 0, "clues": ["c_case"]},
                          [{"kind": "talk", "npc": "ayaka"}, ("改天再聊聊茶道吧，今天先说案子。", "自由发言"), "q"], decider=d)
     assert res.sessions[0].end_reason.name != "PLAYER_LEFT"
+
+
+def test_mock_backend_never_builds_a_network_decider_even_if_jev_is_configured():
+    """.env 里写了 DECIDER_MODE=jev、环境里又有 key：离线 mock 跑（含测试）也不能真的联网调 jev。"""
+    from types import SimpleNamespace
+    from llm.decider import make_decider
+    s = SimpleNamespace(harness=SimpleNamespace(decider_mode="jev", decider_model="m", decider_url="http://x", decider_timeout_s=1.0),
+                        llm=SimpleNamespace(api_key="sk-or-v1-real", backend="openrouter"))
+    assert make_decider(s, "mock").name == "off"
+    assert make_decider(s, "openrouter").name == "jev"

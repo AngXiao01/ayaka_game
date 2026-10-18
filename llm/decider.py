@@ -20,6 +20,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from llm import http_pool
+
 DEFAULT_URL = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_MODEL = "typesafe/jev-1.13"
 
@@ -139,13 +141,12 @@ class JevDecider(Decider):
         h = hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         if h in self.cache:
             return self.cache[h]
-        req = urllib.request.Request(self.url, data=json.dumps(payload, ensure_ascii=False).encode(), method="POST",
-                                     headers={"Authorization": f"Bearer {self.api_key}",
-                                              "Content-Type": "application/json", "X-Title": "ayaka_game"})
         t0 = time.time()
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                data = json.loads(r.read().decode("utf-8"))
+            data = json.loads(http_pool.request(
+                "POST", self.url, data=json.dumps(payload, ensure_ascii=False).encode(), timeout=self.timeout,
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json",
+                         "X-Title": "ayaka_game"}).decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError) as e:
             self.failures += 1
             detail = e.read().decode("utf-8", "replace")[:300] if isinstance(e, urllib.error.HTTPError) else ""
@@ -238,6 +239,8 @@ def make_decider(settings: Any, backend_name: str, tracer: Any = None, llm: Any 
     if mode == "off":
         return Decider()
     jev_ok = bool(lp.api_key) and lp.backend == "openrouter" and backend_name == "openrouter"
+    if backend_name == "mock":                 # 离线 mock 一律不判（走关键词）：不能因为 .env 里写了 jev 就在测试 / 离线跑里真的联网花钱
+        return Decider()
     if mode == "jev" and lp.api_key:
         return JevDecider(lp.api_key, h.decider_model, h.decider_url, h.decider_timeout_s, tracer)
     if mode == "auto" and jev_ok:
