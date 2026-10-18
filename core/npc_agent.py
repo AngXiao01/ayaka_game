@@ -26,6 +26,7 @@ from models.relationship import Relationship
 from models.retrieval import bigram_jaccard, coverage
 
 REFLECT_AT = 6                    # 上次反思以来新记忆的重要度累计到这个数才反思（一条摘要约 3，一条事实约 4）
+FACT_SIMILAR = 0.3                # 旧事实和新事实字面相似度到这个程度，才拿去问“新增 / 更新 / 作废 / 不用存”
 REFLECTION_TTL = 80               # 反思的保鲜期（世界回合数）：太久以前琢磨出的看法不再带进上下文，也不再当“之前的看法”给模型看
 SAME_QUESTION = 0.5               # 两个焦点问题字面相似到这个程度，就算同一个问题：新的结论替换旧的，而不是越攒越多
 MAX_REFLECTIONS = 3               # 同一个人最多留几条反思
@@ -80,6 +81,7 @@ class NPCAgent:
         self.world_canon = world_canon          # 所有角色共享：关于别人和稻妻的即兴设定
         self.guard_terms = guard_terms or []
         self.persona_mode = persona_mode
+        self.updater = None                     # MemoryUpdateLLMAdapter：新事实和相近旧事实的取舍（引擎装配；没有就只按字面去重）
         self.reflector = None                   # ReflectionLLMAdapter：谈话结束后合成“我对对方的看法”（引擎装配）
         self.fs = None                          # ContextFS：按需翻看的上下文（引擎装配；没有就不提供 ls / read）
         self.registry = self._build_tools()
@@ -130,8 +132,17 @@ class NPCAgent:
             Tool("respond", "对对方说话并结束本步（参数见下方示例）", {}, None, terminal=True),
         ])
 
-    def recall(self, query: str, k: int, now: int) -> list[str]:
-        return [m.text for m in self.memory.retrieve(query, k=k, now=now)]
+    def recall(self, query: str, k: int, now: int, exclude_kinds: tuple = ()) -> list[str]:
+        return [m.text for m in self.memory.retrieve(query, k=k, now=now, exclude_kinds=exclude_kinds)]
+
+    def recall_by_impression(self, now: int, k: int = 2) -> list[str]:
+        """用“我对这个人的整体印象”（最近一条反思）当检索焦点，翻出和这份印象有关、但玩家这句话没提到的往事
+        （Generative Agents 对话前的做法：先总结和对方的关系，再拿它去检索）。还没有反思就什么都不翻。"""
+        text = self.latest_reflection(now)
+        if not text:
+            return []
+        focus = re.sub(r"^我对[^：]{1,12}的看法：", "", text.split("；下次我打算")[0])[:100]
+        return self.recall(focus, k, now, exclude_kinds=("reflection",))
 
     def recall_canon(self, query: str, k: int, now: int) -> list[str]:
         """之前即兴编出的设定：自己的 + 共享世界的，按当前话题检索。"""
@@ -168,9 +179,14 @@ class NPCAgent:
     def record_lies(self, reply: "NPCReply", god, now: int) -> dict:
         """说出口的谎才记：进证词本（玩家看到的和真话一样），也进她自己的记忆（之后要圆住）。"""
         kept, dropped = [], []
+        blocked = god.blocked_terms(self.p.id)
         for lie in reply.lies:
             if coverage(lie["said"], reply.speech) < CANON_GROUNDING:
                 dropped.append({**lie, "reason": "这句话里并没有说出这个谎"})
+                continue
+            unknown = [t for t in blocked if t in lie["truth"] or t in lie["said"]]
+            if unknown:      # “真相”是模型写的：里面带着他此刻不可能知道的东西，就是编出来的，不能存进他的记忆和证词本
+                dropped.append({**lie, "reason": f"真相里带着你不该知道的内容（{'、'.join(unknown[:3])}）"})
                 continue
             pre = god.quest.lie(lie["lie_id"]) if lie["lie_id"] != "improvised" else None
             t = god.add_testimony(self.p.id, pre.said if pre else lie["said"], "lie", truth=lie["truth"],
@@ -237,7 +253,10 @@ class NPCAgent:
     def _call(self, ctx: TurnContext, text: Optional[str], intent: Optional[str], skills: list[Skill],
               flags: list[str], allow_tools: bool) -> NPCReply:
         ctx.tics = self.style_tics(ctx) if text is not None else []
-        names = [] if self.fs is None else [q.name for n, q in self.fs.personas.items() if n != self.p.id]
+        blocked = ctx.task.get("blocked_terms") or {}
+        # 名字本身就是他此刻“还不该知道”的词的人（比如守夜狐），不告诉记录员：他不认识，也不会替对方带话给这个人
+        names = [] if self.fs is None else [q.name for n, q in self.fs.personas.items()
+                                            if n != self.p.id and not any(t == q.name or t in q.name for t in blocked)]
         places = [] if self.fs is None else [self.fs.world.name(l) for l in self.fs.world.locations]
         res: LoopResult = self.adapter.reply(self.p, ctx, text, intent, self.registry, self.skills.index(),
                                              skills, flags, allow_tools, names, places)
@@ -311,16 +330,49 @@ class NPCAgent:
         kept, dropped = [], []
         for fact in s["facts"]:
             (kept if coverage(fact, transcript) >= FACT_GROUNDING else dropped).append(fact)
-        for fact in kept:
-            self.memory.add(MemoryItem(text=fact, kind="fact", importance=min(5, s["importance"] + 1),
-                                       world_time=world_time, topics=s["topics"], extra=dict(provenance)))
+        fact_updates = self._store_facts(kept, s, world_time, provenance)
         if self.tracer:
             self.tracer.log("memory_write", summary=s["summary"], merged=merged, facts_kept=kept,
                             facts_dropped=dropped, handoff=handoff, handoff_dropped=handoff_dropped,
-                            provenance=provenance)
+                            provenance=provenance, fact_updates=fact_updates)
         self._reflect(ctx, transcript, turns, world_time, provenance)
         self.registry.cache.clear()            # 记忆变了，recall 的缓存作废
         return s
+
+    def _store_facts(self, facts: list[str], s: dict, world_time: int, provenance: dict) -> list[dict]:
+        """新事实入库。有相近旧事实的，问一次小模型：新增 / 更新旧的 / 旧的作废 / 不用存（Mem0）。
+        模型只在给定的几条旧事实里选；更新后的句子要有依据；没有更新器或调用失败，就退回原来的字面去重。"""
+        olds = [m for m in self.memory.items if m.kind == "fact"]
+        near = [[(m.id, m.text) for m in sorted(olds, key=lambda m: -bigram_jaccard(m.text, f))[:3]
+                 if bigram_jaccard(m.text, f) >= FACT_SIMILAR] for f in facts]
+        asked = [i for i, nb in enumerate(near) if nb]
+        decisions: dict[int, dict] = {}
+        if asked and self.updater is not None:
+            got = self.updater.decide(self.name, [facts[i] for i in asked], [near[i] for i in asked])
+            decisions = {asked[k]: v for k, v in got.items()}
+        log: list[dict] = []
+        for i, fact in enumerate(facts):
+            item = MemoryItem(text=fact, kind="fact", importance=min(5, s["importance"] + 1), world_time=world_time,
+                              topics=s["topics"], extra=dict(provenance))
+            d = decisions.get(i)
+            if d is None:                                   # 没有相近旧事实 / 没有更新器 / 调用失败：原来的做法
+                self.memory.add(item)
+                continue
+            target = next((m for m in olds if m.id == d["id"]), None)
+            if d["event"] == "NONE":
+                log.append({"fact": fact, "event": "NONE"})
+            elif d["event"] == "UPDATE" and target and coverage(d["text"], fact + target.text) >= FACT_GROUNDING:
+                self.memory.revise(target, d["text"], world_time)
+                log.append({"fact": fact, "event": "UPDATE", "id": target.id, "text": d["text"]})
+            elif d["event"] == "DELETE" and target:
+                self.memory.drop([target])
+                olds.remove(target)
+                self.memory.add(item, dedup=False)
+                log.append({"fact": fact, "event": "DELETE", "id": target.id, "old": target.text})
+            else:                                           # ADD，或没通过依据检查的 UPDATE：新增（不再按字面相似度合并）
+                self.memory.add(item, dedup=False)
+                log.append({"fact": fact, "event": "ADD"})
+        return log
 
     def _reflect(self, ctx: TurnContext, transcript: str, turns: int, world_time: int, provenance: dict) -> None:
         """谈话够长就反思一次：合成“我对对方的看法 / 疑问”，只留最近 3 条，下次见面放进上下文。"""

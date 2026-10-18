@@ -158,7 +158,8 @@ def validate_annotation(obj: Any, signal_ids: list[str], lie_ids: Optional[list[
             "tell": _tell(obj.get("tell")), "go_to": _str(obj.get("go_to"))[:20]}
 
 
-_STAGE_DIR = re.compile(r"[（(]([^）)\n]{1,%d})[）)]\s*" % MAX_ACTION_CHARS)
+MAX_STAGE_DIR_CHARS = 80      # 括号里多长都当舞台说明挪出台词；挪出去之后 action 超过 MAX_ACTION_CHARS 的会被丢掉（两件事，不共用一个上限）
+_STAGE_DIR = re.compile(r"[（(]([^）)\n]{1,%d})[）)]\s*" % MAX_STAGE_DIR_CHARS)
 
 
 def split_stage_directions(speech: str, action: str) -> tuple[str, str]:

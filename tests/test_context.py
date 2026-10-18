@@ -424,3 +424,22 @@ def test_asking_the_same_thing_again_is_noticed(tmp_path):
     assert [e["earlier"] for e in ev if e["event"] == "repeat_question"] == [q]
     prompts = [m["content"] for e in ev if e["event"] == "llm" and e["task"] == "npc_step" for m in e["messages"] if "在重复问你已经答过的事" in m["content"]]
     assert prompts and q in prompts[0]
+
+
+def test_a_beat_that_was_just_offered_cools_down_unless_the_talk_brings_it_up():
+    """世界书的 cooldown：刚提过的一件，接下来两轮不因为“意图 / 耐心”再提；玩家的话头自己贴上来则不受限。"""
+    from core.beats import COOLDOWN_TURNS, pick_beat
+    g, _ = fs({"act_id": "act2", "clues": ["c_case", "c_shops"]})
+    pending = [{"id": "rv_aen_prints", "desc": "阿缘说出后门外雪地上有一串圆圆的小脚印通往镇守之森", "requires": []},
+               {"id": "rv_aen_bundle", "desc": "阿缘说出失窃那晚看见「小吉」抱着白纸包的东西往林子去", "requires": []}]
+    chat = "今天天气不错呢，茶也不错。"
+    first, _ = pick_beat(g, pending, "后门外有脚印吗？", "打听情报")
+    assert first["id"] == "rv_aen_prints"
+    offered = {first["id"]: 1}
+    during, scored = pick_beat(g, pending, chat, "打听情报", stuck_turns=3, offered=offered, turn=2)
+    assert during is None or during["id"] != "rv_aen_prints"                           # 冷却中：闲聊不再硬提脚印
+    assert next(x for x in scored if x["id"] == "rv_aen_prints").get("cooling") is True
+    pushed, _ = pick_beat(g, pending, "后门外有脚印吗？", "打听情报", offered=offered, turn=2)
+    assert pushed["id"] == "rv_aen_prints"                                             # 玩家自己问到了，照样提
+    after, _ = pick_beat(g, pending, chat, "打听情报", stuck_turns=3, offered=offered, turn=1 + COOLDOWN_TURNS + 1)
+    assert after is not None                                                           # 过了冷却，耐心照常起作用

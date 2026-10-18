@@ -74,6 +74,7 @@ class DialogueSession:
         self.npc = npc
         self.player_view = player_view  # 玩家视角（Explorer.player_view）：选项 agent 只能看这个，看不到 NPC 的心思
         self.npc_names = set(god.physical.personas) if god.physical is not None else set()
+        self._offered: dict[str, int] = {}                  # 这次谈话里提供过哪些节拍、在第几轮（节拍冷却用）
         self.player = player
         self.option_gen = option_gen
         self.god = god
@@ -113,6 +114,7 @@ class DialogueSession:
         memories = [m for m in self.npc.recall(self.god.act.objective + topic, self.cfg.memory_top_k, self.god.total_turns)]
         canon = self.npc.recall_canon(topic or self.god.act.objective, 3, self.god.total_turns)
         memories = [m for m in memories if not any(m in c for c in canon)]
+        memories += [m for m in self.npc.recall_by_impression(self.god.total_turns) if m not in memories]    # 整体印象带出来的往事
         handoff = self.npc.handoff()
         reflection = self.npc.latest_reflection(self.god.total_turns)
         if handoff.get("minute") is not None:
@@ -647,7 +649,9 @@ class DialogueSession:
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
         ctx.task["shown"] = [{"name": n, "desc": d} for n, d in shown]
         ctx.task["unverified"] = g.unverified_claims(nid, guard.text) if action.kind == "say" and not guard.suspicious else []
-        beat, scored = pick_beat(g, ctx.task["pending_signals"], guard.text, intent, g.turns_since_progress)
+        beat, scored = pick_beat(g, ctx.task["pending_signals"], guard.text, intent, g.turns_since_progress, self._offered, turn)
+        if beat:
+            self._offered[beat["id"]] = turn                  # 记下提过：接下来几轮冷却（只在这次谈话里有效，不进存档）
         ctx.task["beat"] = beat                               # None = 这一轮什么都不提；不设 beat（开场等）则沿用“列出全部”
         if scored:
             self._log("beat", npc=nid, picked=beat["id"] if beat else None, scored=scored[:4])

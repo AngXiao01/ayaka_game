@@ -63,11 +63,11 @@ class MemoryStore:
         tmp.replace(self.path)       # 原子替换，写一半崩溃也不会留下半个文件
         self._dirty = False
 
-    def add(self, item: MemoryItem) -> tuple[MemoryItem, bool]:
-        """返回 (落库的条目, 是否为合并)。"""
+    def add(self, item: MemoryItem, dedup: bool = True) -> tuple[MemoryItem, bool]:
+        """返回 (落库的条目, 是否为合并)。dedup=False：调用方已经判断过它不是重复（比如事实更新步骤），不再按字面相似度合并。"""
         self._index = None
         dup = max((m for m in self.items if m.kind == item.kind),
-                  key=lambda m: bigram_jaccard(m.text, item.text), default=None)
+                  key=lambda m: bigram_jaccard(m.text, item.text), default=None) if dedup else None
         if dup is not None and bigram_jaccard(dup.text, item.text) >= DEDUP_THRESHOLD:
             dup.importance = max(dup.importance, item.importance)
             dup.world_time = max(dup.world_time, item.world_time)
@@ -80,6 +80,12 @@ class MemoryStore:
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
         return item, False
+
+    def revise(self, item: "MemoryItem", text: str, world_time: int) -> None:
+        """原地改写一条（保留编号）：补充了细节的更新。"""
+        item.text, item.world_time, item.hits = text, max(item.world_time, world_time), item.hits + 1
+        self._index = None
+        self._rewrite()
 
     def drop(self, gone: list) -> None:
         """按对象本身（不是按内容相等）删掉几条，索引作废，文件重写。"""
@@ -97,7 +103,8 @@ class MemoryStore:
             self._index = BM25([m.text + " " + " ".join(m.topics) for m in self.items])
         now = now if now is not None else max(m.world_time for m in self.items)
         rel = self._index.scores(query)
-        top = max(rel) or 1.0
+        # 被排除的条目不参与归一化：比如拿“最近一条反思”当查询，它自己就含着查询的字，分数最高，会把真正相关的往事压成零头
+        top = max((r for r, m in zip(rel, self.items) if m.kind not in exclude_kinds), default=0.0) or 1.0
 
         def score(i: int) -> float:
             m = self.items[i]

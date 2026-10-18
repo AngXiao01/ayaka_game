@@ -47,6 +47,7 @@ from llm.player_option_llm_adapter import PlayerOptionLLMAdapter
 from llm.reviewer_llm_adapter import ReviewerLLMAdapter
 from llm.scene_llm_adapter import SceneLLMAdapter
 from llm.router import ModelRouter
+from llm.memory_update_llm_adapter import MemoryUpdateLLMAdapter
 from llm.reflection_llm_adapter import ReflectionLLMAdapter
 from llm.summary_llm_adapter import CompressLLMAdapter, SummaryLLMAdapter
 from models.knowledge import LoreBase
@@ -123,6 +124,7 @@ class GameEngine:
                                     persona_mode=h.persona_mode, small=(r.backend("small"), r.params("small")))
         summarizer = SummaryLLMAdapter(r.backend("summary"), r.params("summary"), t, rep)
         reflector = ReflectionLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
+        updater = MemoryUpdateLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
         self.world_canon = MemoryStore(mem_dir / "_world_canon.jsonl")     # 共享的即兴世界设定
         self.npcs: dict[str, NPCAgent] = {}
         for nid, p in self.personas.items():
@@ -133,6 +135,7 @@ class GameEngine:
                                       persona_mode=h.persona_mode)
         for a in self.npcs.values():
             a.reflector = reflector
+            a.updater = updater
         for nid, a in self.npcs.items():         # 按需翻看的上下文：每个人只看得到自己知道的那部分
             a.fs = ContextFS(nid, self.god, self.world, self.personas, self.lore,
                              lambda k, a=a: [m.text for m in reversed(a.memory.items[-k:])],

@@ -50,3 +50,14 @@ def test_stage_directions_leave_the_speech_and_land_in_action():
     assert r["speech"] == "随我来。就是这儿。" and r["action"] == "递茶"          # 已有 action 时括号里的直接丢掉
     r = validate_npc_reply({"speech": "（低头拨算盘）", "action": ""}, [])
     assert r["speech"] == "（低头拨算盘）"                                        # 整句都是括号：不动，别弄成空台词
+
+
+def test_a_long_stage_direction_is_still_taken_out_of_the_speech():
+    """真模型写过“（我放下手中的抹布，眼神示意你靠近些，随即压低了嗓音）”——26 个字，超过 action 的 24 字上限，
+    以前因为共用一个上限没被提取，原样留在台词里。提取和“action 太长就丢掉”是两件事。"""
+    long_dir = "（我放下手中的抹布，眼神示意你靠近些，随即压低了嗓音）"
+    r = validate_npc_reply({"speech": f"{long_dir}\n那晚我回来得晚，在巷口看见了小吉。", "action": ""}, [])
+    assert "（" not in r["speech"] and r["speech"].startswith("那晚我回来得晚")
+    assert r["action"] == ""                                                           # 太长的神态描写不值得留：丢掉，不为它重写
+    short = validate_npc_reply({"speech": "（压低声音）那晚我回来得晚。", "action": ""}, [])
+    assert short["action"] == "压低声音" and short["speech"] == "那晚我回来得晚。"          # 短的照旧挪进 action

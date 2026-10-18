@@ -715,7 +715,7 @@ class GodEnv:
         return [{"id": s.id, "desc": s.desc, "requires": s.requires} for s, _ in self._conv_signals("available")]
 
     def locked_signals(self) -> list[tuple[dict, str]]:
-        return [({"id": s.id, "desc": s.desc, "topic": self._topic(s), "style": s.lock_style or "direct"}, why)
+        return [({"id": s.id, "desc": s.desc, "topic": self._topic(s), "style": s.lock_style or "direct", "hint": s.lock_hint}, why)
                 for s, why in self._conv_signals("locked")]
 
     @staticmethod
@@ -723,6 +723,19 @@ class GodEnv:
         """锁着的事只给话题、不给内容：小模型看见内容就会在被逼问时说漏（或者替玩家「确认」玩家随口猜到的）。"""
         label = (s.ask or {}).get("label", "") if getattr(s, "ask", None) else ""
         return label.split("：", 1)[-1].strip() if label else ""
+
+    @staticmethod
+    def _locked_lines(locked: list) -> list[str]:
+        """给 NPC 看的“你知道但现在不说”清单。只能给话题（关键问题的标签）或作者写的 lock_hint；
+        绝不能给信号的 desc——那是上帝视角的触发描述（比如“对方向绫华说清了真相：……”），里面可能就是真相本身，
+        给了等于把答案递给了本不该知道的人（以前绫华整个第二幕的提示词里都带着狐狸和神龛）。"""
+        out = []
+        for d, why in locked:
+            if d.get("topic"):
+                out.append(f"关于「{d['topic']}」你知道一些，现在不说，因为：{why}。{LOCK_STYLES.get(d.get('style'), LOCK_STYLES['direct'])}")
+            elif d.get("hint"):
+                out.append(d["hint"])
+        return out
 
     def preview_pending(self, npc: str, event: Optional[str] = None) -> int:
         """不在对话中时，估计和某人聊有几件事「有戏」（给菜单提示与自动玩家用）：
@@ -905,8 +918,7 @@ class GodEnv:
             "npc_stance": ev.stance if ev else self.stance_of(persona),
             "event": {"title": ev.title, "premise": ev.premise} if ev else None,
             "info_goals": [d["desc"] for d in pending],
-            "locked_info": [f"关于「{d['topic']}」你知道一些，现在不说，因为：{why}。{LOCK_STYLES.get(d.get('style'), LOCK_STYLES['direct'])}"
-                            if d.get("topic") else f"{d['desc']}（{why}）" for d, why in locked],
+            "locked_info": self._locked_lines(locked),
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
             "blocked_terms": self.blocked_terms(persona.id),
             "prior_clues": [self.quest.clues[c]["desc"] for c in getattr(persona, "knows_clues", []) if c in self.quest.clues],

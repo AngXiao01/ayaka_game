@@ -99,6 +99,15 @@ class MockBackend:
         return {**{k: r[k] for k in ("fit", "emotion", "intent", "affinity_delta", "trust_delta", "tension_delta",
                                      "wants_to_end")}, "plan": ""}
 
+    def _memory_update(self, meta: dict) -> dict:
+        """离线：几乎一样的就“不用存”，其余新增。"""
+        from models.retrieval import bigram_jaccard
+        out = []
+        for i, f in enumerate(meta.get("facts") or []):
+            same = any(bigram_jaccard(f, t) >= 0.9 for _, t in (meta.get("neighbors") or [[]])[i])
+            out.append({"i": i, "event": "NONE" if same else "ADD", "id": "", "text": ""})
+        return {"decisions": out}
+
     def _reflect_focus(self, meta: dict) -> dict:
         return {"questions": ["对方为什么愿意帮一个刚认识的人", "对方说的话前后对得上吗"]}
 
