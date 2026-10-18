@@ -443,3 +443,15 @@ def test_a_beat_that_was_just_offered_cools_down_unless_the_talk_brings_it_up():
     assert pushed["id"] == "rv_aen_prints"                                             # 玩家自己问到了，照样提
     after, _ = pick_beat(g, pending, chat, "打听情报", stuck_turns=3, offered=offered, turn=1 + COOLDOWN_TURNS + 1)
     assert after is not None                                                           # 过了冷却，耐心照常起作用
+
+
+def test_an_audit_complaint_must_be_about_the_cited_fact():
+    """真实 trace：绫华答应一起出门说“去花见坂？”，核对员判“矛盾”，依据却是“茶室钥匙只有两把”——风马牛不相及，
+    结果这句好好的话被打回重说，重说时还编出“您刚才说要去花见坂”。"""
+    from llm.npc_stages import validate_audit
+    known = ["茶室在廊子尽头，一扇纸拉门朝着廊子，门上有锁。钥匙只有两把：绫华一把，托马一把，没有第三把。",
+             "窗台离茶室地面大约一个半人高"]
+    off_topic = {"problems": [{"kind": "矛盾", "claim": "去花见坂？", "fact": known[0]}]}
+    assert validate_audit(off_topic, known, "好啊。只是……得避开天领奉行的视线，去花见坂？") == []
+    on_topic = {"problems": [{"kind": "矛盾", "claim": "钥匙有三把", "fact": known[0]}]}
+    assert validate_audit(on_topic, known, "钥匙有三把") == [f"矛盾：钥匙有三把（依据：{known[0]}）"]

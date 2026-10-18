@@ -134,6 +134,14 @@ AUDIT_SCHEMA = {"type": "object", "properties": {"problems": {"type": "array", "
     "type": "object", "properties": {"kind": {"type": "string"}, "claim": {"type": "string"}, "fact": {"type": "string"}},
     "required": ["kind", "claim"]}}}, "required": ["problems"]}
 
+_FUNCTION_CHARS = set("的了是在有和与也都就还把被这那你我他她它们吗呢吧啊呀么不没一个之而以及或但并从到把对于其所为")
+
+
+def _content_chars(text: str) -> set[str]:
+    """实义字：去掉标点和“的 / 了 / 是 / 在……”这类虚字之后剩下的汉字。用来粗判两句话是不是在说同一件事。"""
+    return {c for c in text if "\u4e00" <= c <= "\u9fff" and c not in _FUNCTION_CHARS}
+
+
 SCENE_WORDS = ("窗台", "灰尘", "脚印", "地面", "地板", "痕迹", "门窗", "钥匙", "插销", "丈", "尺", "进出", "墙根", "爪印")
 
 
@@ -153,6 +161,8 @@ def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "") -
             continue
         if kind.startswith("矛盾"):
             if known is not None and (not fact or coverage(fact, known_text) < 0.6):
+                continue
+            if len(_content_chars(claim) & _content_chars(fact)) < 2:   # 依据和被指控的那句话八竿子打不着（“去花见坂？”vs“茶室钥匙只有两把”）：乱挑刺
                 continue
         elif kind.startswith("编造"):
             if not any(w in claim for w in SCENE_WORDS):

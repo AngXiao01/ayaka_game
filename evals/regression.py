@@ -90,7 +90,7 @@ def c_prior_knowledge(run):
 
 def c_no_invented_scene(run):
     text = _replies(run)
-    if not _any(text, ("没细看", "没有细看", "不知道", "未细看", "没看", "并未细看", "没留意", "不清楚", "没注意")):
+    if not _any(text, ("没细", "没有细看", "不知道", "未细看", "没看", "并未细看", "没留意", "不清楚", "没注意", "只确认", "不知")):
         return ["被问到窗台和地面有没有痕迹，没有说“没细看 / 不知道”"]
     return [f"编造了现场细节「{w}」" for w in ("灰尘比", "灰尘少", "脚印很", "脚印落在", "擦痕") if w in text]
 

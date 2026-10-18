@@ -35,6 +35,7 @@ INVITE_RE = re.compile(r"一起去|一起走|一起出去|一起逛|陪我去|�
 
 class DialogueEndReason(str, Enum):
     PLAYER_LEFT = "你起身告辞"
+    TRAVEL_ON = "你们接着往前走"          # 同行中选“接着走”：谈话结束，但没有告别，对方还跟着
     PLAYER_QUIT = "保存并退出"
     NPC_ENDED = "对方结束了谈话"
     NPC_LEFT = "对方有事先走了"
@@ -305,7 +306,7 @@ class DialogueSession:
         if r.affinity_delta > 0 or r.trust_delta > 0:
             g.note_engagement()
         # 玩家用明确的动作满足了条件：代码直接判定（和「提议」一样不交给模型揣测），其余的上报照常过审核
-        newly = g.apply_signals(forced, forced=True) if forced else []
+        newly = g.apply_signals(forced, forced=True, said=r.speech) if forced else []
         if forced:
             self._log("action_signal", npc=self.npc.p.id, action=(player or {}).get("kind"), forced=forced,
                       accepted=[s["id"] for s in newly])
@@ -322,7 +323,7 @@ class DialogueSession:
             heard += judge.conceded(g, self.npc.name, r.speech + r.action,
                                     (player or {}).get("evidence_text") or (player or {}).get("text", ""), open_) or []
         if heard:
-            got = g.apply_signals(heard, heard=True)
+            got = g.apply_signals(heard, heard=True, said=r.speech)
             newly += got
             self._log("heard_signal", npc=self.npc.p.id, heard=heard, accepted=[s["id"] for s in got])
             forced = forced + heard
@@ -330,7 +331,7 @@ class DialogueSession:
                                       injection_flags=flags or [],
                                       player_text=(player or {}).get("evidence_text") or (player or {}).get("text", ""), npc_speech=r.speech,
                                       context_lines=context_lines or [], degraded=self.budget.degraded())
-        newly += g.apply_signals(review.accepted)
+        newly += g.apply_signals(review.accepted, said=r.speech)
         for s_ in [] if self.npc.p.role == "companion" else newly:
             if s_["clues"]:                  # 吐露线索的那句话记进证词本（和谎话同一格式）
                 g.add_testimony(self.npc.p.id, r.speech[:80], "truth")
@@ -746,6 +747,9 @@ class DialogueSession:
         if g.resolved:
             return DialogueEndReason.RESOLVED, ids, deg
         if action.kind == "leave" or dismissed or leaving:
+            together = self.god.physical is not None and self.npc.p.id in self.god.physical.party
+            if together and not dismissed:             # 同行时的“接着走”不是告辞：别打“你起身告辞”，也别让摘要记成“告别了”
+                return DialogueEndReason.TRAVEL_ON, ids, deg
             return DialogueEndReason.PLAYER_LEFT, ids, deg
         if went:
             return DialogueEndReason.NPC_LEFT, ids, deg

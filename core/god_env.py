@@ -188,6 +188,7 @@ class GodEnv:
         self.clues: list[str] = s.get("clues", [])
         self.known: dict[str, list[str]] = s.get("known", {})
         self.achieved: list[str] = s.get("achieved", [])
+        self.told: dict[str, str] = dict(s.get("told", {}))      # 信号达成时 NPC 当时实际说的那句话（给之后“以此为准”用）
         self.flags: list[str] = s.get("flags", [])
         self.examined: list[str] = s.get("examined", [])
         self.seed = s.get("seed")                             # 概率判定的种子（存进档里，读档不能重掷）
@@ -773,7 +774,7 @@ class GodEnv:
                 pending.discard(i)
         return out
 
-    def apply_signals(self, ids: list[str], forced: bool = False, heard: bool = False) -> list[dict]:
+    def apply_signals(self, ids: list[str], forced: bool = False, heard: bool = False, said: str = "") -> list[dict]:
         """只接受当前对话里此刻可达成的信号；返回新达成的（含获得的线索）。
         forced：玩家用明确的动作（关键问题、出示证据、汇报、提议）满足了条件，由代码直接判定达成——
         不经审核，所以这里自己查前置信号；也不看聊了几轮（轮数门槛是防模型抢跑的，动作不存在抢跑）。
@@ -791,6 +792,8 @@ class GodEnv:
             if forced and self.missing_prereqs(sid):
                 continue
             self.achieved.append(sid)
+            if said and s.npc != "":
+                self.told[sid] = said[:120]
             self.last_progress_slot = self.slot_index
             if self.nudges.get(s.npc) == sid:
                 self.nudges.pop(s.npc)
@@ -919,12 +922,18 @@ class GodEnv:
             "event": {"title": ev.title, "premise": ev.premise} if ev else None,
             "info_goals": [d["desc"] for d in pending],
             "locked_info": self._locked_lines(locked),
+            "locked_evidence": [{"id": s.id, "groups": s.evidence, "why": (s.lock_hint or why)}      # 锁住的事的“说出口”判据，给确定性检查用
+                                for s, why in self._conv_signals("locked", check_turns=False) if s.evidence],
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
             "blocked_terms": self.blocked_terms(persona.id),
             "prior_clues": [self.quest.clues[c]["desc"] for c in getattr(persona, "knows_clues", []) if c in self.quest.clues],
             "known_clues": [f"{self.quest.clue_name(c)}：{self.quest.clues[c]['desc']}" for c in self.known.get(npc, [])],
             "player_clue_count": len(self.clues),
-            "achieved_signals": [{"id": s.id, "desc": s.desc, "fact": s.reveal or s.desc} for s in self.quest.signals
+            "achieved_signals": [{"id": s.id, "desc": s.desc,
+                                  # 记“她当时实际说的话”，不是当初给她的指令（reveal 是“把事情说清楚……最后郑重地问对方愿不愿意”这类命令，
+                                  # 事后塞进“已经说过的事实”，小模型会当成指令再执行一遍：问报酬也回一遍委托）
+                                  "fact": f"你当时是这么说的：「{self.told[s.id]}」" if self.told.get(s.id) else s.desc}
+                                 for s in self.quest.signals
                                  if s.id in self.achieved and s.npc == npc],
             "pending_signals": pending,
             "turns_in_stage": self.turns_in_stage,
@@ -983,7 +992,7 @@ class GodEnv:
     def to_dict(self) -> dict:
         return {"quest_id": self.quest.id, "minute": self.minute, "day": self.day, "phase_idx": self.phase_idx,
                 "location": self.location,
-                "act_id": self.act_id, "clues": self.clues, "known": self.known, "achieved": self.achieved,
+                "act_id": self.act_id, "clues": self.clues, "known": self.known, "achieved": self.achieved, "told": self.told,
                 "flags": self.flags, "examined": self.examined,
                 "seed": self.seed, "rolls": self.rolls, "misses": self.misses,
                 "agenda_state": self.agenda_state, "events_done": self.events_done, "met": self.met,

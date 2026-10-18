@@ -19,7 +19,7 @@ from core.skills import Skill
 from core.tools import ToolRegistry
 from llm.base import LLMBackend
 from llm.messages import estimate_tokens, messages_tokens
-from core.guardrails import knowledge_boundary, slip_missing
+from core.guardrails import knowledge_boundary, locked_reveal, slip_missing
 from llm.npc_stages import DEFAULT_APPRAISAL, annotate, appraise, audit
 from llm.schemas import SPEAK_SCHEMA, validate_npc_reply, validate_speak
 from models.personality import Personality
@@ -450,16 +450,17 @@ class NPCLLMAdapter:
         res = speak(msgs)
         if res.final is None:
             return res
-        if player_text is not None and allow_tools and not ctx.problems:          # ②′ 核对：越界 / 矛盾 / 编造 / 说不通 → 带着意见重说一次
+        if allow_tools and not ctx.problems:                                          # ②′ 核对：越界 / 锁住的事 / 口风 / 矛盾 / 编造 / 说不通 → 带着意见重说一次
             problems: list[str] = []
-            if not ctx.task.get("must_reveal"):                                    # 先过确定性的知识边界（不调模型）
-                recent = [h["text"] for h in ctx.history if h["speaker"] == "player"][-3:] + [player_text]
-                problems = knowledge_boundary(res.final["speech"], res.final["action"],
-                                              ctx.task.get("blocked_terms", {}), recent)
+            said = [h["text"] for h in ctx.history if h["speaker"] == "player"][-3:] + ([player_text] if player_text is not None else [])
+            if not ctx.task.get("must_reveal"):                                    # 先过确定性的两道门（不调模型，开场也要守）：知识边界、锁住的事
+                problems = knowledge_boundary(res.final["speech"], res.final["action"], ctx.task.get("blocked_terms", {}), said)
+                if not problems:
+                    problems = locked_reveal(res.final["speech"], res.final["action"], ctx.task.get("locked_evidence", []), said)
             press = ctx.task.get("press") or {}
-            if not problems and press.get("slip") and not press.get("ok"):          # 硬问失败那一轮规定要漏口风：代码查有没有漏
+            if not problems and player_text is not None and press.get("slip") and not press.get("ok"):   # 硬问失败那一轮规定要漏口风：代码查有没有漏
                 problems = slip_missing(res.final["speech"], press["slip"])
-            if not problems and not ctx.task.get("must_reveal"):                  # 再请核对员看矛盾和物理（必须说出口的那轮不核对）
+            if not problems and player_text is not None and not ctx.task.get("must_reveal"):         # 再请核对员看矛盾和物理（必须说出口的那轮不核对）
                 problems, used = audit(self.small_backend, self.small_params, p, ctx, res.final["speech"], res.final["action"],
                                        player_text, meta, self.tracer)
                 extra_tokens += used

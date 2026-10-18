@@ -31,3 +31,18 @@ def test_an_ordinary_lie_is_still_recorded(tmp_path):
     reply = SimpleNamespace(speech=said, lies=[{"said": said, "truth": "兄长并不知道，你不想让他再为这件事分心", "lie_id": "ayaka_brother"}])
     out = a.record_lies(reply, eng.god, now=3)
     assert out["kept"] and eng.god.testimonies and [m for m in a.memory.items if m.kind == "lie"]
+
+
+def test_improvised_world_facts_may_not_describe_places(tmp_path):
+    """真实 trace：绫华随口一句“花见坂的清晨最热闹”，被存成了全世界共享的设定，可作者写的花见坂清晨是“街上还不算拥挤”。"""
+    eng, a = ayaka(tmp_path)
+    reply = SimpleNamespace(speech="花见坂的清晨最热闹……不过，还得劳烦您多留意周围。", action="",
+                            new_facts=[{"fact": "花见坂的清晨最热闹", "about": "world"}])
+    out = a.remember_improvisations(reply, now=3, provenance={})
+    assert not out["kept"] and "地点" in out["dropped"][0]["reason"]
+    mine = SimpleNamespace(speech="小时候我在花见坂的团子摊前走丢过，是托马把我找回来的。", action="",
+                           new_facts=[{"fact": "小时候在花见坂的团子摊前走丢过，被托马找了回来", "about": "self"}])
+    assert a.remember_improvisations(mine, now=4, provenance={})["kept"]               # 关于她自己的往事不受影响
+    other = SimpleNamespace(speech="托马会弹三味线，只是弹得不太好。", action="",
+                            new_facts=[{"fact": "托马会弹三味线，但弹得不太好", "about": "world"}])
+    assert a.remember_improvisations(other, now=5, provenance={})["kept"]               # 不涉及地点的照常

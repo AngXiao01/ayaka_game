@@ -152,6 +152,9 @@ class NPCAgent:
         return [m.text + (f"（{m.extra.get('by')}说过）" if m.extra.get("by") and m.extra.get("by") != self.name else "")
                 for m in items]
 
+    def _place_names(self) -> list[str]:
+        return [] if self.fs is None else [loc["name"] for loc in self.fs.world.locations.values()]
+
     def remember_improvisations(self, reply: "NPCReply", now: int, provenance: dict) -> dict:
         """即兴设定立刻入库（不等交谈结束），这样同一次交谈里后面就能保持一致。
         三道关：必须真的说出口了（防止只写进记忆却没说）、不许涉及案情（防止即兴编出线索绕过调查）、相似合并。"""
@@ -165,6 +168,10 @@ class NPCAgent:
                 continue
             if coverage(fact, said) < CANON_GROUNDING:
                 dropped.append({"fact": fact, "reason": "这句话里并没有说出这件事"})
+                continue
+            places = [n for n in self._place_names() if n in fact] if f["about"] == "world" else []
+            if places:       # 关于世界的即兴设定一旦说到具体地点，就和作者写的格局 / 气氛抢话（“花见坂清晨最热闹” vs 设定里的“街上还不算拥挤”）：不存
+                dropped.append({"fact": fact, "reason": f"说到了地点（{'、'.join(places)}），地点的样子由作者的世界设定说了算，不许即兴"})
                 continue
             store = self.world_canon if f["about"] == "world" and self.world_canon else self.memory
             item, merged = store.add(MemoryItem(text=fact, kind="canon", importance=4, world_time=now,
