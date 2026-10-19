@@ -4,6 +4,8 @@ __pycache__/
 data/saves/*.json
 data/memories/*/
 data/traces/*.html
+data/traces/*.jsonl
+.DS_Store
 evals_out/
 
 # 隧道程序（直接下载的二进制）
