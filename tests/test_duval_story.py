@@ -310,3 +310,21 @@ def test_people_are_introduced_once_in_the_panel_and_the_talk_header(tmp_path):
     assert "神里绫华（" in first and "托马（" in first
     second = ex.panel()
     assert "这里的人：神里绫华；" in second and "（社奉行" not in second          # 第二次只剩名字
+
+
+def test_small_talk_with_nothing_at_stake_winds_down_even_while_getting_warmer(tmp_path):
+    eng, _ = engine(tmp_path)
+    g = eng.god
+    g.location = "hanamizaka"
+    g.begin_conversation("anna")
+    anna = eng.personas["anna"]
+    for i in range(g.CHAT_WIND_DOWN):
+        assert not g.npc_task_detail(anna, 20)["wind_down"]
+        g.conversation_turn()
+        g.note_engagement(warm=True)                                             # 越聊越暖，也不算正事
+    assert g.npc_task_detail(anna, 20)["wind_down"] and not g.chat_idle(g.CHAT_HARD_STOP)
+    for i in range(g.CHAT_HARD_STOP - g.CHAT_WIND_DOWN):
+        g.conversation_turn()
+    assert g.chat_idle(g.CHAT_HARD_STOP)                                         # 对方没收住，代码兜底
+    g.note_engagement()                                                          # 真有进展就重新计数
+    assert g.idle_turns == 0

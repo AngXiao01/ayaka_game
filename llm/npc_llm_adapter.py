@@ -448,6 +448,8 @@ class NPCLLMAdapter:
             ctx.appraisal, used = appraise(self.small_backend, self.small_params, p, ctx, state, player_text, player_intent, meta,
                                            self.tracer, min(1, self.repair_attempts), persona)
             extra_tokens += used
+        if ctx.task.get("wind_down") and player_text is not None:           # 没有正事的闲聊聊够了：代码替她决定收尾，怎么道别由她自己说
+            ctx.appraisal = {**(ctx.appraisal or {}), "wants_to_end": True}
         dropped: list[str] = []
         msgs = build_messages(self.system(p, ctx.player_name, registry, skill_index), ctx, player_text,
                               player_intent, skills, flags, self.budget_tokens, details, dropped)

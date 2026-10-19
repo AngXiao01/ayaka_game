@@ -392,7 +392,7 @@ class DialogueSession:
         self.npc.apply_reply(r)
         g.adjust_tension(r.tension_delta)
         if r.affinity_delta > 0 or r.trust_delta > 0:
-            g.note_engagement()
+            g.note_engagement(warm=True)
         # 玩家用明确的动作满足了条件：代码直接判定（和「提议」一样不交给模型揣测），其余的上报照常过审核
         newly = g.apply_signals(forced, forced=True, said=r.speech) if forced else []
         if forced:
@@ -1028,6 +1028,10 @@ class DialogueSession:
             if not self.event and g.where(self.npc.p) != g.location:
                 st.end = DialogueEndReason.NPC_LEFT
                 return
+        if g.chat_idle(g.CHAT_HARD_STOP):               # 闲聊没完没了，对方也没收住：到点收束
+            self._log("stall", turns_since_progress=g.turns_since_progress, idle_turns=g.idle_turns, reason="chat_idle")
+            st.end = DialogueEndReason.STALLED
+            return
         if g.stalled(self.h.stall_limit):
             self._log("stall", turns_since_progress=g.turns_since_progress, limit=self.h.stall_limit)
             st.end = DialogueEndReason.STALLED

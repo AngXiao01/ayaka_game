@@ -167,6 +167,8 @@ DEFAULT_CLOCK = {"phase_starts": [360, 660, 1020, 1170], "minutes_per_turn": 2, 
 
 
 class GodEnv:
+    CHAT_WIND_DOWN = 8      # 没有任何正事（待达成信号）的闲聊，聊到第几轮开始让对方自然收尾
+    CHAT_HARD_STOP = 11     # 对方没收住的话，代码到这一轮强制收束
     def __init__(self, quest: QuestDef, phases: list[str], start: dict, turns_per_phase: int = 6,
                  state: Optional[dict] = None, clock: Optional[dict] = None):
         self.quest = quest
@@ -476,7 +478,7 @@ class GodEnv:
     def begin_conversation(self, npc: str, event: Optional[str] = None) -> None:
         self.session_count += 1
         self.met[npc] = self.met.get(npc, 0) + 1
-        self.conv = {"npc": npc, "event": event, "turns": 0, "turns_since_progress": 0}
+        self.conv = {"npc": npc, "event": event, "turns": 0, "turns_since_progress": 0, "idle_turns": 0}
         if event and event not in self.events_done:
             self.events_done.append(event)
 
@@ -490,6 +492,7 @@ class GodEnv:
         if self.conv:
             self.conv["turns"] += 1
             self.conv["turns_since_progress"] += 1
+            self.conv["idle_turns"] = self.conv.get("idle_turns", 0) + 1
         return bool(spend_time and self.pass_time(self.minutes_per_turn))
 
     @property
@@ -500,10 +503,21 @@ class GodEnv:
     def turns_since_progress(self) -> int:
         return self.conv["turns_since_progress"] if self.conv else 0
 
-    def note_engagement(self) -> None:
-        """有进展或关系升温都算对话有意义，停滞计数清零。"""
+    def note_engagement(self, warm: bool = False) -> None:
+        """有进展或关系升温都算对话有意义，停滞计数清零。warm=True 只是关系升温：不算正事，闲聊计数 idle_turns 不清零
+        （不然两个人客客气气地越聊越暖，永远聊不完）。"""
         if self.conv:
             self.conv["turns_since_progress"] = 0
+            if not warm:
+                self.conv["idle_turns"] = 0
+
+    @property
+    def idle_turns(self) -> int:
+        return (self.conv or {}).get("idle_turns", 0)
+
+    def chat_idle(self, limit: int) -> bool:
+        """这次谈话里既没有待达成的正事、也不是私人事件，却已经闲聊了 limit 轮。"""
+        return bool(self.conv) and not self.conv.get("event") and self.idle_turns >= limit and not self.pending_signals()
 
     def stalled(self, limit: int) -> bool:
         return limit > 0 and self.turns_since_progress >= limit
@@ -953,6 +967,7 @@ class GodEnv:
             "npc_stance": ev.stance if ev else self.stance_of(persona),
             "event": {"title": ev.title, "premise": ev.premise} if ev else None,
             "info_goals": [d["desc"] for d in pending],
+            "wind_down": self.chat_idle(self.CHAT_WIND_DOWN),            # 闲聊聊够了：对方找个自然的理由收尾
             "locked_info": self._locked_lines(locked),
             "locked_evidence": [{"id": s.id, "groups": s.evidence, "why": (s.lock_hint or why)}      # 锁住的事的“说出口”判据，给确定性检查用
                                 for s, why in self._conv_signals("locked", check_turns=False) if s.evidence],
