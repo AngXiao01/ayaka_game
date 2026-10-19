@@ -47,6 +47,7 @@ class Personality:
     opinions: dict[str, str] = field(default_factory=dict)     # 话题 -> 她自己的看法（让聊天有态度）
     anecdotes: list[str] = field(default_factory=list)         # 可以随口讲的小事、往事（让聊天有细节）
     days: dict[str, str] = field(default_factory=dict)         # 第几天 -> 今天的近况与心情（让聊天有「当下」）
+    background_notes: list[str] = field(default_factory=list)  # 世界 / 茶会的背景见闻，由浅入深排好；聊天里隔几句顺口带半句，别一次讲完
     curiosities: list[str] = field(default_factory=list)       # 想问对方的事（让聊天是双向的）
     knows_clues: list[str] = field(default_factory=list)       # 这个人一开始就知道的线索（别人拿这些给他看，他不会意外；也不会出现在「出示线索」菜单里）
     addressed_as: list[str] = field(default_factory=list)      # 玩家（一个有礼貌的外来旅行者）该怎么称呼他 / 她，选项台词只许用这些

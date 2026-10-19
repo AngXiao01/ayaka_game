@@ -26,6 +26,7 @@ class Explorer:
         self.out = out
         self.hints = hints
         self._shown_leads: Optional[tuple] = None
+        self._shown_scene: Optional[tuple] = None
 
     # ------------------------------------------------------------ 查询
 
@@ -258,8 +259,13 @@ class Explorer:
 
     def panel(self) -> str:
         g, w = self.god, self.world
-        lines = ["", "─" * 40, g.status_line(), "",
-                 w.describe(g.location, g.phase, g.tension)]
+        lines = ["", "─" * 40, g.status_line(), ""]
+        scene = (g.location, g.phase)
+        if scene != self._shown_scene:               # 地点的描写只在到了新地方 / 换了时段时写一遍，别每次回到菜单都重念
+            self._shown_scene = scene
+            lines.append(w.describe(g.location, g.phase, g.tension))
+        else:
+            lines.append(f"【{w.name(g.location)}】")
         people = [f"{self.personas[n].name}（{self.personas[n].brief}）" for n in self.npcs_here() if n not in self.party]
         lines.append("这里的人：" + ("；".join(people) if people else "没有能说上话的人"))
         if self.party:

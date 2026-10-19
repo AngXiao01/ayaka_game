@@ -39,7 +39,7 @@ SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地�
 
 ACT_TAG_SYSTEM = """你是台词标注员。下面每句话是玩家对{npc}可能说的，你只判断：这句话**本身**是不是就在做「可以做的事」里的某一件。
 
-- 只有话本身明确做了那件事才算：告别的话（说了要走、先告辞）算「告辞」；邀对方此刻一起去某处算「邀请」；问出了那个关键问题算对应的「问题」；把查到的事告诉对方算「汇报」；明确提出处置办法算「提议」。
+- 只有话本身明确做了那件事才算：告别的话（话里明说了要走、先告辞、改天再聊；只是道谢、客套、关心、夸赞而没说要走的，不算）算「告辞」；邀对方此刻一起去某处算「邀请」；问出了那个关键问题算对应的「问题」；把查到的事告诉对方算「汇报」；明确提出处置办法算「提议」。
 - 只是聊天、追问细节、玩笑、顺口一提「以后」，都不算，填 none。拿不准就填 none。
 - 一句话最多对应一件事；一件事最多只给一句话。
 
@@ -126,4 +126,10 @@ class PlayerOptionLLMAdapter:
             tags = call_json(self.small_backend, req, lambda o: validate_act_tags(o, len(lines), ids), self.tracer, 1)
         except LLMError:
             return lines
-        return [{**o, "act": tags.get(i, "")} for i, o in enumerate(lines)]
+        out = []
+        for i, o in enumerate(lines):
+            act = tags.get(i, "")
+            if act == "leave" and o.get("intent") != "告别":     # 写台词的那一步自己都没说这是告别：标注员认错了，不能让一句道谢变成“起身走人”
+                act = ""
+            out.append({**o, "act": act})
+        return out

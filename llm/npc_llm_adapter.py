@@ -195,6 +195,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     chat = not focus and not pend
     if (opening or ctx.turn == 1) and t.get("today") and not focus:
         parts.append(f"## 你今天\n{t['today']}")
+    if chat and t.get("background_note") and ctx.turn % 3 == 1 and not opening:
+        parts.append("## 可以顺口带一句的背景（只在话头合适时带半句，不展开、不科普，说完马上回到对方的话题；"
+                     f"对方没接话就不要再提）\n{t['background_note']}")
     if chat and t.get("curiosity") and ctx.turn % 3 == 2:
         parts.append(f"## 想问问对方（找个自然的时机问一句）\n{t['curiosity']}")
     recent = [h["reply"].get("action") for h in ctx.history if h["speaker"] == "npc" and h.get("reply")][-4:]

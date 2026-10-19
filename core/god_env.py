@@ -957,6 +957,8 @@ class GodEnv:
             "lies_told": [{"said": t["said"], "truth": t["truth"]} for t in self.lies_told(npc)],
             "confrontation": (self.conv or {}).get("confrontation"),
             "today": persona.days.get(str(self.day), ""),
+            "background_note": (persona.background_notes[self.total_turns // 3]      # 谈过一轮往后走一步，说完就不再有
+                                if self.total_turns // 3 < len(persona.background_notes) else ""),
             "curiosity": (persona.curiosities[(self.session_count + self.turns_in_stage) % len(persona.curiosities)]
                           if persona.curiosities else ""),
             "director_note": next((f"这次可以找个自然的时机，主动提起与「{d['desc']}」有关的事，不要硬塞。"
