@@ -153,6 +153,8 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     scene = f"{w['time_label']}，现在 {w.get('clock', '')}，{w.get('daylight', '')}。{sc['name']}。{sc['atmosphere']}"
     if opening:                                    # 场景全文只在开场给，之后对话里有
         scene += f"\n{sc['desc']}\n可以自然提及的细节：{'、'.join(sc['notable_elements'])}"
+    if w.get("milestone"):                        # 离茶会还有多久是代码算的，只许照这个说，别自己数天数
+        scene += f"\n{w['milestone']}。说到茶会的时间只按这句，不要说错成「明天」「只剩三天」。"
     parts = ["# 当前情境（只列和这一轮有关的）", f"## 时间与场景\n{scene}"]
     if sc.get("layout"):                           # 这里的物理格局：谁说到门窗、位置、能不能进出，都以此为准，不许自己想象
         parts.append("## 这里的格局（你很熟悉，说到时以此为准；没写的细节你不知道）\n" + _bullets(sc["layout"]))
@@ -252,8 +254,13 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         parts.append(f"## 本轮适用的技能：{s.name}\n{s.body}")
     inv = t.get("invite")
     if inv:                                        # 同行答不答应是代码判定的，这里只让模型照着说
+        if inv.get("activity"):
+            parts.append(f"## 对方邀你{inv['label']}\n" + (
+                "你答应了。用你的语气爽快地答应下来，说一两句当下的感受，不要提前描写过程（过程会在你答应之后另行展开）。" if inv["accept"]
+                else f"这次你婉拒了：{inv['reason']}。用你的语气说，别生硬，可以约下次。"))
         dest = f"（对方想去{inv['dest']}）" if inv.get("dest") else ""
-        parts.append(f"## 对方邀你一起出去{dest}\n" + (
+        if not inv.get("activity"):
+            parts.append(f"## 对方邀你一起出去{dest}\n" + (
             "你答应了。用你的语气答应下来，可以说说想去哪、要注意些什么。" if inv["accept"]
             else f"这次你婉拒了：{inv['reason']}。用你的语气说，别生硬，可以约下次。"))
     if t.get("believe"):

@@ -18,6 +18,7 @@ from core.context import TurnContext
 from core.god_env import EventDef, GodEnv
 from core import judge
 from core.beats import pick_beat
+from models.memory import MemoryItem
 from models.retrieval import bigram_jaccard
 from core.dice import roll, tag
 from core.guard import inspect_player_input
@@ -267,6 +268,14 @@ class DialogueSession:
             elif self.npc.p.outing and not (g.conv or {}).get("invite_declined"):
                 acts.append(("invite", PlayerOption(f"🚶 邀{self.npc.name}一起走走", "邀请", kind="invite"),
                              f"邀{self.npc.name}一起出去走走", "🚶 邀请同行"))
+            for a in (self.npc.p.outing or {}).get("activities", []):
+                if (g.conv or {}).get("declined_act:" + a["id"]):
+                    continue
+                gate = "" if self.npc.relationship.affinity >= a.get("min_affinity", 0) else f"（好感 {a['min_affinity']}+）"
+                acts.append((f"activity:{a['id']}",
+                             PlayerOption(a["button"].format(npc=self.npc.name) + gate, "邀请", kind="invite",
+                                          meta={"activity": a["id"]}),
+                             f"邀{self.npc.name}{a['label']}", "🤝 " + a["label"]))
         acts.append(("leave", PlayerOption("🚶 接着走" if together else "🚪 离开", "告别", kind="leave"),
                      "结束这次谈话，离开" if not together else "先不聊了，接着赶路", "🚪 告辞" if not together else "🚶 接着走"))
         return acts
@@ -488,7 +497,7 @@ class DialogueSession:
         rel = self.npc.relationship
         last = self.npc.handoff().get("minute")
         met = g.met.get(p.id, 1)
-        tag = "初次见面" if last is None or met <= 1 else f"第 {met} 次见面 · {g.ago_short(last)}"
+        tag = (("久别重逢" if p.old_friend else "初次见面") if last is None or met <= 1 else f"第 {met} 次见面 · {g.ago_short(last)}")
         self.out(f"\n—— 与{p.name}交谈 ——  {p.brief}  （{tag}）")
         if self.event:
             self.out(f"\n✨【{self.event.title}】\n{self.event.premise}")
@@ -669,7 +678,8 @@ class DialogueSession:
             st.text = action.text
 
     def _act_invite(self, st: TurnState) -> None:
-        st.text, st.intent = (st.action.text if st.action.meta.get("line") else "难得有空，要不要和我一起出去走走？"), "邀请"
+        act = self.god.physical.activity(st.nid, st.action.meta["activity"]) if st.action.meta.get("activity") and self.god.physical else None
+        st.text, st.intent = (st.action.text if st.action.meta.get("line") else act["line"] if act else "难得有空，要不要和我一起出去走走？"), "邀请"
 
     def _act_dismiss(self, st: TurnState) -> None:
         st.text, st.intent = (st.action.text if st.action.meta.get("line")
@@ -745,11 +755,34 @@ class DialogueSession:
         if (phys is not None and not self.event and not guard.suspicious and nid not in phys.party and self.npc.p.outing
                 and (action.kind == "invite" or (action.kind == "say" and asked_out))):
             # 同行答不答应由代码按好感和对方此刻有没有空判定，模型只负责用自己的口吻说出来
-            ok, why = phys.can_join(nid, self.npc.relationship.affinity)
-            dest_id, dest = self._place_name(guard.text)
-            invite = {"accept": ok, "reason": why, "dest": dest}
+            if action.meta.get("activity"):
+                aid = action.meta["activity"]
+                ok, why = phys.can_do(nid, aid, self.npc.relationship.affinity)
+                dest_id, dest = None, ""
+                invite = {"accept": ok, "reason": why, "dest": "", "activity": aid, "label": phys.activity(nid, aid)["label"]}
+            else:
+                ok, why = phys.can_join(nid, self.npc.relationship.affinity)
+                dest_id, dest = self._place_name(guard.text)
+                invite = {"accept": ok, "reason": why, "dest": dest}
             self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
         st.invite = invite
+
+    def _do_activity(self, inv: dict) -> None:
+        """答应了一起做某件事：花时间、加一点交情、记进日志和 NPC 的记忆；被婉拒就这次谈话不再摆出那个按钮。"""
+        g, phys, nid = self.god, self.god.physical, self.npc.p.id
+        if not inv["accept"]:
+            g.conv["declined_act:" + inv["activity"]] = True
+            self.out(f"    （{self.npc.name}这次没有答应{inv['label']}。）")
+            return
+        a = phys.activity(nid, inv["activity"])
+        g.flags.append(f"did:{a['id']}:{g.day}")
+        self.out("\n" + a["scene"])
+        self.npc.relationship.apply(a.get("affinity", 0), a.get("trust", 0))
+        self.out(f"    · 好感 {a.get('affinity', 0):+d}→{self.npc.relationship.affinity} 信任 {a.get('trust', 0):+d}→{self.npc.relationship.trust}")
+        g.pass_time(a.get("minutes", 30))
+        g.journal.append(f"{g.time_label()}　和{self.npc.name}{a['label']}")
+        self.npc.memory.add(MemoryItem(text=f"（{g.time_label()}）{a.get('tell', a['label'])}", kind="event", importance=4,
+                                       world_time=g.total_turns))
 
     def _n_social_effects(self, st: TurnState) -> None:
         """威胁、掷骰信不信、派人去查玩家说出的推测。"""
@@ -923,7 +956,9 @@ class DialogueSession:
             g.conv.pop("forced", None)
             g.conv.pop("dismiss", None)
             inv = g.conv.pop("invite", None)
-            if inv and inv["accept"] and phys is not None:
+            if inv and inv.get("activity"):
+                self._do_activity(inv)
+            elif inv and inv["accept"] and phys is not None:
                 phys.join(nid, inv["dest"])
                 self.out(f"    🚶 {self.npc.name}和你同行了" + (f"（说好去{inv['dest']}）" if inv["dest"] else "")
                          + "。之后走到哪儿，都可以直接和对方说话。")

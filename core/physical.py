@@ -110,6 +110,24 @@ class PhysicalWorld:
             return False, o.get("busy") or "这会儿有事走不开"
         return True, ""
 
+    def activity(self, npc: str, act_id: str) -> Optional[dict]:
+        return next((a for a in (getattr(self.personas[npc], "outing", None) or {}).get("activities", []) if a["id"] == act_id), None)
+
+    def can_do(self, npc: str, act_id: str, affinity: int) -> tuple[bool, str]:
+        """玩家邀 npc 一起做一件事（切磋剑术、月下散步……），答不答应：好感和时段由代码判定，模型只负责说。"""
+        g, a = self.god, self.activity(npc, act_id)
+        if a is None:
+            return False, "不太合适"
+        if self.where(npc) != g.location:
+            return False, "你不在这里"
+        if affinity < a.get("min_affinity", 0):
+            return False, a.get("decline_low") or "还不够熟，不方便"
+        if a.get("phases") and g.phase not in a["phases"]:
+            return False, a.get("busy") or "这会儿不合适"
+        if f"did:{act_id}:{g.day}" in g.flags:
+            return False, "今天已经一起做过了，想留到改天"
+        return True, ""
+
     def join(self, npc: str, dest: str = "") -> None:
         g, o = self.god, getattr(self.personas[npc], "outing", None) or {}
         if npc not in self.party:

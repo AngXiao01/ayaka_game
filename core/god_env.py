@@ -130,6 +130,7 @@ class QuestDef:
     actions: dict = field(default_factory=dict)               # 自由行动的动词表与发现（core/actions.py）
     outcomes: list[dict] = field(default_factory=list)
     secrets: list[dict] = field(default_factory=list)         # 不许谁说漏的案情事实：{id, terms, known_by, unlocked_by_clues, unlocked_by_signals}
+    milestone: dict = field(default_factory=dict)             # 玩家和 NPC 都要知道还有多久的那个时刻：{label, day, phase}（比如茶会开席）
     fragile: dict = field(default_factory=dict)               # 会被毁掉的证据：{clue: {flag, text}}        # 结局由状态拼出来：满足条件就加一段
 
     @classmethod
@@ -317,6 +318,22 @@ class GodEnv:
     def slots_left(self) -> int:
         dl = self.quest.deadline
         return self._index(dl["day"], dl["phase"]) - self._index(self.day, self.phase_idx)
+
+    def milestone_text(self) -> str:
+        """距那个时刻（茶会开席）还有多久，用人话写：这是代码算的事实，NPC 和选项只许照这个说，不许自己数「还有三天」。"""
+        ms = self.quest.milestone
+        if not ms:
+            return ""
+        label = ms["label"]
+        target = self.phase_start(ms["day"], self.phases.index(ms["phase"]))
+        rem = target - self.minute
+        if rem <= 0:
+            return f"{label}已经开始了" + ("，也已经散席" if self.deadline_reached() else "")
+        d, h, m = rem // 1440, rem % 1440 // 60, rem % 60
+        span = "".join([f"{d}天" if d else "", f"{h}个钟头" if h else "", f"{m}分钟" if m and not d else ""]) or "不到一分钟"
+        ahead = ms["day"] - self.day
+        wd = {0: "今天", 1: "明天", 2: "后天"}.get(ahead, f"{ahead}天后")
+        return f"距{label}还有约{span}（{wd}{ms['phase']}，第{ms['day']}天 {self.clock_label(target)}；现在是第{self.day}天）"
 
     @property
     def slot_index(self) -> int:
@@ -912,6 +929,8 @@ class GodEnv:
             opening = ev.premise
         elif in_party:
             opening = "和你一路同行，到了这里，转过头来跟你说话"
+        elif met <= 1 and getattr(persona, "old_friend", False):
+            opening = "多年的老朋友来看你了，好久不见（不是第一次见面，不必寒暄得像陌生人）"
         elif met <= 1:
             opening = "第一次来见你"
         else:
@@ -979,6 +998,7 @@ class GodEnv:
             "day_phase": self.phase,
             "deadline_label": self.quest.deadline["label"],
             "deadline_left": self.slots_left(),
+            "milestone": self.milestone_text(),
             "stage_no": [a.id for a in self.quest.acts].index(self.act_id) + 1,
             "stage_total": len(self.quest.acts),
             "tension": self.tension,
@@ -989,8 +1009,8 @@ class GodEnv:
         }
 
     def status_line(self) -> str:
-        due = (f"距{self.quest.deadline['label']}还有 {max(0, self.slots_left())} 个时段" if self.slots_left() > 0
-               else f"{self.quest.deadline['label']}已经过去了")
+        due = self.milestone_text() or (f"距{self.quest.deadline['label']}还有 {max(0, self.slots_left())} 个时段"
+                                        if self.slots_left() > 0 else f"{self.quest.deadline['label']}已经过去了")
         return (f"{self.time_label()} {self.clock_label()} ｜ {due} ｜ "
                 f"线索 {len(self.clues)}/{len(self.quest.clues)} ｜ 【{self.act.title}】{self.act.objective}")
 

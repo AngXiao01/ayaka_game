@@ -81,6 +81,7 @@ def test_the_party_opens_with_one_guest_and_the_other_arrives_half_an_hour_later
 
 def test_the_five_tells_are_only_visible_once_the_party_is_on(tmp_path):
     eng, _ = engine(tmp_path)
+    eng.god.location = "kamisato_estate"                                        # 开局在离岛，茶室在屋敷
     ex = eng.explorer
     desc, got = ex.examine("o_tea_entrance")
     assert not got and "还没有人" in desc                                         # 茶会前：只是一个半人高的入口
@@ -203,3 +204,41 @@ def test_a_whole_party_scene_plays_through_the_engine_without_error(tmp_path):
     eng.run()
     assert {"c_tell_entrance", "c_tell_sweets"} <= set(eng.god.clues)
     assert any("茶室入口只有半人高" in line for line in out)
+
+
+def test_game_starts_at_ritou_with_affinity_35_and_a_countdown(tmp_path):
+    eng, _ = engine(tmp_path)
+    g = eng.god
+    assert g.location == "ritou" and eng.npcs["ayaka"].relationship.affinity == 35
+    assert g.milestone_text().startswith("距雪见茶会开席还有约2天4个钟头（后天午后")     # 07:00 → 第 3 天 11:00
+    g.minute = g.phase_start(2, 1) + 5
+    assert "明天午后" in g.milestone_text()
+    g.minute = g.phase_start(3, 1) + 1
+    assert g.milestone_text() == "雪见茶会开席已经开始了"
+
+
+def test_activities_need_affinity_and_the_right_phase(tmp_path):
+    eng, _ = engine(tmp_path, world=party_world(day=1, phase_idx=1, flags=[]))
+    g, phys = eng.god, eng.god.physical
+    g.location = "kamisato_estate"
+    assert phys.can_do("ayaka", "sword", 35)[0] is False and "不好意思" in phys.can_do("ayaka", "sword", 35)[1]
+    assert phys.can_do("ayaka", "sword", 45) == (True, "")
+    assert phys.can_do("ayaka", "moonwalk", 80)[0] is False                      # 午后不是夜晚
+    g.minute = g.phase_start(1, 3) + 5
+    assert phys.can_do("ayaka", "moonwalk", 54)[0] is False and phys.can_do("ayaka", "moonwalk", 55)[0] is True
+    g.flags.append("did:moonwalk:1")
+    assert phys.can_do("ayaka", "moonwalk", 99)[0] is False                      # 同一天只一次
+
+
+def test_inviting_ayaka_to_spar_runs_the_scene_and_raises_affinity(tmp_path):
+    world = party_world(day=1, phase_idx=1, flags=[], location="kamisato_estate", minute=None)
+    world.pop("minute")
+    eng, out = engine(tmp_path, world=world,
+                      script=[{"kind": "talk", "npc": "ayaka"}, {"kind": "invite", "activity": "sword"}, {"kind": "leave"}, "q"])
+    eng.npcs["ayaka"].relationship.affinity = 50
+    before = eng.god.minute
+    eng.run()
+    text = "\\n".join(out)
+    assert "白砂园里，你们各取了一柄练习用的木刀" in text
+    assert "did:sword:1" in eng.god.flags and eng.god.minute >= before + 60
+    assert eng.npcs["ayaka"].relationship.affinity >= 53
