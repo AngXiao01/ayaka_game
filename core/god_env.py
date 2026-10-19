@@ -120,10 +120,10 @@ class QuestDef:
     how_to_play: list[str] = field(default_factory=list)
     glossary: dict[str, str] = field(default_factory=dict)    # 名词速查
     spoiler_terms: list[str] = field(default_factory=list)    # 玩家没听说过就不该出现在玩家台词选项里的词
-    public_premise: str = ""                                  # 城里人都知道的版本（不知道绫华托人查访的 NPC 用这个）
+    public_premise: str = ""                                  # 城里人都知道的版本（不知道主线内情的 NPC 用这个）
     after_hint: str = ""                                      # 结局之后继续玩时的一句提示
     hypotheses: list[dict] = field(default_factory=list)      # 玩家直接说出的推测 → 谁会派人去查、查到什么
-    belief: dict = field(default_factory=dict)                # 关系够深时，委托人直接信玩家说出的真相（跳过查证）
+    belief: dict = field(default_factory=dict)                # 关系够深时，主要 NPC（companion）直接信玩家说出的真相（跳过查证）
     unverified_note: str = ""                                 # 凭信任拍板、没查实就处置时，结局前加的一段
     late_note: str = ""                                       # 截止时间过了才解决时，结局前面加的一段
     agendas: list[dict] = field(default_factory=list)         # NPC 自己的打算（core/agendas.py）
@@ -638,7 +638,7 @@ class GodEnv:
 
     def belief_chance(self, npc: str, text: str, affinity: int, trust: int, extra: set = frozenset(),
                       specific: int = 0) -> tuple[float, list[str]]:
-        """委托人和玩家关系够深、玩家说出了「是谁做的」：她有多大可能直接信（跳过查证进入处置，留下「没查实」的标记）。
+        """主要 NPC 和玩家关系够深、玩家说出了真相（谁做的、怎么回事）：她有多大可能直接信（跳过查证进入处置，留下「没查实」的标记）。
         不是死概率：关系、她手上的证据、说得多具体、上次被婉拒后有没有拿出新东西，都会改变成功率。
         返回 (成功率, 各项加减的说明)；0 表示没有这个机会。"""
         b = self.quest.belief
@@ -732,8 +732,8 @@ class GodEnv:
     @staticmethod
     def _locked_lines(locked: list) -> list[str]:
         """给 NPC 看的“你知道但现在不说”清单。只能给话题（关键问题的标签）或作者写的 lock_hint；
-        绝不能给信号的 desc——那是上帝视角的触发描述（比如“对方向绫华说清了真相：……”），里面可能就是真相本身，
-        给了等于把答案递给了本不该知道的人（以前绫华整个第二幕的提示词里都带着狐狸和神龛）。"""
+        绝不能给信号的 desc——那是上帝视角的触发描述（比如“对方向绫华说清了真相：……其实是一只狸猫变的”），里面可能就是真相本身，
+        给了等于把答案递给了本不该知道的人（以前绫华整个第二幕的提示词里都带着完整真相）。"""
         out = []
         for d, why in locked:
             if d.get("topic"):
@@ -935,7 +935,7 @@ class GodEnv:
             "player_clue_count": len(self.clues),
             "achieved_signals": [{"id": s.id, "desc": s.desc,
                                   # 记“她当时实际说的话”，不是当初给她的指令（reveal 是“把事情说清楚……最后郑重地问对方愿不愿意”这类命令，
-                                  # 事后塞进“已经说过的事实”，小模型会当成指令再执行一遍：问报酬也回一遍委托）
+                                  # 事后塞进“已经说过的事实”，小模型会当成指令再执行一遍：问个别的也把那段话再说一遍）
                                   "fact": f"你当时说的是：「{self.told[s.id]}」" if self.told.get(s.id) else s.desc,
                                   "audit_fact": s.reveal or s.desc}                # 核对员比对用的作者原文：NPC 自己口误过的话不能当标准
                                  for s in self.quest.signals
@@ -967,7 +967,7 @@ class GodEnv:
         task = self.npc_task_detail(persona, trust)
         return {
             "quest_title": self.quest.title,
-            # 绫华托人暗中查访这件事，只有绫华自己和被告知过（看过线索）的人知道；其余的人只知道城里的传言
+            # 主线的前提只有主要 NPC 自己和被告知过（看过线索）的人知道；其余的人只知道城里的传言
             "premise": self.quest.premise if persona.role == "companion" or self.known.get(persona.id)
                        else (self.quest.public_premise or self.quest.premise),
             "era": self.quest.era,

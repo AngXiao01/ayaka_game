@@ -465,7 +465,7 @@ class DialogueSession:
                 if self.cfg.debug:
                     self.out(f"    📨 {self.npc.name}托人给{phys.name(to)}带话：{t['text']}")
         if (r.go_to and r.wants_to_end and not self.event and nid not in phys.party and self.npc.p.outing
-                and not getattr(self, "_ended_by_player", False) and self.npc.p.role != "companion"):   # 是玩家离开的、或她是委托人（留在屋敷）：不去
+                and not getattr(self, "_ended_by_player", False) and self.npc.p.role != "companion"):   # 是玩家离开的、或她是主要 NPC（companion，留在原地）：不去
             dest, name = self._place_name(r.go_to)
             if dest and dest != phys.where(nid):
                 phys.set_plan(nid, dest, self.god.next_phase_start(), "go", reason=r.go_to)

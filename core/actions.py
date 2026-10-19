@@ -117,16 +117,17 @@ class ActionResolver:
 
     def _report_authority(self, v: dict, target: Optional[str], text: str) -> tuple[str, list[str]]:
         g = self.god
-        if "reported_tenryou" in g.flags:
-            return "你已经去过天领奉行所了，他们说会处理。", []
+        flag = self.spec.get("report_flag", "reported")
+        if flag in g.flags:
+            return self.spec.get("report_already", "你已经报过了，对方说会处理。"), []
         g.pass_time(v["minutes"])
         needs = set(self.spec.get("report_needs_any", []))
         if needs and not needs & set(g.clues):
             return self.spec["report_refused"], []
-        self._set("reported_tenryou")
-        if "ayaka" in self.ex.party:
-            self._set("reported_tenryou_ayaka")
-        g.journal.append(f"{g.time_label()}　去天领奉行所报了案")
+        self._set(flag)
+        if g.quest.companion in self.ex.party:
+            self._set(f"{flag}_{g.quest.companion}")
+        g.journal.append(f"{g.time_label()}　{self.spec.get('report_journal', '去报了案')}")
         return self.spec["report_text"], []
 
     def _warn(self, v: dict, target: str, text: str) -> tuple[str, list[str]]:

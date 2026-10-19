@@ -170,7 +170,7 @@ class NPCAgent:
                 dropped.append({"fact": fact, "reason": "这句话里并没有说出这件事"})
                 continue
             places = [n for n in self._place_names() if n in fact] if f["about"] == "world" else []
-            if places:       # 关于世界的即兴设定一旦说到具体地点，就和作者写的格局 / 气氛抢话（“花见坂清晨最热闹” vs 设定里的“街上还不算拥挤”）：不存
+            if places:       # 关于世界的即兴设定一旦说到具体地点，就和作者写的格局 / 气氛抢话（“离岛清晨最热闹” vs 设定里的“街上还不算拥挤”）：不存
                 dropped.append({"fact": fact, "reason": f"说到了地点（{'、'.join(places)}），地点的样子由作者的世界设定说了算，不许即兴"})
                 continue
             store = self.world_canon if f["about"] == "world" and self.world_canon else self.memory
@@ -261,7 +261,7 @@ class NPCAgent:
               flags: list[str], allow_tools: bool) -> NPCReply:
         ctx.tics = self.style_tics(ctx) if text is not None else []
         blocked = ctx.task.get("blocked_terms") or {}
-        # 名字本身就是他此刻“还不该知道”的词的人（比如守夜狐），不告诉记录员：他不认识，也不会替对方带话给这个人
+        # 名字本身就是他此刻“还不该知道”的词的人（比如老狸猫），不告诉记录员：他不认识，也不会替对方带话给这个人
         names = [] if self.fs is None else [q.name for n, q in self.fs.personas.items()
                                             if n != self.p.id and not any(t == q.name or t in q.name for t in blocked)]
         places = [] if self.fs is None else [self.fs.world.name(l) for l in self.fs.world.locations]

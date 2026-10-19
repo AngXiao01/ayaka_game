@@ -1,6 +1,6 @@
 # 雪见茶会与多出来的客人
 
-> 用 `STORY=duval` 启动（`python3 main.py` 或 `python3 web/server.py`），存档默认叫 `duval`。内容在 `stories/duval/`，和默认的 `content/` 互不影响。
+> 内容在 `content/`，`python3 main.py` 或 `python3 web/server.py` 直接启动。
 > 下面「一到六」是作者写的剧情；最后的「实现说明」是把它放进引擎时做的取舍。
 
 ## 一、人物

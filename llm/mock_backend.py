@@ -132,6 +132,7 @@ class MockBackend:
         if self.misbehave == "overclaim":
             reply["task_signals"] = list(pending)
         if "小时候" in text or "养过" in text:
+            # 第二条 new_facts 是故意编的「案情」，用来验证即兴设定的案情守卫：它对着 tests/fixtures/yuebai 的关键词
             reply.update(speech="小时候我养过一只白猫，叫小雪，总爱趴在茶室的纸拉门边晒太阳。", emotion="欣喜",
                          affinity_delta=1, new_facts=[{"fact": "小时候养过一只叫小雪的白猫，爱趴在茶室纸拉门边晒太阳", "about": "self"},
                                                       {"fact": "茶盏其实是托马藏起来的", "about": "world"}])
@@ -228,7 +229,7 @@ class MockBackend:
                 "new_fact": f"{meta.get('location_name', '这里')}的{thing}收拾得很干净"}
 
     def _compress(self, meta: dict) -> dict:
-        return {"summary": f"较早时双方寒暄并谈了委托相关的事（压缩了 {meta.get('lines', 0)} 句）。"}
+        return {"summary": f"较早时双方寒暄并谈了些正事（压缩了 {meta.get('lines', 0)} 句）。"}
 
     def _player_options(self, meta: dict) -> dict:
         objective = meta.get("objective", "眼下的事")
@@ -262,8 +263,8 @@ class MockBackend:
     def _summary(self, meta: dict) -> dict:
         player = meta.get("player_name", "旅行者")
         return {"summary": f"我与{player}谈了{meta.get('turns', 0)}轮，对方举止得体，值得信赖。",
-                "topics": ["拜访", "委托"], "player_intent": "推进委托", "npc_feeling": "安心",
-                "facts": [f"{player}愿意帮忙调查失窃案", "旅行者其实来自至冬国的皇室"], "importance": 3,
+                "topics": ["拜访", "茶会"], "player_intent": "推进", "npc_feeling": "安心",
+                "facts": [f"{player}愿意帮忙留意茶会上的事", "旅行者其实来自至冬国的皇室"], "importance": 3,
                 "open_threads": self._thread(meta.get("transcript") or ""),
                 "promises": ["约好三天后在雪见茶会上碰面"]}
 

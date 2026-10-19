@@ -237,7 +237,7 @@ LOGIN_PAGE = """<!doctype html><meta charset="utf-8"><meta name="viewport" conte
 min-height:100vh;margin:0}form{background:#fff;padding:28px;border-radius:14px;box-shadow:0 2px 12px #0001;width:min(320px,90vw)}
 input,button{width:100%;box-sizing:border-box;padding:10px;margin-top:10px;font-size:16px;border-radius:8px;border:1px solid #ccc}
 button{background:#5b7fa8;color:#fff;border:0}p{color:#c33}</style>
-<form method="get" action="/"><b>雪见茶会与消失的「初雪」</b><div>请输入邀请码</div>
+<form method="get" action="/"><b>雪见茶会与多出来的客人</b><div>请输入邀请码</div>
 <input name="code" autofocus autocomplete="off"><button>进入</button>{MSG}</form>"""
 
 

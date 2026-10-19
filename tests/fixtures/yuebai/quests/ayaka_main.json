@@ -1349,6 +1349,9 @@
         "text": "阿缘只是去后巷倒了茶渣，又回了店里。没什么特别的。"
       }
     ],
+    "report_flag": "reported_tenryou",
+    "report_already": "你已经去过天领奉行所了，他们说会处理。",
+    "report_journal": "去天领奉行所报了案",
     "report_needs_any": [],
     "report_text": "你去天领奉行所报了案。守门的士兵记下了经过，说会转给鹿野院大人——他听了一定很高兴。",
     "report_refused": "",

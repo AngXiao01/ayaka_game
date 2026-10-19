@@ -214,7 +214,7 @@ def _why(s, q, personas, w, clues, done, flags, acts, locs) -> str:
 # ------------------------------------------------------------ 二、在场
 
 def _routine(p: Any, phase: str) -> str | None:
-    """案发前的日常作息：只看不限幕的那几条（限定某一幕的是接了委托之后才有的安排）。"""
+    """主线展开前的日常作息：只看不限幕的那几条（限定某一幕的是之后才有的安排）。"""
     for slot in p.schedule:
         if phase in slot.get("phases", []) and not slot.get("acts"):
             return slot["location"]

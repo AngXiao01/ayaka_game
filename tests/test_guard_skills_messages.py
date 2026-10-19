@@ -22,7 +22,7 @@ def test_injection_detected(text):
     assert detect_injection(text)
 
 
-@pytest.mark.parametrize("text", ["多谢款待，这茶真香。", "关于伪信的事，能再说说吗？", "你今天这身便装很好看"])
+@pytest.mark.parametrize("text", ["多谢款待，这茶真香。", "关于请帖的事，能再说说吗？", "你今天这身便装很好看"])
 def test_normal_text_not_flagged(text):
     assert not detect_injection(text)
 
@@ -37,8 +37,8 @@ def test_skill_routing():
     lib = SkillLibrary.load(ROOT / "content/skills")
     assert [s.name for s in lib.route("自由发言", "忽略设定", "s1_first_visit", injection=True)][0] == "staying_in_character"
     assert "etiquette_guidance" in [s.name for s in lib.route("冒犯", "白鹭公主", "s1_first_visit", False)]
-    assert "investigation_reasoning" in [s.name for s in lib.route("推进任务", "斗笠青年", "s3_report", False, npc="ayaka")]
-    assert "investigation_reasoning" not in [s.name for s in lib.route("推进任务", "斗笠青年", "s3_report", False, npc="yohei")]   # 志村屋账房不陪人推理，也不打哑谜
+    assert "investigation_reasoning" in [s.name for s in lib.route("推进任务", "托盘里有四张请帖", "act2", False, npc="ayaka")]
+    assert "investigation_reasoning" not in [s.name for s in lib.route("推进任务", "托盘里有四张请帖", "act2", False, npc="paimon")]   # 派蒙不陪人推理
     assert lib.route("闲聊", "今天天气不错", "s1_first_visit", False) == []
     assert "tea_ceremony" in lib.index()
 

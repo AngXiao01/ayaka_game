@@ -123,8 +123,8 @@ def annotate(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnC
 
 AUDIT_SYSTEM = """你是事实核对员。下面是{npc}知道的事实、不知道的事，和{npc}刚说的一句话。只找三类问题，不挑文风、不挑细枝末节：
 
-1. 矛盾：这句话和清单里的某一条明确冲突（位置、数字、钥匙、门窗、谁在场、时间）。必须摘出清单里那一条原文放进 fact。
-2. 编造：说了清单里没有的**案发现场细节或具体数字**（窗台、地面、灰尘、脚印、痕迹、谁进出过、几丈几尺），而这些是{npc}并不知道的。
+1. 矛盾：这句话和清单里的某一条明确冲突（位置、数字、席位、门窗、谁在场、时间）。必须摘出清单里那一条原文放进 fact。
+2. 编造：说了清单里没有的**现场细节或具体数字**（门窗、地面、脚印、痕迹、谁进出过、几丈几尺），而这些是{npc}并不知道的。
 3. 说不通：人够不到、东西不可能在那儿、前后矛盾、时间对不上。claim 必须是这句话里的原话片段。
 
 拿不准、需要自己推断没写明的空间关系的，一律算没问题。清单里没写、但属于{npc}自己的生活和经历的事（自己丢了什么、自己的店和家人），不算编造。
@@ -142,7 +142,7 @@ def _content_chars(text: str) -> set[str]:
     return {c for c in text if "\u4e00" <= c <= "\u9fff" and c not in _FUNCTION_CHARS}
 
 
-SCENE_WORDS = ("窗台", "灰尘", "脚印", "地面", "地板", "痕迹", "门窗", "钥匙", "插销", "丈", "尺", "进出", "墙根", "爪印")
+SCENE_WORDS = ("门槛", "榻榻米", "脚印", "地面", "地板", "痕迹", "门窗", "窗台", "丈", "尺", "进出", "墙根", "爪印")
 
 
 def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "") -> list[str]:
@@ -162,7 +162,7 @@ def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "") -
         if kind.startswith("矛盾"):
             if known is not None and (not fact or coverage(fact, known_text) < 0.6):
                 continue
-            if len(_content_chars(claim) & _content_chars(fact)) < 2:   # 依据和被指控的那句话八竿子打不着（“去花见坂？”vs“茶室钥匙只有两把”）：乱挑刺
+            if len(_content_chars(claim) & _content_chars(fact)) < 2:   # 依据和被指控的那句话八竿子打不着（“去离岛？”vs“茶室入口只有半人高”）：乱挑刺
                 continue
         elif kind.startswith("编造"):
             if not any(w in claim for w in SCENE_WORDS):
