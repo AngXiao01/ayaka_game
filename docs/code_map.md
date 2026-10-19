@@ -65,6 +65,9 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 改了规则后确认没改坏别的 | `pytest` 里的金标准局会重放；有意改变行为后重录：`python3 tools/replay_game.py --make-golden tests/golden/mock_game.jsonl.gz` |
 | 看某个 NPC 此刻会收到什么提示词 / 某个词有没有进他的提示词 | `python3 tools/preview_prompt.py <存档> <npc> [--say …] [--find 词1,词2]`，不调模型 |
 | 把一局原样重放 / 看第 N 步时的世界 | `python3 tools/replay_game.py <文件> [--state-at N]`，原理见 `core/eventlog.py` |
+| 让某个抉择要先知道某条线索才出现在菜单里 | 提议里写 `requires_clues`（`core/god_env.py` 的 `proposals_for`） |
+| 验证“玩家说真话 / 谎话 / 半真半假 / 没法核实”被代码逐条核对，与 NPC 回什么无关 | `tests/test_deaf_liar.py`（玩家完全不看回话，只按脚本说） |
+| 开 / 关一句话里几次判定的并行 | `PARALLEL_JUDGES=1`（默认关；mock 与重放永远不开），原理与实测见 `docs/turn_graph.md` |
 | 加测试 | `tests/`，用 `MockBackend`，不花钱 |
 
 ## 建议的阅读顺序

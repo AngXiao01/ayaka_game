@@ -386,6 +386,7 @@ class GodEnv:
 
     def proposals_for(self, npc: str) -> list[dict]:
         return [p for p in self.quest.proposals if p["npc"] == npc and self.act_id in p.get("acts", [self.act_id])
+                and set(p.get("requires_clues", [])) <= set(self.clues)          # 有的方案要先知道某件事才提得出来
                 and not any(s.group == p.get("group") and s.id in self.achieved for s in self.quest.signals)]
 
     # ------------------------------------------------------------ 证词与说谎

@@ -304,6 +304,15 @@ trace 里记 `decision` 事件（耗时、花费、答案和把握）。
 放进 `<player_input>` 数据区 → 检测注入特征。命中后这一轮不能推进剧情，并注入「保持角色」技能。
 真正的保证是结构性的：剧情推进权不在模型手里，模型被骗了也改不了进度（评测 injector 人设验证）。
 
+### 一轮对话是一张图（`core/turn_graph.py`、`core/dialogue_session.py` 的 `TURN_NODES`）
+以前的 `_turn()` 是一个 287 行的函数；现在是 18 个节点按固定顺序执行，每个节点登记读写的字段、跑完记一条 `node` trace 并放一个崩溃点，
+按动作种类的分派是一张处理器表。内层 ReAct 循环仍是循环，不改成图。三次互不依赖的判定可以预取并行（`PARALLEL_JUDGES=1`，默认关：实测每轮只省 0.3~1 秒）。详见 `docs/turn_graph.md`。
+
+### 事务、崩溃恢复与续跑（`core/uow.py`、`core/journal.py`、`tests/crash_harness.py`）
+一次行动是一个事务：世界存档是唯一的提交点，碰过的记忆文件先备份，崩了重启就回滚，不会出现“记忆领先于世界”。
+回滚之后再带着**行动日志**重新跑一遍：问过的模型 / 判定 / 玩家选择按请求内容命中，直接用当时的答案，其余现问；`RESUME_AFTER_CRASH=0` 关掉。
+验证用崩溃矩阵，全部 158 个场景各崩一次，另有反向对照。详见 `docs/crash_recovery.md`。
+
 ### 预算与降级（`core/budget.py`、`llm/router.py`）
 
 - 整局 `GAME_TOKEN_BUDGET`；剩余低于 `DEGRADE_RATIO` 时降级：选项改静态模板、审核只走规则、
@@ -373,7 +382,12 @@ core/
   world.py                      地图
   agent_loop.py                 有边界的 ReAct 循环（四道闸 + 收紧工具集）
   tools.py                      工具注册表、参数校验、结果缓存
-  dialogue_session.py           一次交谈：选项与动作、时间、离场、截止
+  dialogue_session.py           一次交谈：18 个节点（TURN_NODES）+ 动作处理器表，选项与动作、时间、离场、截止
+  turn_graph.py                 节点 + 条件边的小执行器（只用标准库）：登记读写、每个节点一条 trace 和一个崩溃点
+  prefetch.py                   把互不依赖的几次判定提前一起发出，用时核对参数（默认关，PARALLEL_JUDGES=1）
+  uow.py / crashpoints.py       一次行动是一个事务（写前日志，世界存档是唯一提交点）/ 崩溃注入点
+  journal.py                    行动日志：崩溃回滚后重新跑时，问过的模型 / 判定 / 玩家选择按请求内容命中，不重问
+  claims.py / judge.py / beats.py / guardrails.py / eventlog.py   玩家声明核对 / 便宜判定 / 话题节拍 / 越界与泄漏检查 / 事件溯源
   reviewer.py                   剧情进度的外部校验
   director.py                   导演（GOD 层的模型部分）：视图、规则基线、动作校验与执行
   branch.py                     分支（tree 层的模型部分）：自由说出的方案 → 预设方案
@@ -387,8 +401,9 @@ core/
   npc_agent.py                  NPC：工具、循环入口、兜底、写长期记忆
   player_option_generator.py / player_agent.py / context.py
 engine/
-  game_engine.py                Harness 外壳：组装与存档
-  trace.py                      结构化 trace（span、统计、脱敏）
+  game_engine.py                Harness 外壳：组装、存档（= 事务提交点）、崩溃后恢复
+  trace.py                      结构化 trace（线程安全、span、统计、脱敏）
+  journaled.py / recording.py   把行动日志接到模型 / 判定 / 玩家上 / 录制输入与判定供重放
 llm/
   gemma_client.py               OpenAI 兼容客户端（OpenRouter / 自建 vLLM 上的 Gemma）
   model_picker.py               OpenRouter 上挑能用的最便宜模型（OPENROUTER_MODEL=cheapest）
@@ -404,8 +419,11 @@ llm/
   diagnostics.py                --check
 models/                         retrieval（BM25）/ knowledge（知识库）/ memory / personality / relationship
 evals/                          评测：人设 + 运行器 + 报告
-tools/                          view_trace.py（可视化）/ replay.py（回放）/ pick_model.py（挑最便宜的模型）
-tests/                          pytest（含假 vLLM / 假 OpenRouter HTTP 服务）
+tools/                          view_trace.py（可视化）/ replay.py（回放）/ replay_game.py（整局重放与金标准局）/ preview_prompt.py（不调模型看提示词）/
+                                lint_story.py（剧情内容检查）/ monitor.py / pick_model.py（挑最便宜的模型）
+tests/                          pytest（含假 vLLM / 假 OpenRouter HTTP 服务、金标准局重放、崩溃矩阵 158 个场景、续跑矩阵）
+docs/                           architecture.md（设计决策）/ code_map.md（想改某件事去哪个文件）/ turn_graph.md（一轮对话是一张图）/
+                                crash_recovery.md（事务与崩溃矩阵）/ harness_design.md / reference_projects.md
 ```
 
 ```bash

@@ -137,6 +137,8 @@ def shape(ev):
 def test_parallel_judgments_change_nothing_but_the_wait(tmp_path):
     a, text_a, ev_a, t_serial = play(tmp_path / "serial", False)
     b, text_b, ev_b, t_par = play(tmp_path / "par", True)
+    t_serial = min(t_serial, play(tmp_path / "serial2", False)[3])                 # 墙钟会被机器的忙闲干扰：各取两次里快的
+    t_par = min(t_par, play(tmp_path / "par2", True)[3])
     assert b.god.to_dict() == a.god.to_dict()                                       # 世界状态一样
     assert text_b == text_a                                                         # 玩家看到的一样
     assert shape(ev_b) == shape(ev_a)                                               # 发出的每一次请求、做出的每一个判定都一样
