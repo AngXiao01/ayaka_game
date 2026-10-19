@@ -13,3 +13,6 @@ cloudflared.tgz
 data/saves/p_*
 data/memories/p_*
 data/traces/p_*
+
+# 行动事务的写前日志（崩溃恢复用，core/uow.py）
+data/uow/

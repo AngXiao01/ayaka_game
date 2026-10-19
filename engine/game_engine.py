@@ -35,6 +35,8 @@ from core.reviewer import SignalReviewer
 from core.scene import SceneAgent
 from core.skills import SkillLibrary
 from core.world import World
+from core import crashpoints
+from core.uow import UnitOfWork
 from engine.recording import RecordingDecider, RecordingPlayer
 from engine.trace import Tracer
 from llm.base import LLMBackend
@@ -100,7 +102,15 @@ class GameEngine:
         self.skills = SkillLibrary.load(content / "skills")
         self._validate_content()
 
+        uow_dir = data / "uow" / save_name
+        if new_game:
+            shutil.rmtree(uow_dir, ignore_errors=True)
         state = json.loads(self.save_path.read_text(encoding="utf-8")) if self.save_path.is_file() else {}
+        # 上次行动要是没提交就崩了：先把它碰过的记忆文件还原到行动开始之前，再去加载记忆（见 core/uow.py）
+        self.uow = UnitOfWork(uow_dir, committed_tx=state.get("tx", 0))
+        self.recovery = self.uow.recover()
+        if self.recovery["action"] != "none":
+            self.tracer.log("recovery", **self.recovery)
         self.resumed = bool(state)
         self.god = GodEnv(self.quest, self.world.phases, self.world.start, self.world.turns_per_phase,
                           state.get("world"), clock=self.world.clock())
@@ -126,6 +136,7 @@ class GameEngine:
         reflector = ReflectionLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
         updater = MemoryUpdateLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
         self.world_canon = MemoryStore(mem_dir / "_world_canon.jsonl")     # 共享的即兴世界设定
+        self.world_canon.uow = self.uow
         self.npcs: dict[str, NPCAgent] = {}
         for nid, p in self.personas.items():
             rel = Relationship.from_dict(rels.get(nid, p.initial))
@@ -136,6 +147,7 @@ class GameEngine:
         for a in self.npcs.values():
             a.reflector = reflector
             a.updater = updater
+            a.memory.uow = self.uow
         for nid, a in self.npcs.items():         # 按需翻看的上下文：每个人只看得到自己知道的那部分
             a.fs = ContextFS(nid, self.god, self.world, self.personas, self.lore,
                              lambda k, a=a: [m.text for m in reversed(a.memory.items[-k:])],
@@ -236,15 +248,20 @@ class GameEngine:
                 "stops_at_ending": bool(getattr(self.player, "stops_at_ending", False))}
 
     def save(self) -> None:
-        for a in self.npcs.values():
-            a.memory.flush()                                  # 检索时刷新的“最近取用”随存档一起落盘
-        self.world_canon.flush()
-        self.save_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.save_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"world": self.god.to_dict(),
-                                   "relationships": {nid: a.relationship.to_dict() for nid, a in self.npcs.items()}},
-                                  ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.save_path)
+        """一次行动的提交点：先把检索时刷新的“最近取用”落盘，再原子地写世界存档（里面带事务号）。
+        存档是唯一的提交——崩在它之前，这次行动碰过的记忆文件会在下次启动时回滚（core/uow.py）。"""
+        def persist(tx: int) -> None:
+            for a in self.npcs.values():
+                a.memory.flush()                              # 检索时刷新的“最近取用”随存档一起落盘
+            self.world_canon.flush()
+            crashpoints.hit("save.before_state")
+            self.save_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.save_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"tx": tx, "world": self.god.to_dict(),
+                                       "relationships": {nid: a.relationship.to_dict() for nid, a in self.npcs.items()}},
+                                      ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(self.save_path)
+        self.uow.commit(persist)
 
     def intro(self) -> None:
         self.out(f"\n════ {self.quest.title} ════\n")

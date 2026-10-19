@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from core import crashpoints
 from models.retrieval import BM25, bigram_jaccard
 
 DEDUP_THRESHOLD = 0.6
@@ -50,6 +51,11 @@ class MemoryStore:
                         continue    # 坏行跳过，不让一行脏数据毁掉整个存档
         self._index: Optional[BM25] = None
         self._dirty = False             # 有条目的“最近取用时间”变了，文件里的还是旧的
+        self.uow = None                 # core.uow.UnitOfWork：引擎装配后，每次写文件前先备份，行动没提交就能回滚
+
+    def _touch(self) -> None:
+        if self.uow is not None:
+            self.uow.touch(self.path)
 
     def flush(self) -> None:
         """把检索时刷新的“最近取用”写回文件。每次检索都重写整个文件太浪费，所以攒到会话结束 / 存档时一起写。"""
@@ -57,11 +63,13 @@ class MemoryStore:
             self._rewrite()
 
     def _rewrite(self) -> None:
+        self._touch()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text("".join(json.dumps(asdict(m), ensure_ascii=False) + "\n" for m in self.items), encoding="utf-8")
         tmp.replace(self.path)       # 原子替换，写一半崩溃也不会留下半个文件
         self._dirty = False
+        crashpoints.hit("memory.after_rewrite")
 
     def add(self, item: MemoryItem, dedup: bool = True) -> tuple[MemoryItem, bool]:
         """返回 (落库的条目, 是否为合并)。dedup=False：调用方已经判断过它不是重复（比如事实更新步骤），不再按字面相似度合并。"""
@@ -76,9 +84,11 @@ class MemoryStore:
             self._rewrite()
             return dup, True
         self.items.append(item)
+        self._touch()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
+        crashpoints.hit("memory.after_append")
         return item, False
 
     def revise(self, item: "MemoryItem", text: str, world_time: int) -> None:
