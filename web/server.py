@@ -118,7 +118,7 @@ class Game:
 
     def __init__(self, args, save: Optional[str] = None):
         self.args = args
-        self.save = save or args.save or os.environ.get("STORY") or "web"
+        self.save = save or args.save or "web"
         self.last_seen = time.time()
         self.io = WebIO()
         self.engine: Optional[GameEngine] = None
@@ -266,7 +266,7 @@ class Share:
             if g is None:
                 if len(self.games) >= self.args.max_games:
                     return None
-                g = Game(self.args, save=(f"{os.environ['STORY']}_" if os.environ.get("STORY") else "") + f"p_{sid[:12]}")
+                g = Game(self.args, save=f"p_{sid[:12]}")
                 g.start(new_game=False)
                 self.games[sid] = g
             g.last_seen = time.time()

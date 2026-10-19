@@ -8,18 +8,15 @@
 - **世界的事实归代码，措辞归模型。** 时间、线索、谁知道什么、谁在哪、剧情进度，都是代码维护的状态；模型只能“提议”，校验和落地由代码做。
   玩家几句话带偏不了剧情，模型被骗了也改不了进度。
 - 有边界的 ReAct 循环、上下文组装与渐进式披露、三层记忆、外部校验的进度判断、输入防护、预算与降级、
-  生成后的知识边界检查、结构化 trace、整局重放、事务与崩溃恢复、离线评测。
+  生成后的知识边界检查、结构化 trace、整局重放、事务与崩溃恢复。
 
-## 两个故事
+## 故事
 
-| 故事 | 怎么启动 | 一句话 |
-|---|---|---|
-| 默认：**月白失窃案**（`content/`） | `python3 main.py` | 神里家的传家茶盏从上锁的茶室里不见了，同一晚花见坂也接连失窃；你要赶在侦探平藏之前悄悄查清 |
-| **雪见茶会与多出来的客人**（`stories/duval/`） | `STORY=duval python3 main.py` | 茶会只请了三位客人，结果来了两位“杜瓦尔”；找出破绽，决定怎么收场（剧情和取舍见 `stories/duval/plot.md`） |
+**雪见茶会与多出来的客人**（`content/`）：茶会只请了三位客人，结果来了两位“杜瓦尔”；找出破绽，决定怎么收场（剧情和取舍见 `content/_design/plot.md`）。
 
-内容和引擎是分开的：故事是一个目录（地图、人物卡、主线、设定、技能），`STORY=<名字>` 选 `stories/<名字>/`，
-也可以用 `CONTENT_DIR=…` 指向任意目录。存档默认用故事名，不会和别的故事混在一起。
-加新故事、各字段怎么写，看 `docs/code_map.md`；检查：`python3 tools/lint_story.py --content stories/duval`。
+内容和引擎是分开的：故事是一个目录（地图、人物卡、主线、设定、技能），默认读 `content/`，也可以用 `CONTENT_DIR=…` 指向任意目录。
+各字段怎么写，看 `docs/code_map.md`；检查：`python3 tools/lint_story.py`。
+旧的“月白失窃案”版本（含 `stories/` 目录里的两个故事、`evals/` 评测脚本）保存在 `archive/two-stories` 分支。
 
 ## 快速开始
 
@@ -118,8 +115,7 @@ GameEngine（Harness 外壳：组装、存档 = 事务提交点、预算、trace
 ```
 main.py / web/server.py        入口（终端 / 网页）
 config/settings.py             环境变量与 .env → Settings（LLM / Harness / Game 三组）
-content/                       默认故事：world.json、npcs/、quests/、lore/、skills/，纯数据
-stories/<名字>/                另一个故事，结构同上，再加 story.json
+content/                       故事：world.json、npcs/、quests/、lore/、skills/、story.json，纯数据
 core/                          世界规则与状态：god_env、physical、dialogue_session、turn_graph、explorer、agent_loop、
                                reviewer、director、branch、scene、claims、judge、guardrails、agendas、actions、
                                uow / crashpoints / journal（事务与续跑）、prefetch、story_lint、eventlog …

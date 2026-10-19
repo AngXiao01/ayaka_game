@@ -8,7 +8,7 @@
 ## 一、分层
 
 ```
-作者层  content/ 或 stories/<名字>/   剧情图（线索 / 信号 = storylet）、secrets、layout、knows_clues、addressed_as
+作者层  content/                          剧情图（线索 / 信号 = storylet）、secrets、layout、knows_clues、addressed_as
 世界层  core/god_env.py physical.py agendas.py   唯一真相：时间天色、线索、谁知道什么、谁在哪、秘密的开锁条件
                                       事件由代码写（信号达成、传话、移动），不从聊天里推
 上下文层 llm/npc_llm_adapter.py        分层小节（常驻 / 条件 / 检索）+ 字数预算，按角色可见范围过滤
@@ -96,13 +96,13 @@
 
 ## 八、内容包
 
-`content/` 是默认故事，`stories/<名字>/` 是另一个完整的故事，`STORY=<名字>` 选它，引擎代码不改。故事需要的通用能力都做在引擎里，以字段形式给作者用：
+故事是 `content/` 下的纯数据（`CONTENT_DIR` 可以换一个目录），换故事不改引擎代码。故事需要的通用能力都做在引擎里，以字段形式给作者用：
 
 - 物件按剧情标记出现（`requires_flags` + `locked_desc`）、人物按剧情标记出现（`present_when_flags`）、议程让人瞬间到场（`instant`）；
 - 线索要求可以写成“至少 N 条”（`requires_clues_any` + `any_min`），信号和菜单里的提议都适用；提议可以要求先掌握某些线索（`requires_clues`）；
 - 内容校验（`tools/lint_story.py --content …`）理解以上所有字段。
 
-`stories/duval/` 是这些能力的活例子，测试在 `tests/test_duval_story.py`。
+`content/` 里的雪见茶会是这些能力的活例子，测试在 `tests/test_duval_story.py`。引擎级的测试用 `tests/fixtures/yuebai/`（另一套线索更多的故事数据，不随游戏发布）。
 
 ## 还没做
 

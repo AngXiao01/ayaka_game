@@ -6,7 +6,7 @@ from core.player_agent import ScriptedPlayer
 from core.story_lint import lint
 from engine.game_engine import GameEngine
 from llm.mock_backend import MockBackend
-from tests.helpers import QUEST
+from tests.helpers import FIXTURE, QUEST
 from tests.test_physical import settings
 from tools import lint_story
 
@@ -49,7 +49,7 @@ def test_a_successful_press_has_no_slip(tmp_path, monkeypatch):
 
 def test_real_slips_do_not_leak_and_the_lint_checks_it():
     assert {s.id for s in QUEST.signals if s.partial} == {"rv_yohei_hair", "rv_soji_fire", "rv_heizou_sill", "rv_fox_truth"}
-    q, w, p = (copy.deepcopy(x) for x in lint_story.load())
+    q, w, p = (copy.deepcopy(x) for x in lint_story.load(FIXTURE, "ayaka_main"))
     soji = next(s for s in q.signals if s.id == "rv_soji_fire")
     soji.partial = "那晚海边有一团青白色的灯火，还有个人影蹲着拾东西。"          # 把内容说完了
     msgs = [f.msg for f in lint(q, w, p) if f.code == "partial_leaks"]

@@ -9,11 +9,11 @@ import json
 import pytest
 
 from config.settings import load_settings
-from tests.helpers import make_god
+from tests.helpers import FIXTURE, make_god
 from tools import lint_story
 from tools import preview_prompt as pp
 
-QUEST, WORLD, PERSONAS = lint_story.load()
+QUEST, WORLD, PERSONAS = lint_story.load(FIXTURE, "ayaka_main")
 ALL_CLUES = list(QUEST.clues)
 EARLIER = [s.id for s in QUEST.signals if not (s.acts and s.acts == ["act3"]) and not s.event]
 STATES = {

@@ -3,9 +3,9 @@
 查「谁不该知道什么」「这句话到底带了哪些上下文」时，以前要真跑一轮再翻 trace；这里直接看。
 
   python3 tools/preview_prompt.py web ayaka                              开场那一轮
-  python3 tools/preview_prompt.py web thoma --say "那晚有谁敲过后门？" --intent 打听情报
-  python3 tools/preview_prompt.py web heizou --say "你觉得月白出了什么问题？" --find 守夜狐,裂纹
-  python3 tools/preview_prompt.py web aen --stage all --no-system        这一轮的每一次请求（评估 / 说话 / 核对 / 记录）
+  python3 tools/preview_prompt.py web thoma --say "杜瓦尔女士到底是什么时候到的？" --intent 打听情报
+  python3 tools/preview_prompt.py web paimon --say "你觉得哪位杜瓦尔有问题？" --find 狸猫
+  python3 tools/preview_prompt.py web old_tanuki --stage all --no-system        这一轮的每一次请求（评估 / 说话 / 核对 / 记录）
 
 做法：把存档和记忆复制到临时目录，用一个「只记录请求、回答用 mock」的后端把真实的对话流程跑一轮，
 所以打印出来的就是真实代码拼出来的提示词（同一份 build_system_prompt / build_state_block / fit_state）。

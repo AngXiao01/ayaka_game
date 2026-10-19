@@ -1,15 +1,18 @@
 """故事内容的静态校验：真内容不能有 error；故意弄坏的内容要能被指出来。"""
 import copy
+from pathlib import Path
 
 import pytest
 
 from core.story_lint import lint
 from tools import lint_story
 
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "yuebai"      # 引擎级测试用的另一个故事，不随游戏发布
+
 
 @pytest.fixture(scope="module")
 def content():
-    return lint_story.load()
+    return lint_story.load(FIXTURE, "ayaka_main")
 
 
 def broken(content, mutate):

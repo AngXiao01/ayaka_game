@@ -1,7 +1,4 @@
-"""雪见茶会与多出来的客人（stories/duval/）：茶会前的怪事、茶会上的两位杜瓦尔、找破绽、三种收场。
-
-这个故事是一个独立的内容包（STORY=duval），和默认的 content/ 互不影响。
-"""
+"""雪见茶会与多出来的客人（content/）：茶会前的怪事、茶会上的两位杜瓦尔、找破绽、三种收场。"""
 import json
 from pathlib import Path
 
@@ -17,7 +14,7 @@ from models.personality import Personality
 from tools import lint_story
 
 ROOT = Path(__file__).resolve().parent.parent
-STORY = ROOT / "stories" / "duval"
+STORY = ROOT / "content"
 
 
 def settings(tmp_path):
@@ -52,9 +49,9 @@ def ids(g):
     return {d["id"] for d in g.pending_signals()}
 
 
-def test_the_story_pack_lints_clean_and_is_selected_by_STORY(monkeypatch, tmp_path):
-    assert lint_story.main(["--content", str(STORY)]) == 0
-    monkeypatch.setenv("STORY", "duval")
+def test_the_story_lints_clean_and_is_the_default(monkeypatch, tmp_path):
+    assert lint_story.main([]) == 0
+    monkeypatch.delenv("CONTENT_DIR")                                         # conftest 为引擎级测试设了另一个故事
     s = load_settings(env_file=tmp_path / "none.env")
     assert s.game.content_dir == STORY and s.game.quest_id == "duval_main" and s.game.npc_id == "ayaka"
     monkeypatch.setenv("GAME_NPC", "thoma")                                   # 显式写了就以它为准

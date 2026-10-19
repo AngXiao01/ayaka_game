@@ -10,7 +10,7 @@ from llm.mock_backend import MockBackend
 from models.personality import Personality
 
 ROOT = Path(__file__).resolve().parent.parent
-AYAKA = Personality.load_all(ROOT / "content/npcs")["ayaka"]
+AYAKA = Personality.load_all(ROOT / "tests/fixtures/yuebai/npcs")["ayaka"]
 TALK_AYAKA = {"kind": "talk", "npc": "ayaka"}
 
 

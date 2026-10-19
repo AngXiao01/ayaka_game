@@ -79,7 +79,7 @@ def test_deadline_warning_in_next_steps():
     from models.personality import Personality
     from models.relationship import Relationship
     from tests.helpers import ROOT
-    personas = Personality.load_all(ROOT / "content/npcs")
+    personas = Personality.load_all(ROOT / "tests/fixtures/yuebai/npcs")
     g = make_god({"act_id": "act2", "day": 3, "phase_idx": 1, "clues": ["c_case", "c_shops"]})
     ex = Explorer(g, WORLD, personas, lambda n: Relationship(30, 20), out=lambda s: None)
     assert ex.leads()[0].startswith("⏳ 离雪见茶会只剩 2 个时段")

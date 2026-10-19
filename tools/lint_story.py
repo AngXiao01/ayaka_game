@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
-def load(content_dir: Path | None = None, quest_id: str = "ayaka_main"):
+def load(content_dir: Path | None = None, quest_id: str = "duval_main"):
     from core.god_env import QuestDef
     from core.world import World
     from models.personality import Personality
@@ -25,15 +25,15 @@ def main(argv=None) -> int:
     from core.story_lint import lint
     ap = argparse.ArgumentParser(description="故事内容的静态校验")
     ap.add_argument("--strict", action="store_true", help="warn 也算失败")
-    ap.add_argument("--content", help="内容目录，默认 content/；也可以写 stories/<名字>")
-    ap.add_argument("--quest", default=None, help="主线 id，默认读内容目录里 story.json 的 quest_id，没有就是 ayaka_main")
+    ap.add_argument("--content", help="内容目录，默认 content/")
+    ap.add_argument("--quest", default=None, help="主线 id，默认读内容目录里 story.json 的 quest_id，没有就是 duval_main")
     args = ap.parse_args(argv)
-    content = Path(args.content) if args.content else None
+    content = Path(args.content) if args.content else ROOT / "content"
     quest = args.quest
-    if quest is None and content is not None and (content / "story.json").exists():
+    if quest is None and (content / "story.json").exists():
         import json
         quest = json.loads((content / "story.json").read_text(encoding="utf-8")).get("quest_id")
-    findings = lint(*load(content, quest or "ayaka_main"))
+    findings = lint(*load(content, quest or "duval_main"))
     for f in findings:
         print(f)
     errors = sum(f.level == "error" for f in findings)

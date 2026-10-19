@@ -16,7 +16,7 @@ def test_bm25_ranks_relevant_first():
 
 
 def test_lore_lookup():
-    lb = LoreBase.load(ROOT / "content/lore")
+    lb = LoreBase.load(ROOT / "tests/fixtures/yuebai/lore")
     assert lb.search("眼狩令现在还有吗", 1)[0].title.startswith("眼狩令")
 
 

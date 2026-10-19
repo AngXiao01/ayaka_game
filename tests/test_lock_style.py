@@ -21,7 +21,7 @@ def locked_line(npc, style=None, clues=("c_case", "c_shops")):
     g = make_god({"act_id": "act2", "clues": list(clues)})
     g.quest = quest
     g.begin_conversation(npc)
-    persona = Personality.load_all(Path("content/npcs"))[npc]
+    persona = Personality.load_all(Path("tests/fixtures/yuebai/npcs"))[npc]
     return g.npc_task_detail(persona, 30)["locked_info"]
 
 

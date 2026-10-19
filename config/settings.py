@@ -193,7 +193,7 @@ class HarnessSettings:
 @dataclass
 class GameSettings:
     npc_id: str = "ayaka"
-    quest_id: str = "ayaka_main"
+    quest_id: str = "duval_main"
     player_name: str = "旅行者"
     max_turns_per_session: int = 20
     history_turns: int = 8                      # 工作记忆窗口：保留原文的最近轮数，更早的压成摘要
@@ -287,7 +287,7 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
     seed = _env("GAME_SEED", "")
     game = GameSettings(
         npc_id=_env("GAME_NPC", "ayaka"),
-        quest_id=_env("GAME_QUEST", "ayaka_main"),
+        quest_id=_env("GAME_QUEST", "duval_main"),
         player_name=_env("PLAYER_NAME", "旅行者"),
         max_turns_per_session=_env_int("MAX_TURNS_PER_SESSION", 20),
         history_turns=_env_int("HISTORY_TURNS", 8),
@@ -298,12 +298,9 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         debug=_env_bool("GAME_DEBUG", False),
         seed=int(seed) if seed else None,
     )
-    # 换一个故事：STORY=duval → stories/duval/（world.json、npcs/、quests/、lore/、skills/ 和一个 story.json 写主线 id 与主角 NPC）；
-    # 也可以直接用 CONTENT_DIR 指向任意内容目录。GAME_QUEST / GAME_NPC 显式写了就以它们为准。
-    story = _env("STORY", "")
+    # 换一套内容：CONTENT_DIR 指向任意内容目录（world.json、npcs/、quests/、lore/、skills/ 和一个 story.json 写主线 id 与主角 NPC）。
+    # GAME_QUEST / GAME_NPC 显式写了就以它们为准。
     content_dir = _env("CONTENT_DIR", "")
-    if story and not content_dir:
-        content_dir = str(ROOT / "stories" / story)
     if content_dir:
         game.content_dir = Path(content_dir)
         meta = Path(content_dir) / "story.json"

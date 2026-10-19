@@ -16,7 +16,7 @@ from tests.test_physical import PERSONAS, settings
 
 def fs(state, npc="ayaka"):
     g, phys, ex, _ = living(state)
-    return g, ContextFS(npc, g, WORLD, PERSONAS, LoreBase.load(ROOT / "content/lore"), lambda k: ["上次聊了茶泡饭"])
+    return g, ContextFS(npc, g, WORLD, PERSONAS, LoreBase.load(ROOT / "tests/fixtures/yuebai/lore"), lambda k: ["上次聊了茶泡饭"])
 
 
 def test_files_are_scoped_to_what_the_npc_knows():
@@ -180,7 +180,7 @@ def test_claims_without_evidence_are_flagged_and_retries_reroll():
 def test_persona_examples_carry_no_case_facts():
     """语气示例会被小模型原样抄出口：里面不能有案情关键词（会在不该说的时候把秘密说出来）。"""
     import json as _json
-    guard = _json.loads((ROOT / "content/quests/ayaka_main.json").read_text(encoding="utf-8"))["canon_guard_terms"]
+    guard = _json.loads((ROOT / "tests/fixtures/yuebai/quests/ayaka_main.json").read_text(encoding="utf-8"))["canon_guard_terms"]
     for nid, p in PERSONAS.items():
         for line in p.style_examples:
             hit = [t for t in guard if t in line]

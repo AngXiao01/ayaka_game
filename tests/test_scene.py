@@ -12,7 +12,7 @@ from models.personality import Personality
 from models.relationship import Relationship
 from tests.helpers import QUEST, ROOT, WORLD, make_god
 
-PERSONAS = Personality.load_all(ROOT / "content/npcs")
+PERSONAS = Personality.load_all(ROOT / "tests/fixtures/yuebai/npcs")
 
 
 class FakeAdapter:
