@@ -35,7 +35,7 @@ def engine(tmp_path, script=("q",), world=None):
 
 
 def party_world(**extra):
-    return {"day": 3, "phase_idx": 1, "location": "kamisato_estate", "flags": ["party_open", "duval_arrived"], "act_id": "act1", **extra}
+    return {"day": 2, "phase_idx": 1, "location": "kamisato_estate", "flags": ["party_open", "duval_arrived"], "act_id": "act1", **extra}
 
 
 def make_god(state):
@@ -62,13 +62,13 @@ def test_before_the_party_only_the_host_side_is_around_and_the_guests_are_elsewh
     eng, _ = engine(tmp_path)
     g = eng.god
     assert set(g.physical.at("kamisato_estate")) == {"ayaka", "thoma", "paimon"}
-    assert g.physical.where("duval") == "ritou" and g.physical.where("fake_duval") is None      # 真画家在离岛；另一位还没出现
+    assert g.physical.where("duval") is None and g.physical.where("fake_duval") is None      # 两位杜瓦尔都还没出现：真画家茶会当天才和玩家见面
 
 
 def test_the_party_opens_with_one_guest_and_the_other_arrives_half_an_hour_later(tmp_path):
     eng, _ = engine(tmp_path)
     g = eng.god
-    g.minute = g.phase_start(3, 1) + 1                                          # 第 3 天午后
+    g.minute = g.phase_start(2, 1) + 1                                          # 第 2 天午后
     g.agendas.tick()
     assert "party_open" in g.flags and "fake_duval" in g.physical.at("kamisato_estate") and "duval" not in g.physical.at("kamisato_estate")
     g.minute += 31
@@ -84,7 +84,7 @@ def test_the_five_tells_are_only_visible_once_the_party_is_on(tmp_path):
     eng.god.location = "kamisato_estate"                                        # 开局在离岛，茶室在屋敷
     ex = eng.explorer
     desc, got = ex.examine("o_tea_entrance")
-    assert not got and "还没有人" in desc                                         # 茶会前：只是一个半人高的入口
+    assert not got and "平日的样子" in desc                                       # 茶会前：只是平日里在打扫的茶室，没有摆好席
     eng.god.flags += ["party_open"]
     desc, got = ex.examine("o_tea_entrance")
     assert got == ["c_tell_entrance"] and "枫丹淑女从不摘帽" in desc
@@ -210,10 +210,10 @@ def test_game_starts_at_ritou_with_affinity_35_and_a_countdown(tmp_path):
     eng, _ = engine(tmp_path)
     g = eng.god
     assert g.location == "ritou" and eng.npcs["ayaka"].relationship.affinity == 35
-    assert g.milestone_text().startswith("距雪见茶会开席还有约2天4个钟头（后天午后")     # 07:00 → 第 3 天 11:00
-    g.minute = g.phase_start(2, 1) + 5
-    assert "明天午后" in g.milestone_text()
-    g.minute = g.phase_start(3, 1) + 1
+    assert g.milestone_text().startswith("距雪见茶会开席还有约1天4个钟头（明天午后")     # 07:00 → 第 2 天 11:00
+    g.minute = g.phase_start(1, 1) + 5
+    assert "明天午后" in g.milestone_text() and "还有约" in g.milestone_text()
+    g.minute = g.phase_start(2, 1) + 1
     assert g.milestone_text() == "雪见茶会开席已经开始了"
 
 
@@ -242,3 +242,42 @@ def test_inviting_ayaka_to_spar_runs_the_scene_and_raises_affinity(tmp_path):
     assert "白砂园里，你们各取了一柄练习用的木刀" in text
     assert "did:sword:1" in eng.god.flags and eng.god.minute >= before + 60
     assert eng.npcs["ayaka"].relationship.affinity >= 53
+
+
+def test_the_player_does_not_know_the_painter_before_the_party(tmp_path):
+    eng, _ = engine(tmp_path)
+    pv = eng.explorer.player_view("ayaka")
+    assert "杜瓦尔" not in pv["known_text"] and "画家" not in pv["known_text"]
+    assert "杜瓦尔" in pv["spoiler_terms"]                                      # 台词里要提她，得先听人说起
+    assert eng.god.physical.where("duval") is None                              # 离岛上也碰不到她
+
+
+def test_daily_life_services_cost_time_and_run_once_per_slot(tmp_path):
+    eng, _ = engine(tmp_path)
+    g, ex = eng.god, eng.explorer
+    assert [s["id"] for s in ex.services_here()] == ["ritou_breakfast"]          # 开局：离岛的清晨
+    t0 = g.minute
+    text = ex.service("ritou_breakfast")
+    assert g.minute == t0 + 20 and text
+    assert ex.services_here() == []                                              # 同一时段不再给第二次早饭
+    g.location = "akisa_yu"
+    g.minute = g.phase_start(1, 1) + 5
+    assert [s["id"] for s in ex.services_here()] == ["akisa_bath"]
+    t1 = g.minute
+    ex.service("akisa_bath")
+    assert g.minute == t1 + 60
+
+
+
+def test_cameos_are_chance_encounters_decided_once_per_slot(tmp_path):
+    eng, _ = engine(tmp_path)
+    g, phys = eng.god, eng.god.physical
+    seen = []
+    for day in range(1, 31):
+        g.minute = g.phase_start(day, 2) + 1                                     # 每天的黄昏
+        a = phys.where("yoimiya")
+        assert a == phys.where("yoimiya")                                        # 同一时段里不会忽有忽无
+        seen.append(a)
+    assert "hanamizaka" in seen and None in seen                                 # 有时在，有时不在
+    assert phys.where("aikawa") == "akisa_yu"                                    # 钱汤老板常驻钱汤
+    assert phys.where("anna") == "hanamizaka"                                    # 料理店老板娘常驻花见坂

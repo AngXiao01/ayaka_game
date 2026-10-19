@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import zlib
 from typing import Any, Callable, Optional
 
 PLAYER = "player"
@@ -65,7 +66,13 @@ class PhysicalWorld:
             return None
         if not set(getattr(p, "present_when_flags", []) or []) <= set(self.god.flags):
             return None
-        return p.location_at(phase or self.god.phase, self.god.act_id)
+        loc = p.location_at(phase or self.god.phase, self.god.act_id)
+        enc = getattr(p, "encounter", None)
+        if loc and enc:                            # 偶遇：只有一部分日子真的在（掷骰按种子 + 人 + 日子 + 时段定死，同一时段里不会忽有忽无）
+            key = f"{self.god.seed}:{npc}:{self.god.day}:{phase or self.god.phase}"
+            if zlib.crc32(key.encode()) % 100 >= int(enc.get("p", 1.0) * 100):
+                return None
+        return loc
 
     def where(self, npc: str, phase: Optional[str] = None) -> Optional[str]:
         """npc 此刻在哪（None = 在路上 / 不在任何能去的地方）。问的是别的时段时只能按作息估。"""

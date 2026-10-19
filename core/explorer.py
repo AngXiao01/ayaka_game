@@ -27,6 +27,7 @@ class Explorer:
         self.hints = hints
         self._shown_leads: Optional[tuple] = None
         self._shown_scene: Optional[tuple] = None
+        self._shown_hint: Optional[str] = None
 
     # ------------------------------------------------------------ 查询
 
@@ -232,6 +233,8 @@ class Explorer:
             opts.append(PlayerOption(self._mark(f"查看：{o['name']}{'（看过）' if seen and not grant else ''}",
                                                 grant, "也许有发现"),
                                      "查看", kind="examine", meta={"obj": o["id"], "clue": grant, "seen": seen}))
+        for sv in self.services_here():
+            opts.append(PlayerOption(f"{sv['label']}（约 {sv['minutes']} 分钟）", "生活", kind="service", meta={"service": sv["id"]}))
         dests = [d for d in w.exits(here) if w.unlocked(d, g.clues)]
         dist = {d: self._distance_to_progress(d) for d in dests}
         best = min((v for v in dist.values() if v), default=None)
@@ -257,6 +260,26 @@ class Explorer:
         opts.append(PlayerOption("保存并退出", "退出", kind="quit"))
         return opts
 
+    def services_here(self) -> list[dict]:
+        """此刻这里能做的生活小事（吃早饭、买小吃、泡温泉……）：时段对得上、这个时段里还没做过。"""
+        g, here = self.god, self.god.location
+        return [sv for sv in self.world.loc(here).get("services", [])
+                if g.phase in sv.get("phases", g.phases) and f"svc:{sv['id']}:{g.day}:{g.phase_idx}" not in g.flags]
+
+    def service(self, sid: str) -> str:
+        """做一件生活小事：花时间、写一段场景；过了这段时间，新来的人（偶遇）也一并提一句。"""
+        g = self.god
+        sv = next(x for x in self.world.loc(g.location).get("services", []) if x["id"] == sid)
+        scenes = sv["scenes"] if isinstance(sv["scenes"], list) else [sv["scenes"]]
+        before = set(self.npcs_here())
+        g.flags.append(f"svc:{sid}:{g.day}:{g.phase_idx}")
+        g.pass_time(sv.get("minutes", 20))
+        out = [scenes[(g.day + g.phase_idx) % len(scenes)]]
+        for n in self.npcs_here():
+            if n not in before and n not in self.party:
+                out.append(f"    （{self.personas[n].name}也在这里。）")
+        return "\n".join(out)
+
     def panel(self) -> str:
         g, w = self.god, self.world
         lines = ["", "─" * 40, g.status_line(), ""]
@@ -272,7 +295,8 @@ class Explorer:
             lines.append("和你同行：" + "、".join(self.personas[n].name for n in self.party))
         if g.resolved:
             lines.append("提示：主线告一段落，可以随意走走、拜访认识的人，或者约人同行。")
-        elif self.hints:
+        elif self.hints and self._shown_hint != g.act_id:        # 这一幕的提示只在换幕时写一遍，别每次回菜单都重念
+            self._shown_hint = g.act_id
             lines.append(f"提示：{g.act.hint}")
         if self.hints:
             items = self.lead_items()

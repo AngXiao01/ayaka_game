@@ -416,6 +416,9 @@ class GameEngine:
             elif action.kind == "move":
                 self.out("\n" + self.explorer.move(action.meta["dest"]))
                 show_panel = True
+            elif action.kind == "service":
+                self.out("\n" + self.explorer.service(action.meta["service"]))
+                show_panel = True
             elif action.kind == "examine":
                 desc, gained = self.explorer.examine(action.meta["obj"])
                 self.out("\n" + desc)

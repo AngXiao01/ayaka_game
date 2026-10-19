@@ -52,6 +52,7 @@ class Personality:
     knows_clues: list[str] = field(default_factory=list)       # 这个人一开始就知道的线索（别人拿这些给他看，他不会意外；也不会出现在「出示线索」菜单里）
     addressed_as: list[str] = field(default_factory=list)      # 玩家（一个有礼貌的外来旅行者）该怎么称呼他 / 她，选项台词只许用这些
     aliases: list[str] = field(default_factory=list)           # 别人怎么称呼他（「大小姐」「白鹭公主」），用来认出话里提到的人
+    encounter: dict = field(default_factory=dict)              # 偶遇：{p: 0~1}，按作息本该在那儿的时段，只有一部分日子真的在（按种子定，同一时段内不变）
     old_friend: bool = False                                   # 和玩家本来就是老朋友：第一次谈话不是“初次见面”
     outing: dict = field(default_factory=dict)                 # 能不能和玩家一起出门：min_affinity / phases / tell / secret / note …
     confidants: list[str] = field(default_factory=list)        # 见过玩家之后会去跟谁说（托人带话）
