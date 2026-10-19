@@ -419,8 +419,10 @@ class GameEngine:
                 self.out("\n" + self.explorer.move(action.meta["dest"]))
                 show_panel = True
             elif action.kind == "service":
+                phase0 = g.phase
                 self.out("\n" + self.explorer.service(action.meta["service"]))
-                show_panel = True
+                self.out(f"    （现在是{g.time_label()} {g.clock_label()}）")
+                show_panel = g.phase != phase0              # 只是吃点东西、泡个汤：时段没变就不重念一遍地点和人
             elif action.kind == "examine":
                 desc, gained = self.explorer.examine(action.meta["obj"])
                 self.out("\n" + desc)

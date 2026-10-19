@@ -208,7 +208,6 @@ class Game:
                 continue
             r = e.npcs[nid].relationship
             people.append({"name": p.name, "title": p.title, "brief": p.brief, "tier": r.tier()[0],
-                           "affinity": r.affinity, "trust": r.trust,
                            "where": e.explorer.player_whereabouts(nid)})     # 玩家知道的去向，不是真相
         hints = e.explorer.hints
         return {

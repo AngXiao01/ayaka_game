@@ -272,12 +272,12 @@ class DialogueSession:
             elif self.npc.p.outing and not (g.conv or {}).get("invite_declined"):
                 acts.append(("invite", PlayerOption(f"🚶 邀{self.npc.name}一起走走", "邀请", kind="invite"),
                              f"邀{self.npc.name}一起出去走走", "🚶 邀请同行"))
-            for a in (self.npc.p.outing or {}).get("activities", []):
-                if (g.conv or {}).get("declined_act:" + a["id"]):
+            for a in (self.npc.p.outing or {}).get("activities", []):       # 隐藏选项：交情够了、时段对了才会出现，不提示门槛
+                if (g.conv or {}).get("declined_act:" + a["id"]) or self.npc.relationship.affinity < a.get("min_affinity", 0) \
+                        or g.phase not in a.get("phases", g.phases) or f"did:{a['id']}:{g.day}" in g.flags:
                     continue
-                gate = "" if self.npc.relationship.affinity >= a.get("min_affinity", 0) else f"（好感 {a['min_affinity']}+）"
                 acts.append((f"activity:{a['id']}",
-                             PlayerOption(a["button"].format(npc=self.npc.name) + gate, "邀请", kind="invite",
+                             PlayerOption(a["button"].format(npc=self.npc.name), "邀请", kind="invite",
                                           meta={"activity": a["id"]}),
                              f"邀{self.npc.name}{a['label']}", "🤝 " + a["label"]))
         acts.append(("leave", PlayerOption("🚶 接着走" if together else "🚪 离开", "告别", kind="leave"),
@@ -502,7 +502,7 @@ class DialogueSession:
         last = self.npc.handoff().get("minute")
         met = g.met.get(p.id, 1)
         tag = (("久别重逢" if p.old_friend else "初次见面") if last is None or met <= 1 else f"第 {met} 次见面 · {g.ago_short(last)}")
-        self.out(f"\n—— 与{p.name}交谈 ——  {p.brief}  （{tag}）")
+        self.out(f"\n—— 与{p.name}交谈 ——  " + (f"{p.brief}  " if g.first_intro(p.id) else "") + f"（{tag}）")      # 简介只在第一次交谈时写一遍
         if self.event:
             self.out(f"\n✨【{self.event.title}】\n{self.event.premise}")
         elif self.cfg.hints:
@@ -782,7 +782,6 @@ class DialogueSession:
         g.flags.append(f"did:{a['id']}:{g.day}")
         self.out("\n" + a["scene"])
         self.npc.relationship.apply(a.get("affinity", 0), a.get("trust", 0))
-        self.out(f"    · 好感 {a.get('affinity', 0):+d}→{self.npc.relationship.affinity} 信任 {a.get('trust', 0):+d}→{self.npc.relationship.trust}")
         g.pass_time(a.get("minutes", 30))
         g.journal.append(f"{g.time_label()}　和{self.npc.name}{a['label']}")
         self.npc.memory.add(MemoryItem(text=f"（{g.time_label()}）{a.get('tell', a['label'])}", kind="event", importance=4,

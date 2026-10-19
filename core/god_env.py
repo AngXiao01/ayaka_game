@@ -320,6 +320,14 @@ class GodEnv:
         dl = self.quest.deadline
         return self._index(dl["day"], dl["phase"]) - self._index(self.day, self.phase_idx)
 
+    def first_intro(self, npc: str) -> bool:
+        """第一次介绍这个人（给人物简介用）：只有第一次返回 True，之后都是 False，存档里记着。"""
+        flag = f"intro:{npc}"
+        if flag in self.flags:
+            return False
+        self.flags.append(flag)
+        return True
+
     def milestone_text(self) -> str:
         """距那个时刻（茶会开席）还有多久，用人话写：这是代码算的事实，NPC 和选项只许照这个说，不许自己数「还有三天」。"""
         ms = self.quest.milestone

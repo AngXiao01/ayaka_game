@@ -281,3 +281,32 @@ def test_cameos_are_chance_encounters_decided_once_per_slot(tmp_path):
     assert "hanamizaka" in seen and None in seen                                 # 有时在，有时不在
     assert phys.where("aikawa") == "akisa_yu"                                    # 钱汤老板常驻钱汤
     assert phys.where("anna") == "hanamizaka"                                    # 料理店老板娘常驻花见坂
+
+
+def test_hidden_activity_buttons_need_closeness_and_the_right_time_and_show_no_numbers(tmp_path):
+    world = party_world(day=1, phase_idx=1, flags=[], location="kamisato_estate")
+    world.pop("day"); world.pop("phase_idx")
+    eng, _ = engine(tmp_path, world=world, script=[{"kind": "talk", "npc": "ayaka"}, "q"])
+    eng.god.minute = eng.god.phase_start(1, 1) + 5                                # 第 1 天午后
+    from core.dialogue_session import DialogueSession
+    def labels(aff, minute):
+        eng.god.minute = minute
+        eng.npcs["ayaka"].relationship.affinity = aff
+        eng.god.begin_conversation("ayaka")
+        s = DialogueSession(eng.npcs["ayaka"], eng.player, eng.option_gen, eng.god, eng.world, eng.settings, eng.reviewer, eng.budget)
+        return [o.text for _, o, _, _ in s._actions()]
+    noon, night = eng.god.phase_start(1, 1) + 5, eng.god.phase_start(1, 3) + 5
+    assert not any("切磋" in t for t in labels(40, noon))                         # 交情不够：看不到
+    assert any("切磋" in t for t in labels(45, noon))                             # 够了、时段也对：出现
+    assert not any("月下散步" in t for t in labels(80, noon))                      # 时段不对：看不到
+    assert any("月下散步" in t for t in labels(55, night))
+    assert not any("好感" in t for t in labels(45, noon))
+
+
+def test_people_are_introduced_once_in_the_panel_and_the_talk_header(tmp_path):
+    eng, out = engine(tmp_path, world={"location": "kamisato_estate", "act_id": "act1"})
+    ex = eng.explorer
+    first = ex.panel()
+    assert "神里绫华（" in first and "托马（" in first
+    second = ex.panel()
+    assert "这里的人：神里绫华；" in second and "（社奉行" not in second          # 第二次只剩名字

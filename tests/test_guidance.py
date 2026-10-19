@@ -118,9 +118,10 @@ def test_leads_follow_the_investigation():
     assert any("向绫华汇报" in x for x in leads)
 
 
-def test_event_leads_show_affinity_progress():
+def test_event_leads_hint_at_closeness_without_showing_numbers():
     g = make_god({"act_id": "act2"})
-    assert any("好感 30/40" in x for x in explorer(g, 30).leads())
+    assert any("关系更近时也许会有意外的相遇" in x for x in explorer(g, 30).leads())
+    assert not any("好感" in x for x in explorer(g, 30).leads())
     assert any("夜晚去神里屋敷走走" in x for x in explorer(g, 41).leads())
 
 

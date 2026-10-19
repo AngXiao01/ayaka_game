@@ -143,7 +143,7 @@ class Explorer:
         if waiting and not out:
             need, name, aff = min(waiting)
             out.append({"key": f"affinity:{need}", "here": False,
-                        "text": f"和{name}多聊聊、真诚相待，关系更近时也许会有意外的相遇（好感 {aff}/{need}）"})
+                        "text": f"和{name}多聊聊、真诚相待，关系更近时也许会有意外的相遇"})
         return out
 
     def player_view(self, npc_id: str, event: Optional[str] = None) -> dict:
@@ -289,7 +289,8 @@ class Explorer:
             lines.append(w.describe(g.location, g.phase, g.tension))
         else:
             lines.append(f"【{w.name(g.location)}】")
-        people = [f"{self.personas[n].name}（{self.personas[n].brief}）" for n in self.npcs_here() if n not in self.party]
+        people = [self.personas[n].name + (f"（{self.personas[n].brief}）" if g.first_intro(n) else "")      # 简介只在第一次见到时写一遍
+                  for n in self.npcs_here() if n not in self.party]
         lines.append("这里的人：" + ("；".join(people) if people else "没有能说上话的人"))
         if self.party:
             lines.append("和你同行：" + "、".join(self.personas[n].name for n in self.party))
@@ -387,7 +388,7 @@ class Explorer:
                 if not g.met.get(nid) and p.role != "companion":
                     continue
                 r = self.rel(nid)
-                rows.append(f"· {p.name}（{p.title}）{p.brief}\n  关系：{r.tier()[0]}（好感 {r.affinity}，信任 {r.trust}）"
+                rows.append(f"· {p.name}（{p.title}）{p.brief}\n  关系：{r.tier()[0]}"
                             f"｜你知道的去向：{self.player_whereabouts(nid)}")
             return "\n".join(rows)
         if which == "leads":

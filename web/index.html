@@ -230,8 +230,7 @@ function renderSide(p) {
   const people = p.people.map(x => el("div", "card",
     el("div", "n", `${x.name}`, el("span", "d", `  ${x.title} · ${x.tier}`)),
     el("div", "d", `你知道的去向：${x.where}`),
-    el("div", "d", `好感 ${x.affinity}　信任 ${x.trust}`),
-    el("div", "bar", (() => { const i = el("i"); i.style.width = x.affinity + "%"; return i; })())));
+    ));                                     // 好感 / 信任不显示数字和进度条：关系的深浅靠对方的态度去感觉
   const nextSec = (p.leads.length || p.checklist.length) ? [el("h2", null, "下一步"), el("div", "card next",
     p.checklist.length ? el("div", "d", "要查清的事：", ...p.checklist.map(c => el("span", "check" + (c.ok ? " ok" : ""), (c.ok ? "✔" : "✘") + c.label))) : null,
     ...p.leads.map(x => el("div", "lead", "🧭 " + x)))] : [];
