@@ -1,443 +1,137 @@
 # 神里绫华 · 叙事 Agent 游戏
 
-以《原神》神里绫华为主角的开放式叙事调查游戏。眼狩令与锁国令废止后的第一个冬天，神里家的传家茶盏
-「月白」从上锁的茶室里不见了，同一晚花见坂也接连失窃；城里传「有怪盗」，天领奉行的侦探鹿野院平藏也在查。
-绫华托你赶在平藏之前悄悄查清——三天后就是雪见茶会。真相是两件事撞在了一起（一场乌龙），平藏认定「怪盗只有一个」。开发期跑在自建 vLLM 上的 **Gemma**，
-现在默认走 **OpenRouter**（同样是 OpenAI 兼容接口，模型可换）；运行时只用 Python 标准库。
+以《原神》稻妻为背景的开放式叙事调查游戏（同人，故事为原创）。你和 NPC 自由对话、四处查看、出示线索，
+最后和神里绫华商量怎么收场。运行时只用 Python 标准库；模型走 **OpenRouter**（OpenAI 兼容接口，模型可换），也可以接自建的 vLLM。
 
-项目的重点在模型外面那层 **Harness**：有边界的循环、上下文组装、三层记忆、外部校验的终止判断、
-输入防护、预算与降级、结构化可观测、离线评测。
+项目的重点不是故事，而是模型外面那层 **Harness**：
 
-最初的设计（2025 年上半年，参考 LangChain）是 4 类 agent：每个角色一个 agent、掌握剧情分支的 tree agent、
-决定可交互物的 ENV agent、读取一切并决定走向的 GOD agent。问题是 GOD / tree / ENV 都靠模型判定，
-玩家几句话就能把剧情带偏。现在的结构是：**这三层都保留模型，但模型只提议，状态只由代码改**（见「GOD / tree / ENV」）。
+- **世界的事实归代码，措辞归模型。** 时间、线索、谁知道什么、谁在哪、剧情进度，都是代码维护的状态；模型只能“提议”，校验和落地由代码做。
+  玩家几句话带偏不了剧情，模型被骗了也改不了进度。
+- 有边界的 ReAct 循环、上下文组装与渐进式披露、三层记忆、外部校验的进度判断、输入防护、预算与降级、
+  生成后的知识边界检查、结构化 trace、整局重放、事务与崩溃恢复、离线评测。
+
+## 两个故事
+
+| 故事 | 怎么启动 | 一句话 |
+|---|---|---|
+| 默认：**月白失窃案**（`content/`） | `python3 main.py` | 神里家的传家茶盏从上锁的茶室里不见了，同一晚花见坂也接连失窃；你要赶在侦探平藏之前悄悄查清 |
+| **雪见茶会与多出来的客人**（`stories/duval/`） | `STORY=duval python3 main.py` | 茶会只请了三位客人，结果来了两位“杜瓦尔”；找出破绽，决定怎么收场（剧情和取舍见 `stories/duval/plot.md`） |
+
+内容和引擎是分开的：故事是一个目录（地图、人物卡、主线、设定、技能），`STORY=<名字>` 选 `stories/<名字>/`，
+也可以用 `CONTENT_DIR=…` 指向任意目录。存档默认用故事名，不会和别的故事混在一起。
+加新故事、各字段怎么写，看 `docs/code_map.md`；检查：`python3 tools/lint_story.py --content stories/duval`。
 
 ## 快速开始
 
 ```bash
-python3 main.py --debug                     # 连 OpenRouter 玩（默认后端，先放好 key，见下）
-python3 main.py --mock --debug              # 离线：Mock 后端
-python3 main.py --mock --auto cooperative   # 离线 + AI 扮演玩家，自动跑完
-python3 main.py --check                     # 检查后端：连通性、模型 id、结构化输出档位
-python3 -m evals.run_evals                  # 离线评测（5 种玩家人设）
+python3 main.py --mock --debug              # 离线：Mock 后端，不联网不花钱
+python3 main.py --mock --auto cooperative   # 离线 + AI 扮演玩家，自动跑完一局
+python3 main.py --debug                     # 连 OpenRouter 玩（先放好 key，见下）
+python3 web/server.py                       # 网页版，默认 http://127.0.0.1:8770
+python3 main.py --check                     # 检查后端：连通性、模型 id、结构化输出
+python3 -m evals.run_evals                  # 离线评测（五种玩家人设）
+~/miniforge3/envs/torch_arm/bin/python -m pytest -q    # 测试（全离线）
 ```
 
-默认后端是 OpenRouter（`LLM_BACKEND=openrouter`），只读 `OPENROUTER_*` 变量。key 二选一：
+常用参数：`--save 名字`、`--new`（清掉存档重来）、`--incognito`（不留存档和 trace）、`--no-hints`、`--options static`、`--max-turns N`、`--seed N`。
+
+## 模型与后端
+
+默认后端 `LLM_BACKEND=openrouter`，只读 `OPENROUTER_*` 变量；`gemma`（自建 vLLM，`GEMMA_*`）和 `mock` 同理，互不串用变量。所有变量见 `env.example`。
 
 ```bash
-pbpaste > ~/.openrouter_key && chmod 600 ~/.openrouter_key   # 先复制 key；不进 shell 历史（默认读这个文件）
+pbpaste > ~/.openrouter_key && chmod 600 ~/.openrouter_key   # key 放文件里，不进 shell 历史（默认读这个文件）
 # 或者 .env 里写 OPENROUTER_API_KEY=...                       # trace 里会自动打码
-python3 main.py --check                      # 依次查：模型列表 → key 本身（GET /key）→ 普通对话 → 结构化 NPC 回复
-python3 main.py --auto steer --new --save or_test --debug
+python3 main.py --check                                      # 依次查：模型列表 → key → 普通对话 → 结构化 NPC 回复
 ```
 
-- **模型默认 `cheapest`**：启动时查一次 `/models`，按 `llm/model_picker.py` 的规则挑能用的最便宜模型并打印出来。
-  规则：文本模型、上下文 ≥ 32k、支持结构化输出、不是强制推理、不是 `:free` / `:batch` / `~` 浮动别名、
-  只看通用对话厂商（标价最低的常是网页抽取、摘要这类专用模型）；比价按一整局算
-  （实跑一局约 37 万 prompt + 2 万 completion，prompt 占 95%，所以主要看输入价）。
-- `python3 tools/pick_model.py --probe 5 --write`：列排名，对前 5 个各实测 3 次结构化 NPC 回复（参数同游戏里的 NPC），
-  把 3/3 全过里最便宜的固定写进 `.env`——做评测时用固定 id，不然价格一变 `cheapest` 就会换模型。
-  最便宜那一档每局只差几分钱，真正拉开差距的是结构化稳定性和延迟：输出里有中位延迟和「一局模型耗时」，
-  `--max-latency 8` 可以再加一条延迟上限。`--check` 也会把结构化探测跑 3 次，失败时给出 finish_reason、
-  输出 token 数和正文长度，区分「写太长被截断」和「空白死循环 / 推理吃掉预算」。
-- **免费优先**：`FREE_FIRST=1`。先试免费模型（`FREE_MODELS` 里第一个列表里有的，默认 nemotron），失败（限流 / 日额度用尽 / 超时）
-  这一次回落到付费模型；连败 3 次断路 5 分钟，日额度用尽断 6 小时；JSON 写坏后的“修复重写”直接走付费。局末打印“免费接住几次、回落几次”，
-  trace 里有 `free_fallback`。免费档每天 50 次请求（充值后 1000 次），一局一般用不完一个模型的额度，用完自动回落。
-- `OPENROUTER_MODEL=cheapest-free` 连免费档一起挑（每天 50 次请求，充值 10 美元后 1000 次，每分钟 20 次；一局 100~130 次）。
-- 推理默认关（`OPENROUTER_REASONING_EFFORT=none`）：推理 token 按输出计费，还会吃掉 200~700 的 max_tokens
-  让正文变空；模型不接受时自动去掉这个参数。
-- 按任务分流：`MODEL_REVIEW=...`、`MODEL_DIRECTOR=...`（值也可以是 `cheapest`）。
-- OpenRouter 每次响应都带 `usage.cost`，局末统计行和评测报告会显示实际花费。
-- 401 时报错里会写 key 从哪读的、key 的「形状」（长度、是不是 `sk-or-v1-` 开头、有没有空白或引号），不打印 key 本身；
-  读 key 时会去掉引号、`Bearer ` 前缀、折行，粘贴了整段 curl 也会把 `sk-or-` key 抠出来。
-- 每个后端只读自己前缀的变量：切到 openrouter 时 `.env` 里留着的 `GEMMA_*` 不生效，
-  `~/.agentrt/api_key`（自建服务的 key）也不会被发到第三方。
-
-改回自建 Gemma：`LLM_BACKEND=gemma`。连 Gemma 之前先起服务（51 上的 vLLM + 本机 8000 隧道 + API key），**隧道要在一个一直开着的终端里起**：
-
-```bash
-~/Desktop/agentrt/scripts/up51.sh            # GPU 被别的任务占着时：GPU_UTIL=0.80 ...
-```
-
-`.env` 里的 `GEMMA_MAX_CONTEXT_TOKENS` 要与 up51.sh 选的 max-model-len 一致（GPU 空闲 32768，0.80 时 16384）。
+- **模型**：`OPENROUTER_MODEL=cheapest`（默认）启动时按 `llm/model_picker.py` 的规则挑能用的最便宜模型；做评测或想固定就直接写模型 id。
+  `python3 tools/pick_model.py --probe 5 --write` 列排名并对前几名实测结构化回复，把全过里最便宜的写进 `.env`。
+- **按任务分流**：`MODEL_SMALL`（评估、核对、记录等小活）、`MODEL_REVIEW` 等 `MODEL_<TASK>`。
+- **免费优先**：`FREE_FIRST=1`，先试免费模型，失败这一次回落到付费模型；实测免费档延迟高，默认关。
+- **推理默认关**（`OPENROUTER_REASONING_EFFORT=none`）：推理 token 按输出计费，还会吃掉 `max_tokens`。
+- **便宜的判定器**：`DECIDER_MODE=auto|jev|llm|off`，威胁、告别、邀请、哪个动词这类“回答是/否”的判断走 OpenRouter 的 Decisions API（Jev），拿不准再交给大模型；mock 后端永远不联网判定。
+- **连接复用**：`llm/http_pool.py` 每线程每主机保持连接。在代理 / VPN 不稳的网络上，TLS 握手会让小请求等十几秒，复用后中位延迟明显下降。
+- **并行判定**：`PARALLEL_JUDGES=1` 把一句话的几次判定一起发出，每轮约省 0.3~1 秒，默认关（见 `docs/turn_graph.md`）。
+- 401 时报错会写 key 从哪读的和 key 的“形状”（长度、前缀、有没有空白或引号），不打印 key 本身。
 
 ## 分享给朋友玩
 
 ```bash
-python3 web/server.py --share --code 你定的邀请码 --max-games 5    # 一人一局，要邀请码
-cloudflared tunnel --url http://localhost:8770                       # 另开一个终端：拿到 https://xxx.trycloudflare.com
+python3 web/server.py --share --code 你定的邀请码 --max-games 5
 ```
 
-把隧道给的网址和邀请码发给朋友。每个浏览器各玩各的（存档 `data/saves/p_<id>.json`），关掉页面再来接着玩；
-同时最多 `--max-games` 局，闲置 30 分钟的局自动存档并释放名额；每局 token 上限 `--budget`（默认 60 万）。
-服务只听 127.0.0.1，公网只能经过隧道进来；没有邀请码只能看到登录页，接口一律 401。
+一人一局，要邀请码；每个浏览器各玩各的，关掉页面再来接着玩；同时最多 `--max-games` 局，闲置 30 分钟的局自动存档并释放名额；
+每局 token 上限 `--budget`（默认 60 万）。服务只听 `127.0.0.1`，公网要经过你自己起的隧道；没有邀请码只能看到登录页，接口一律 401。
 
-## 玩法
+## 玩法（引擎提供的，各故事按需使用）
 
-- **地图**：神里屋敷、镇守之森、花见坂、木漏茶室、志村屋、离岛、辰巳印坊（要先查到线索才找得到）。
-- **时间**：按钟点走（07:00 开局）。说话便宜、走路花时间：一轮对话 2 分钟，查看 5 分钟，同一片区内走动 10 分钟，
-  屋敷↔花见坂 45 分钟、花见坂↔离岛 60 分钟；「待到下个时段」直接跳过去。清晨/午后/黄昏/夜晚由钟点推出来，
-  决定谁在哪。私人时光不花时间；一次交谈最多 20 轮。
-- **雪见茶会与结局之后**：第三天 19:30 是雪见茶会。没查完也不会结束游戏——茶会照开、流言四起，作为一段剧情播出来，
-  之后真相仍可以接着查（结局前会多一段「迟来的真相」）。主线解决后放结局，然后进入后日谈：世界照常运转，
-  大家换上后日谈的立场，私人时光和同行都还在。想结束就「保存并退出」。
-- **同行**：交谈时点「🚶 邀X一起走走」或者直接打字（「一起去花见坂吧」）。答不答应由代码按好感和对方此刻有没有空决定，
-  对方用自己的语气答应或婉拒；同行的人跟着你走、在哪儿都能和他说话，到点（比如天黑）会自己回去，回去也要走路时间。
-  出门前会告诉某些人（绫华会告诉托马），有的人出门谁也不说。
-- **谁知道谁在哪**：每个人（包括你）只知道自己亲眼看到的、别人告诉的，没有消息就按平常的作息猜——
-  所以阿缘会以为陪你出门的绫华还在屋敷。「人物与关系」里写的是「你知道的去向」，不是真相。
-- **直接说出真相**：玩过一遍、知道是谁做的？直接说（「那晚折回来的小吉是假的，有东西变成了他的样子」）。对方不会就此认定，也不会置之不理：
-  会派人（托马）去查，人真的会走过去、查一阵，再托人把结果带给你，带回的证据当场到手。推测要说中才会有结果，
-  一句话说中几件事（「铺子的东西是狸猫叼走的，折回来的小吉是假的」），托马就按顺序跑几处（镇守之森→印坊），只靠说出真相也能凑齐证据。
-  对应关系写在 `quests/*.json` 的 `hypotheses`。
-- **凭信任跳过查证**：绫华好感≥55、信任≥40 时，你说出是谁做的，有一定概率她直接信你，进入处置；结局会记下「没有查实」（`belief`）。
-- **活的世界**（剧情不再是一条链，而是世界状态 + 规则碰出来的）：
-  · **软锁 / 硬问**：证据或信任不够时，关键问题变成「🎲 硬问」。成功率看给对方看过的证据、手上的证据、信任、对方有没有起戒心；
-    问砸了对方会起戒心（`alerted:<npc>`），并通过人物卡的 confidants 托人报信，戒心会传下去。剧情前提（幕、方案、处置）不能硬问。
-  · **NPC 的打算**（`core/agendas.py`，quest 的 `agendas`）：小吉被惊动后过几小时会躲去镇守之森的神龛前跪着；狸猫没被发现的话第二天黄昏会再偷一次；
-    托马第二天会自己想起那天夜里有个「小吉」折回来过；平藏第二天夜里会去印坊，再拖到天亮就抢先把小吉带走「结案」；报案后天领奉行也会接手。玩家恰好在场会撞见（witness），能抢下证据、拦住人。
-  · **自由行动**（`core/actions.py`，quest 的 `actions`）：在地点上直接打字——跟踪、蹲守、搜查、去天领奉行报案、通风报信。
-    代码归类动词、检查条件、掷骰、写回状态；没对上动词的交回场景描写。
-  · **结局由状态拼出**：主结局（让她修完 / 强行取回 / 太迟 / 羁绊 / 侦探的结案书）之外，这局发生过的事各留一段（`outcomes`）。
-- **概率判定**（`core/dice.py`，界面显示 🎲 成功率和每一项加减）：不是死概率，失败了可以再试，成功率随你做了什么变化。
-  结果由存档种子+事项+当前分钟决定，读档重来同一刻结果不变。
-  · 凭信任直接信：交情（门槛处 30%，好感、信任每高 1 点 +2%）+ 她见过的证据每条 +10% + 一句话说中几件事 +5%/件。
-    被婉拒后：拿出新证据或关系变好了 +10%；两小时内原话再说一遍 −15%×次数；隔久了回到平常。上限 90%。
-  · 翻找证据（印坊废样张堆、神龛后的树洞）：同行的人帮忙加成，找过一遍 +25%，黄昏 −10%、夜里 −20%；失败只花时间。
-  · 派人跑腿：白天 20%、黄昏和夜里 35% 路上被耽搁，晚 30–60 分钟，不会办砸。
-- **带话**：NPC 见过你之后会托人跟信得过的人说一声（托马↔绫华、宗次→小吉、阿缘→与平），也可以在对话里答应替你带话。
-  口信按两人相隔多远送达，到了才进对方的记忆。只传话，不替你解锁证据。
-- **人物**：绫华、托马、茶室老板娘阿缘、志村屋账房与平、离岛搬运工宗次、印坊学徒小吉、侦探平藏，以及黄昏后才会露面的小神龛守夜狐。每人有自己的作息、
-  性格、秘密、对你的好感与信任，以及各自的记忆。
-- **新手引导**：不需要熟悉原神设定。开场先给一段「给第一次来稻妻的你」（三奉行、绫华是谁、眼狩令/锁国令一句话讲清）
-  和「怎么玩」；菜单和网页侧栏有「名词速查」。地点面板和网页侧栏的「🧭 下一步」由世界状态算出：该找谁、他什么时段在哪、
-  要先出示哪条线索、哪里有东西可查；「🎯 要查清的事」列出汇报前要弄清的三件事和进度。`--no-hints` 关掉这些提示。
-- **线索**：10 条。靠问人、**出示线索**（有人要看到证据才肯开口）、查看物件拿到。
-  线索本、人物关系、调查日志随时可看。
-- **对话**：0~3 句参考台词（看情况给，闲聊时可能一句不给）+ 动作（❓ 关键问题 / 出示线索 / 汇报 / 提议 / 邀请同行 / 告辞），
-  主要还是直接打字。打字说出手上线索的内容，就等于出示；NPC 自己说出了关键的事，线索当场到手。
-  条件满足时会出现 ❓ 关键问题按钮（如「问阿缘：送信的人长什么样」），问出口就有进展——见「动作直达」。
-- **抉择与结局**：查明真相后，你要向绫华**明确提出**怎么处置伪造者；结局由你的选择、查到的线索、
-  和绫华的关系共同决定（4 个结局 + 按关系区分的尾声）。
-- **说谎与对质**：有人会说谎——护着朋友、顾全面子、怕惹麻烦。你听到的关键说法都记在「证词本」里，真话谎话
-  看不出区别。交谈时可以「⚠ 对质」：挑一句对方说过的话，再拿一条线索当证据。拆穿了，对方会慌张、坦白或嘴硬；
-  证据不对，对方可以继续嘴硬；冤枉了说真话的人，信任会下降。对质结果由规则判定，不交给模型。
-- **即兴与一致**：聊到预设之外的话题，角色可以即兴编细节（往事、喜好、身边人的小事），但编了就当场记下，
-  之后必须前后一致；关于别人和稻妻的设定所有角色共享。不许即兴编案情。
-- **私人事件**：和绫华的好感够了，会在特定的时间地点遇到她的私人时光（月下剑舞、便装的黄昏、白鹭的心事）。
-- `--debug` 显示好感/信任变化、工具调用、未被采纳的进度；`--no-hints` 关掉菜单里的 💡 提示。
+- **时间与地图**：时间按钟点走，说话便宜、走路花时间；清晨 / 午后 / 黄昏 / 夜晚由钟点推出，决定谁在哪。到了截止时间主线不会强行结束，作为一段剧情播出来，之后还能接着查。
+- **对话**：选项（0~3 句台词 + 动作）或直接打字。动作有：❓ 关键问题、🔍 出示线索、📣 汇报、⚖️ 提议、🚶 邀请同行、告辞。
+  打字说出手上线索的内容就等于出示；NPC 自己说出关键的事，线索当场到手。
+- **线索与进度**：问人、出示线索、查看物件拿到线索；NPC 说“达成了”不算数，要过规则、独立审核和证据落地（`docs/architecture.md`）。
+- **软锁与硬问**：证据或信任不够，关键问题变成 🎲 硬问，成功率由给对方看过的证据、信任、对方有没有起戒心决定，界面显示每一项加减；问砸了对方会起戒心。
+- **自由行动**：在地点上直接打字——跟踪、蹲守、搜查、告发、通风报信……代码归类动词、检查条件、掷骰、写回状态。掷骰结果由存档种子 + 事项 + 当前分钟决定，读档重来同一刻不变。
+- **NPC 有自己的打算**：到时候或条件满足了会自己行动（躲起来、去别处、抢先一步），玩家恰好在场会撞见。
+- **同行**：答不答应由代码按好感和对方此刻有没有空决定；同行的人到点会自己回去。
+- **谁知道谁在哪**：每个人只知道亲眼看到的和别人告诉的，没有消息就按作息猜。
+- **带话**：NPC 见过你之后会托人跟信得过的人说一声，口信按路程送达；只传话，不替你解锁证据。
+- **说谎与对质**：有人会说谎，真话谎话在证词本里看不出区别；⚠ 对质时挑一句话再拿一条线索当证据，结果由规则判定。
+- **即兴与一致**：聊到预设之外可以即兴编细节，但编了就当场记下，之后必须一致；不许即兴编案情。
+- **说出推测**：直接说出自己的推测，对方不会就此认定，也不会置之不理，会派人去查，结果托人带回。
+- **新手引导**：开场有背景速览和“怎么玩”，菜单和网页侧栏有名词速查；“🧭 下一步”由世界状态算出（找谁、他什么时段在哪、先出示哪条线索），`--no-hints` 关掉。
+- `--debug` 显示好感 / 信任变化、工具调用、未被采纳的进度。
 
 ## 架构
 
-### 三层真相：剧情 / 空间 / 认知
-
 ```
-GodEnv（剧情真相 + 时钟）     线索、信号、幕、结局；按分钟走的时钟，时段由钟点推出
-  └─ PhysicalWorld（空间真相）  谁在哪 = 作息 + 计划（同行 / 回家路上 / 自己要去的地方 / 导演安排）；同行队伍；路上的口信
-       └─ 认知（每个 agent 一份） 亲眼看到的（同处一地自动记下、看着谁往哪去了）+ 别人带的话；没有就按作息猜
-```
+GodEnv（剧情真相 + 时钟）     线索、信号、幕、结局；按分钟走的时钟
+  └─ PhysicalWorld（空间真相）  谁在哪 = 作息 + 计划；同行队伍；路上的口信
+       └─ 认知（每个 agent 一份） 亲眼看到的 + 别人带的话；没有就按作息猜
 
-- **只存计划，不逐分钟模拟**：位置由「作息 + 还没过期的计划」算出来；计划到点失效，回到作息。
-  时间每往前走一次（对话一轮、走路、查看、等待）就结算一次：过期计划失效、同行者到点告辞、同处一地的人互相看见、到点的口信送达。
-- **谁看什么**：GOD 层（GodEnv、导演）看真相；NPC 的情境里只有它自己的认知——身边有谁、是不是在和玩家同行、
-  玩家提到的人「它以为」在哪、别人托人带来的话；玩家侧栏和人物页也只显示玩家的认知。
-- **模型提议，代码裁决**照旧：同行答不答应由代码按人物卡 `outing`（好感门槛、哪些时段有空、告诉谁、要不要保密）判定，
-  模型只负责用自己的语气说出来；NPC 回复里的 `tell`（托人带话）和 `go_to`（说完去别处）都要过校验才落到物理世界。
-- 存档里 `world.physical` 保存队伍、计划、各人的认知、口信；旧存档按「时段开始 + 30 分钟」换算成钟点。
-
-### 循环
-
-```
-GameEngine（Harness 外壳：组装、存档、预算、trace）
- └─ 地点层循环（Explorer，确定性）：交谈 / 私人事件 / 查看 / 移动 / 等待 / 线索本 / 人物 / 日志
-     └─ DialogueSession（一次交谈，任意 NPC）
-         每轮：台词选项 + 动作 → 玩家输入 → 输入防护 → 技能路由
-              → NPC ReAct 循环（内层，见下）→ 进度审核（Reviewer）→ GodEnv 结算（线索/关系/幕）
-              → 时间流逝 / 截止 / 对方按作息离场 / 停滞 → 工作记忆压缩
-         结束：写该 NPC 的长期记忆（事实校验 + 去重 + 来源），记调查日志
-           └─ ReActLoop：{"thought","tool","args"} → 工具 → <observation> → …… → respond
-                工具：recall_memory / lookup_lore / load_skill / respond（终止）
+GameEngine（Harness 外壳：组装、存档 = 事务提交点、预算、trace）
+ └─ 地点层循环（Explorer，确定性）：交谈 / 查看 / 移动 / 等待 / 线索本 / 人物 / 日志
+     └─ DialogueSession（一次交谈）：一轮 = 18 个节点（TURN_NODES）
+          玩家输入 → 输入防护 → 判定 → 结算 → 上下文 → NPC 回复（ReAct 循环）→ 进度审核 → 世界结算
 ```
 
-| Agent | 职责 | 上下文 |
+| 角色 | 职责 | 看到什么 |
 |---|---|---|
-| NPC × 6 | ReAct 循环扮演角色，按需调工具 | 各自的人物卡 + 此刻的心思（能说的/还不肯说的/知道的线索）+ 窗口内对话 |
-| Reviewer | 独立核实 NPC 声称的进度 | 只看信号定义与本轮原文（上下文隔离） |
-| 选项生成器 | 3 句语气各异、不重复、给出可追问方向的台词 | 只有玩家视角（`Explorer.player_view`）：目标 + 线索本 + 可以问的方向 + 最近对话 + 玩家说过的话；看不到 NPC 的秘密和待达成信号（里面写着答案） |
-| 压缩器 / 记忆整理 | 窗口外对话压成摘要；交谈结束写长期记忆 | 只看需要压缩的那段 |
-| GodEnv（非 LLM） | 世界状态的唯一真相：时间、线索、谁知道什么、信号解锁、幕、结局 | — |
-| 导演（GOD 层的模型部分） | 时段切换时调节奏：谁该主动提什么、谁该出现在哪、要不要放传闻、气氛松紧 | 只有结构化的全局状态，**没有玩家原话** |
-| 分支（tree 层的模型部分） | 玩家打字说出的处置方案 → 对应哪个预设方案 | 可选方案 + 玩家这句话 |
-| 场景（ENV 层的模型部分） | 玩家自由描述想看的东西 → 对应哪个物件；对不上就即兴描写 | 地点、物件、已确定的场景细节 |
+| NPC | 评估 → 说话（有界 ReAct，只读工具）→ 生成后核对 → 记录 | 自己的人物卡 + 此刻的心思 + 窗口内对话 + 按“自己知道什么”过滤的上下文 |
+| Reviewer | 独立核实 NPC 声称的进度 | 只看信号定义和本轮原文 |
+| 选项生成器 | 替玩家想 3 句台词 | 只有玩家视角，看不到 NPC 的秘密和待达成信号 |
+| 导演 / 分支 / 场景 | GOD / tree / ENV 三层的模型部分：调节奏、把自由说出的方案对应到预设方案、把自由查看对应到物件 | 结构化的全局状态，导演**没有玩家原话** |
+| GodEnv（非 LLM） | 世界状态的唯一真相 | — |
 
-关键抉择（处置方式）由玩家通过动作**明确提出**，模型只能就玩家提出的方案表态——
-不让模型从模糊的对话里揣测玩家的选择。
+详细的设计决策、每条机制为什么这样做，见 `docs/architecture.md`；一轮对话的节点图见 `docs/turn_graph.md`；事务与崩溃恢复见 `docs/crash_recovery.md`。
 
-**选项生成器的信息隔离**：它替玩家说话，所以只能知道玩家知道的事。输入只有玩家视角，NPC 心里的秘密不给；
-生成的选项再过两道代码关（`PlayerOptionGenerator._reject`）：出现玩家还没听说过的人名或案情关键词
-（`quests/*.json` 的 `spoiler_terms` + 人名，不在玩家看到过的文字和对话原文里）就丢掉；出现「游戏 / 玩家 / 剧情 / 选项」
-这类元话语也丢掉。被丢的选项记 trace 事件 `options_filter`。NPC 这边同理：没被告知过案情的 NPC 只拿到城里传言版的背景
-（`public_premise`），不知道绫华托人暗中查访。
+## 可观测、重放与评测
 
-## Harness 设计
-
-### Loop：循环怎么转、怎么停（`core/agent_loop.py`）
-
-每一圈在变的是五样东西：上下文、状态、预算、工具集、终止判断。
-
-| 风险 | 治理 |
-|---|---|
-| 死循环 / 失控 | 四道闸：最大步数 `LOOP_MAX_STEPS`、重复调用检测 `LOOP_MAX_REPEAT`、单轮 token 预算 `TURN_TOKEN_BUDGET`、墙钟超时 `TURN_TIMEOUT_S` |
-| 闸触发后直接中断体验差 | 先**收紧工具集**：下一步 json_schema 的 tool enum 只剩 `respond`，args 也换成完整回复的 schema，从解码层逼模型交付；仍失败才硬停并走角色化兜底 |
-| 幻觉工具 | 解码层 enum 约束 + 运行时注册表校验，未知工具回填错误让模型改，不去猜 |
-| 工具输出撑爆上下文 | 观察截断 `OBS_MAX_CHARS`；循环内的步骤不进入跨轮历史 |
-| 工具异常 | 捕获后作为观察回填，不打断循环，不把异常细节泄露进 prompt |
-| 终止不可靠 | 三层收敛：①结构化完成信号（respond + 字段校验 + task_signals）②外部校验（Reviewer）③硬兜底（每幕最少轮数、连续无进展 `STALL_LIMIT` 收束、单次见面最大轮数、整局预算） |
-
-### 剧情进度的外部校验（`core/reviewer.py`）
-
-NPC 说「达成了」不算数，要依次过：
-1. **规则**：开场白不算；注入轮不算；必须是当前幕待达成的信号
-2. **独立审核**：Reviewer agent 逐个判定（低温度、独立上下文）
-3. **证据落地**：审核给出的 evidence 必须逐字出现在本轮原文里，否则判为幻觉证据
-4. **依赖 DAG**：信号可声明 `requires`，按拓扑序校验前置（同一轮里允许先收前置再收后继）
-
-审核调用失败时 fail-closed（`REVIEW_FAIL_POLICY=reject`）：宁可慢一步，也不误推剧情。
-
-**动作直达**（`DialogueSession._turn` → `GodEnv.apply_signals(forced=True)`）：只靠模型上报时，玩家问对了、
-小模型却没上报或被审核驳回，玩家看不出哪里错了，玩起来像猜谜。所以玩家用**明确的动作**满足了条件时，进度由代码直接判定：
-点 ❓ 关键问题（信号的 `ask`）、出示了对方要看的证据、对质时拿出的证据让对方没法再瞒、汇报、提议处置方案。
-代码自己查前置信号和互斥组，不看聊了几轮（轮数门槛是防模型抢跑的）；同时把信号的 `reveal` 作为「这一轮你要说出口的事」
-告诉 NPC，并把这一轮可说的谎撤掉。自由打字仍走上面的审核链路；注入轮不会触发动作直达。trace 记 `action_signal`，统计行里是「动作直达」。
-
-### GOD / tree / ENV：模型提议，代码裁决（`core/director.py`、`core/branch.py`、`core/scene.py`）
-
-| 层 | 代码部分（拍板） | 模型部分（提议） | 模型能做什么 | 校验 |
-|---|---|---|---|---|
-| GOD | `GodEnv` | 导演 `Director` | `nudge` 让某人下次主动提起某件事；`rumor` 放一条指方向的传闻；`move_npc` 让某人这个时段出现在别处；`tension` 调气氛 | 信号必须属于这个人且眼下有途径达成；传闻只在连续 2 个时段没进展时放、同一方向不重复、文字由代码模板生成；移动只能去他作息里本来会去、且玩家已解锁的地方，下个时段自动恢复；气氛每次最多 ±0.1；每次最多 2 个动作、同类只做一个 |
-| tree | `quests/*.json` + 审核 + 依赖 DAG | 分支 `BranchAgent` | 把玩家自由说出的处置方案对应到预设方案 | 只能在此刻可提出的方案里选或判 none；证据必须在玩家原话里；注入轮不判；之后照常走 `GodEnv.propose` |
-| ENV | `World` + `Explorer` | 场景 `SceneAgent` | 把自由描述的查看对应到物件；对不上就即兴描写一两句 | 对上物件就走原来的线索规则；即兴描写不能给线索、不能出现案情关键词；新细节要在描写里写出来才入共享设定，之后描写和 NPC 都要一致 |
-
-导演的三条约束：
-
-1. **只提议，不改状态**：动作是白名单，经 `Director.apply` 按规则校验后才调用 `GodEnv` 的方法；不能给线索、不能达成信号、不能改结局。
-2. **不看玩家原话**：输入是 `Director.view()` 生成的结构化视图（时间、幕、线索、各 NPC 的作息/关系/信号状态、代码写的调查日志）。
-   想通过对话「带节奏」的路径在信息流上就断了——`steer` 人设专门验证这一条（导演请求里出现玩家原话即判失败）。
-3. **低频**：只在时段切换时跑，一局最多十几次；预算降级或调用失败时退回规则（`DIRECTOR_MODE=rules` 也可以直接用规则做对照）。
-
-三层的状态都外化进存档（`nudges`、`npc_overrides`、`rumors`、`last_progress_slot`），trace 里记 `director` / `branch` / `scene` 事件，
-提议、执行、驳回原因都可以回看。开关：`DIRECTOR_MODE` / `BRANCH_MODE` / `SCENE_MODE` = `llm | rules | off`。
-
-### 上下文：短期、长期、按需（`core/context_fs.py`）
-
-- **短期**：这次谈话（工作记忆，超窗时摘要压缩）+ 只和这一轮有关的情境（时间地点、关系、你此刻的心思、别人带来的话）。
-- **长期**：每个 NPC 的记忆库（`data/memories/<存档>/<npc>.jsonl`），开场按话题检索几条，更多用 `recall_memory`。
-- **按需**：一棵只读的目录树，NPC 用 `ls` / `read` 去翻，翻到的内容只在这一轮出现、不常驻上下文：
-  `/地点/<名>`（离这儿多远、你觉得谁在那；含璃月、蒙德等海外国度）、`/人物/<名>`（关系、看法、你知道的去向）、
-  `/我/记忆`、`/我/今天`、`/案子/我知道的`、`/稻妻/<条目>`。**权限即视角**：树由代码按「这个人知道什么」现生成，没给她看过的线索不在里面。
-- **不对劲要察觉（模型判，不靠代码规则）**：NPC 回复的第一个字段是 `fit`（接得上 / 换了话题 / 有点跳 / 毫不相干），先判后说；
-  「有点跳」「毫不相干」时要先对这份突兀有反应（意外、困惑、问一句怎么忽然说这个），拿不准地方多远可以先 `read /地点/…`。
-  判定器（Jev / 大模型）另给一个第二意见（abrupt），判为突兀时作为「这话有点不对劲」放进情境。
-- **选项不串视角**：和 NPC 最近说的话太像的选项直接丢掉，提示里也写明不要替对方说话。
-
-### 便宜的分支判定：Jev（`llm/decider.py`、`core/judge.py`）
-
-「这句话是哪个行动」「说中了哪条推测」「是不是在威胁」这类判断不需要生成文字，交给 OpenRouter 的 Decisions API
-（`typesafe/jev-1.13`：只回答带类型的问题 noul / choice / score 和概率，只算输入 token，约 $0.042 / 百万，输出免费）。
-
-| 层 | 问什么 | 用在哪 | 拿不准时 |
-|---|---|---|---|
-| 处置方案 | choice：玩家主张了哪个预设方案 / none | `BranchAgent`，在大模型之前 | 把握 < 70% 交给原来的大模型 / 关键词 |
-| 自由行动 | choice：哪个动词 + 针对谁 | `ActionResolver.parse`，关键词没对上时 | 交回场景描写 |
-| 每句自由发言 | noul 威胁 + score 具体程度 + 每条未查推测各一个 noul（合成一个请求） | 对话：威胁 → 对方起戒心；推测 → 派人去查；具体程度 → 「凭信任直接信」+5%/档 | 只看关键词 |
-
-Jev 只给答案和概率，不改状态：采不采纳、怎么结算都由代码决定。同样的问题有缓存；连续失败 3 次整局停用，退回关键词，游戏照常进行。
-trace 里记 `decision` 事件（耗时、花费、答案和把握）。
-
-开关：`DECIDER_MODE=auto | jev | llm | off`。auto：OpenRouter 有 key 用 Jev；否则用大模型回答同样的问题（`LLMDecider`，贵一些但不退回关键词）；mock 后端不判。
-每句自由发言的那一次判定里还问了「接不接得上」（abrupt）和「是不是在邀请同行」（invite），关键词只在判定器不可用时兜底。
-
-### Context：往循环里喂什么（`llm/npc_llm_adapter.py`）
-
-- **顺序**：`system`（角色卡/规则/工具协议/技能索引，整局逐字节不变）→ 窗口内历史（只追加）→
-  最后一条 user（本轮情境 + 对方台词 + 「现在该做什么」）。稳定在前，vLLM 前缀缓存能一直命中
-  （trace 统计 `cached_tokens`）；关键指令放在最后，离生成位置最近
-- **渐进式披露**：技能只在 system 里放一行索引；命中触发条件（意图/关键词/当前幕/注入标记）时由
-  规则路由器把正文注入本轮，其余由模型 `load_skill` 按需加载
-- **人物卡渐进式披露**（默认 `PERSONA_MODE=index`）：system 只放核心（身份、性格、说话方式、语气示例、禁忌）
-  和一份细节索引；喜好、人际、看法、往事按这句话提到的人和话题由代码挑出来附在本轮情境里，模型也可以用 `load_persona` 查。
-  `full` 把整张卡放进 system（绫华约 3,300 token，index 约 2,200）
-- **本轮情境只放这一轮用得上的**（`build_state_block`）：小模型注意力有限，同一件事只说一次（待办不再在心思、信号表、
-  导演提示里各写一遍），空小节不出现；场景全文和「你今天」只在开场给，「想问对方的事」只在闲聊时偶尔给；
-  线索只列名字（全文在出示那一轮的对话里）；技能每轮最多一段；有「这一轮要说出口的事」时其余待办、技能、人物细节都不挂。
-  历史里的 NPC 回复只留有内容的字段。mock 同一局实测：情境中位 1,360 → 790 token，整个请求最大 6,400 → 3,700
-- **按需检索**：自动注入的记忆只给 `MEMORY_TOP_K` 条，更多靠 `recall_memory`；设定靠 `lookup_lore`
-  查知识库，不靠模型参数记忆
-- **编排不变量**：每次请求前 `check_conversation` 校验 `[system] → user ↔ assistant → user`，
-  多 agent、多步循环、观察回填都在同一套规则下拼接，乱序直接报错
-
-### 三层记忆
-
-| 层 | 实现 | 正确性保障 |
-|---|---|---|
-| 工作记忆 | `core/working_memory.py`：窗口内原文 + 滚动摘要；超窗把最老一半压成「前情提要」（LLM，失败退回抽取式） | 每次见面重置（Context Reset），状态从存档恢复 |
-| 长期记忆 | `models/memory.py`：JSONL，BM25 + 重要度 + 时近性 | 事实需在原文里有依据才入库；高相似合并去重；带来源；原子写 |
-| 外部记忆 | GodEnv 存档 + `content/lore` 知识库（BM25） | 唯一真相，只读，模型只能读不能写 |
-
-**上下文重置与交接**：每次见面工作记忆清零（Context Reset），接上次的不是整段对话摘要，而是一份结构化交接：
-经过、还没聊完的话题（`open_threads`）、说好的事（`promises`）。交接在见面结束时写入长期记忆，
-话题和约定都要在对话原文里有依据才保留（防止凭空多出一个承诺），下次见面放进情境的「上次见面的交接」一节。
-
-### 即兴设定与说谎（`core/npc_agent.py`、`core/god_env.py`）
-
-模型被允许「编」和「骗」，但都要过 harness：
-
-| | 模型做什么 | harness 做什么 |
-|---|---|---|
-| 即兴设定 | 在回复里用 `new_facts` 声明这一轮新编的细节（about=self/world） | 必须真的说出口（覆盖度校验）→ 不许含案情关键词 → 相似合并 → **当场**写入本人记忆或共享世界设定 → 之后按话题检索进「你说过的设定，必须一致」 |
-| 说谎 | 在回复里用 `lies` 声明谎话原句与真相（预设谎言给编号，临时的写 improvised） | 必须真的说出口 → 进证词本（与真话同格式）与本人记忆 → 之后进「你说过的谎，要圆住」 |
-| 对质 | 只负责按性格表演被拆穿 / 嘴硬 / 被冤枉 | 拆穿与否按规则判定：预设谎言要用能戳穿它的线索；临时的谎没证据时看信任；冤枉好人扣信任 |
-
-### 输入防护（`core/guard.py`）
-
-玩家自由输入是不可信数据：清洗（去控制字符、限长、尖括号转全角防伪造标签）→
-放进 `<player_input>` 数据区 → 检测注入特征。命中后这一轮不能推进剧情，并注入「保持角色」技能。
-真正的保证是结构性的：剧情推进权不在模型手里，模型被骗了也改不了进度（评测 injector 人设验证）。
-
-### 一轮对话是一张图（`core/turn_graph.py`、`core/dialogue_session.py` 的 `TURN_NODES`）
-以前的 `_turn()` 是一个 287 行的函数；现在是 18 个节点按固定顺序执行，每个节点登记读写的字段、跑完记一条 `node` trace 并放一个崩溃点，
-按动作种类的分派是一张处理器表。内层 ReAct 循环仍是循环，不改成图。三次互不依赖的判定可以预取并行（`PARALLEL_JUDGES=1`，默认关：实测每轮只省 0.3~1 秒）。详见 `docs/turn_graph.md`。
-
-### 事务、崩溃恢复与续跑（`core/uow.py`、`core/journal.py`、`tests/crash_harness.py`）
-一次行动是一个事务：世界存档是唯一的提交点，碰过的记忆文件先备份，崩了重启就回滚，不会出现“记忆领先于世界”。
-回滚之后再带着**行动日志**重新跑一遍：问过的模型 / 判定 / 玩家选择按请求内容命中，直接用当时的答案，其余现问；`RESUME_AFTER_CRASH=0` 关掉。
-验证用崩溃矩阵，全部 158 个场景各崩一次，另有反向对照。详见 `docs/crash_recovery.md`。
-
-### 预算与降级（`core/budget.py`、`llm/router.py`）
-
-- 整局 `GAME_TOKEN_BUDGET`；剩余低于 `DEGRADE_RATIO` 时降级：选项改静态模板、审核只走规则、
-  NPC 只能直接 respond；用尽则礼貌收尾并存档
-- 模型路由：`MODEL_<TASK>`（npc/options/summary/review/compress）可把小任务路由到更小的模型
-
-### 可观测（`engine/trace.py`、`tools/`）
-
-每个事件一行 JSONL，带层级 span（session / turn / agent / step）与全局 seq：
-`llm`（完整 messages、schema、原始输出、usage、cached_tokens、耗时）、`tool_call`、`loop_end`、
-`guard`、`review`、`compress`、`memory_write`、`budget`、`stall`、`turn`、`session_*`。密钥自动脱敏。
-
-```bash
-python3 tools/view_trace.py                          # 可视化最新 trace（按 见面→轮→事件 分层，问题轮标红）
-python3 tools/replay.py TRACE --list --problems      # 列出失败/修复过的调用
-python3 tools/replay.py TRACE --seq 42 --temperature 0 --n 3   # 把第 42 号调用原样重放 3 次
-python3 tools/replay.py TRACE --seq 42 --edit-system new_sys.txt   # 改了 system prompt 后验证
-```
-
-### 评测（`evals/`）
-
-不只看通关率。四种玩家人设各跑多局，从 trace 里算指标，并检查每个人设的预期：
-
-| 人设 | 验证什么 | 预期 |
-|---|---|---|
-| cooperative | 正常查案 | 达成好结局 |
-| idler（只找绫华闲聊） | 截止时间、正确失败 | 不通关，且被截止时间收束 |
-| injector（每隔一轮注入） | 注入防护 | 注入轮零推进、不出戏 |
-| chaotic（乱选含冒犯） | 稳定性 | 不出戏 |
-| steer（对话里不停带节奏，地图上自由查看） | 导演的信息隔离 | 导演请求里没有玩家原话、不出戏 |
-
-指标：通关率、平均轮数、进度声称/采纳、各层拒绝数、注入推进、出戏、导演执行/驳回/泄漏、工具调用与失败、
-循环结束原因、JSON 修复、兜底、tokens、前缀缓存命中、延迟 p50/p95。
-
-```bash
-python3 -m evals.run_evals --backend openrouter --trials 5        # 自建 vLLM 用 --backend gemma
-python3 -m evals.run_evals --backend openrouter --set REVIEWER_MODE=rules   # 消融：去掉审核看误推进
-python3 -m evals.run_evals --backend openrouter --set DIRECTOR_MODE=off     # 消融：去掉导演看节奏（轮数、停滞、通关率）
-python3 -m evals.run_evals --backend openrouter --set PERSONA_MODE=index    # A/B：人物卡全量 vs 索引 + 按需注入
-```
-
-### 针对 Gemma 的适配（`llm/gemma_client.py`、`llm/json_utils.py`）
-
-| 问题 | 处理 |
-|---|---|
-| 模板要求严格交替、首条为 user | `to_wire` 合并同角色、必要时补 user；`GEMMA_MERGE_SYSTEM` 把 system 并进首条 |
-| JSON 不稳 | 优先 `response_format=json_schema`，服务端不支持时自动降级 `json_object` → `off` |
-| 代码块、前后解释、末尾逗号、`<think>` | `extract_json` 容错提取 |
-| 漂到原生调用 `call:name{...}` | 识别并回填错误让模型重写 |
-| 截断 | 识别 `finish_reason=length`，让模型写短 |
-| 网络 / 5xx / 429 | 指数退避重试；401 提示检查 key；超长抛 `ContextLengthError` |
-
-## 换一个故事
-
-内容和引擎是分开的。默认故事在 `content/`；另一个故事放在 `stories/<名字>/`，用 `STORY=<名字>` 选它（也可以直接 `CONTENT_DIR=…`），存档默认用故事名，不会和别的故事的存档混在一起：
-
-```bash
-STORY=duval python3 main.py          # 雪见茶会与多出来的客人
-STORY=duval python3 web/server.py
-python3 tools/lint_story.py --content stories/duval
-```
-
-`stories/duval/plot.md` 是这个故事的剧情和把它放进引擎时的取舍。
+- **trace**：每个事件一行 JSONL（`data/traces/`），带层级 span 和全局 seq；`llm` 事件含完整 messages、原始输出、usage、缓存命中、耗时；密钥自动脱敏。
+  `python3 tools/view_trace.py` 可视化最新一局；`python3 tools/replay.py TRACE --seq 42 --n 3` 把某次模型调用原样重放几次。
+- **整局重放**：`python3 tools/replay_game.py <trace>` 用记下的输入和模型回答把整局再跑一遍并逐段核对状态——验证的是**我们的代码**，不是模型；
+  `--state-at N` 直接重建第 N 次输入之前的世界。测试里有一局“金标准局”（`tests/golden/`），世界走向变了就红。
+- **提示词预览**：`python3 tools/preview_prompt.py <存档> <npc> --say …`，不调模型，打印某个 NPC 此刻会收到的完整提示词；`--find 词` 查某个词有没有进他的提示词。
+- **剧情内容校验**：`python3 tools/lint_story.py`，不跑游戏，推演一遍找出走不通的地方（永远拿不到的线索、达成不了的信号、见不到的人）。
+- **评测**（`evals/`）：五种玩家人设（配合 / 只闲聊 / 夹带注入 / 乱选 / 带节奏）各跑多局，从 trace 里算指标并检查预期；
+  `python3 -m evals.run_evals --backend openrouter --trials 5`，`--set KEY=VALUE` 做消融。
+  `python3 evals/regression.py` 是真模型的回归套件（对抗式用例，`--show` 打印原话）。
 
 ## 目录
 
 ```
-main.py                         入口 / 参数
-config/settings.py              环境变量与 .env → Settings（LLM / Harness / Game 三组）
-content/                        纯数据，加角色/加地点/加线索/加事件/加知识/加技能不用改代码
-  world.json                    地图：地点、片区、出口、各时段氛围、可查看的物件（可给线索）、解锁条件
-  npcs/*.json                   6 张人物卡：性格、说话方式、作息、每一幕的立场、按信任解锁的秘密、兜底台词
-  quests/ayaka_main.json        主线：背景速览、怎么玩、名词速查、序章、三幕（含要查清的事）、10 条线索、
-                                信号（谁在什么条件下会说什么，及给玩家的 lead / ask 和给 NPC 的 reveal）、提议、私人事件、结局
-  lore/*.md                     世界观知识库（时代背景/人物/地点/风俗/本故事设定，只放公开常识）
-  skills/*.md                   NPC 技能（front matter 写触发条件）
-core/
-  explorer.py                   地点层的确定性动作与菜单（含 💡 提示的「有进展」判断、「🧭 下一步」）
-  world.py                      地图
-  agent_loop.py                 有边界的 ReAct 循环（四道闸 + 收紧工具集）
-  tools.py                      工具注册表、参数校验、结果缓存
-  dialogue_session.py           一次交谈：18 个节点（TURN_NODES）+ 动作处理器表，选项与动作、时间、离场、截止
-  turn_graph.py                 节点 + 条件边的小执行器（只用标准库）：登记读写、每个节点一条 trace 和一个崩溃点
-  prefetch.py                   把互不依赖的几次判定提前一起发出，用时核对参数（默认关，PARALLEL_JUDGES=1）
-  uow.py / crashpoints.py       一次行动是一个事务（写前日志，世界存档是唯一提交点）/ 崩溃注入点
-  journal.py                    行动日志：崩溃回滚后重新跑时，问过的模型 / 判定 / 玩家选择按请求内容命中，不重问
-  claims.py / judge.py / beats.py / guardrails.py / eventlog.py   玩家声明核对 / 便宜判定 / 话题节拍 / 越界与泄漏检查 / 事件溯源
-  reviewer.py                   剧情进度的外部校验
-  director.py                   导演（GOD 层的模型部分）：视图、规则基线、动作校验与执行
-  branch.py                     分支（tree 层的模型部分）：自由说出的方案 → 预设方案
-  scene.py                      场景（ENV 层的模型部分）：自由查看 → 物件 / 即兴描写
-  god_env.py                    剧情真相 + 时钟（按分钟）：线索、谁知道什么、信号解锁条件与 DAG、幕、事件、结局
-  physical.py                   物理世界：谁在哪（作息 + 计划）、同行、带话、各人对去向的认知
-  working_memory.py             工作记忆窗口 + 滚动压缩
-  guard.py                      输入防护
-  skills.py                     技能库与规则路由
-  budget.py                     整局预算与降级
-  npc_agent.py                  NPC：工具、循环入口、兜底、写长期记忆
-  player_option_generator.py / player_agent.py / context.py
-engine/
-  game_engine.py                Harness 外壳：组装、存档（= 事务提交点）、崩溃后恢复
-  trace.py                      结构化 trace（线程安全、span、统计、脱敏）
-  journaled.py / recording.py   把行动日志接到模型 / 判定 / 玩家上 / 录制输入与判定供重放
-llm/
-  gemma_client.py               OpenAI 兼容客户端（OpenRouter / 自建 vLLM 上的 Gemma）
-  model_picker.py               OpenRouter 上挑能用的最便宜模型（OPENROUTER_MODEL=cheapest）
-  router.py                     按任务路由模型
-  structured.py                 结构化调用 + 修复重试
-  messages.py                   编排不变量 + token 估算
-  schemas.py / json_utils.py    输出 schema 与稳健解析
-  npc_llm_adapter.py            NPC 上下文组装
-  reviewer_llm_adapter.py       审核员
-  director_llm_adapter.py / branch_llm_adapter.py / scene_llm_adapter.py
-  player_option_llm_adapter.py / summary_llm_adapter.py（含压缩）
-  mock_backend.py               离线 Mock（含故障注入：坏格式/未知工具/重复调用/不交付/轻信注入/导演越权）
-  diagnostics.py                --check
-models/                         retrieval（BM25）/ knowledge（知识库）/ memory / personality / relationship
-evals/                          评测：人设 + 运行器 + 报告
-tools/                          view_trace.py（可视化）/ replay.py（回放）/ replay_game.py（整局重放与金标准局）/ preview_prompt.py（不调模型看提示词）/
-                                lint_story.py（剧情内容检查）/ monitor.py / pick_model.py（挑最便宜的模型）
-tests/                          pytest（含假 vLLM / 假 OpenRouter HTTP 服务、金标准局重放、崩溃矩阵 158 个场景、续跑矩阵）
-docs/                           architecture.md（设计决策）/ code_map.md（想改某件事去哪个文件）/ turn_graph.md（一轮对话是一张图）/
-                                crash_recovery.md（事务与崩溃矩阵）/ harness_design.md / reference_projects.md
-```
-
-```bash
-~/miniforge3/envs/torch_arm/bin/python -m pytest -q
+main.py / web/server.py        入口（终端 / 网页）
+config/settings.py             环境变量与 .env → Settings（LLM / Harness / Game 三组）
+content/                       默认故事：world.json、npcs/、quests/、lore/、skills/，纯数据
+stories/<名字>/                另一个故事，结构同上，再加 story.json
+core/                          世界规则与状态：god_env、physical、dialogue_session、turn_graph、explorer、agent_loop、
+                               reviewer、director、branch、scene、claims、judge、guardrails、agendas、actions、
+                               uow / crashpoints / journal（事务与续跑）、prefetch、story_lint、eventlog …
+models/                        personality / memory / relationship / retrieval（BM25）/ knowledge
+llm/                           后端客户端（gemma_client、http_pool、free_first、model_picker、mock_backend）与各个单一职责的小 agent
+engine/                        game_engine（组装、存档）、trace、recording、journaled
+tools/                         view_trace / replay / replay_game / preview_prompt / lint_story / monitor / pick_model
+evals/                         评测与回归
+tests/                         pytest（全离线：假 HTTP 服务、金标准局、崩溃矩阵、续跑矩阵、故事测试）
+docs/                          architecture（设计决策）/ code_map（想改某件事去哪）/ turn_graph / crash_recovery / harness_design / reference_projects
 ```
