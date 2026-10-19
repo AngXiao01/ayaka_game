@@ -13,11 +13,9 @@ from tests import crash_harness as ch
 
 SCRIPT = [{"kind": "talk", "npc": "ayaka"}, ("你好，聊聊茶会吧。", "闲聊"), ("再聊聊。", "闲聊"), {"kind": "leave"},
           {"kind": "talk", "npc": "thoma"}, ("那天夜里有谁来敲过后门吗？", "打听情报"), {"kind": "leave"}, "q"]
-EXPECTED_POINTS = {"react.after_respond": 7, "react.after_tool": 2,                      # ReAct 循环里：工具（RAG 检索）刚拿到观察 / 模型刚决定怎么答
-                   "uow.after_backup": 4, "memory.after_append": 4, "save.before_state": 3, "uow.after_state": 3, "memory.after_rewrite": 1}
-ALL = [(name, n) for name, count in EXPECTED_POINTS.items() for n in range(1, count + 1)]
-
-
+STATIC_POINTS = {"react.after_respond": 7, "react.after_tool": 2,                       # ReAct 循环里：工具（RAG 检索）刚拿到观察 / 模型刚决定怎么答
+                 "journal.after_append": 49,                                                       # 行动日志：每记下一条模型答案 / 判定 / 玩家选择之后
+                 "uow.after_backup": 4, "memory.after_append": 4, "save.before_state": 3, "uow.after_state": 3, "memory.after_rewrite": 1}
 def make_engine(data_dir, new_game):
     s = load_settings(env_file=data_dir / "none.env")
     s.game.data_dir, s.game.seed, s.harness.game_token_budget = data_dir, 3, 0
@@ -33,13 +31,29 @@ def consistent(eng):
     return True, ""
 
 
+def _baseline_once():
+    import tempfile
+    from pathlib import Path
+    return ch.baseline(make_engine, Path(tempfile.mkdtemp()))
+
+
+_BASE = _baseline_once()                         # 矩阵的行是从基线里现场枚举出来的（节点崩溃点随图自动出现）
+ALL = [(name, n) for name, count in sorted(_BASE["points"].items()) for n in range(1, count + 1)]
+
+
 @pytest.fixture(scope="module")
-def base(tmp_path_factory):
-    return ch.baseline(make_engine, tmp_path_factory.mktemp("base"))
+def base():
+    return _BASE
 
 
-def test_the_matrix_covers_every_crash_point(base):
-    assert base["points"] == EXPECTED_POINTS, "崩溃点的集合变了：新加的副作用点要放进 EXPECTED_POINTS，矩阵才会覆盖它"
+def test_the_matrix_covers_every_crash_point(base, tmp_path):
+    points = base["points"]
+    assert {k: v for k, v in points.items() if not k.startswith("turn.after.")} == STATIC_POINTS, \
+        "副作用点的集合变了：新加的点要放进 STATIC_POINTS，矩阵才会覆盖它"
+    from core.dialogue_session import TURN_NODES
+    nodes = [n for n, _, _ in TURN_NODES]
+    missing = [n for n in nodes if f"turn.after.{n}" not in points]
+    assert not missing, f"这些节点在场景里一次都没跑到，它们的崩溃点没被覆盖：{missing}"
     assert sorted(base["by_tx"]) == [0, 1, 2, 3]
 
 

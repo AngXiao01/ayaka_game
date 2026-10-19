@@ -22,8 +22,10 @@ from models.retrieval import bigram_jaccard
 from core.dice import roll, tag
 from core.guard import inspect_player_input
 from core.npc_agent import NPCAgent, NPCReply
+from core.prefetch import Prefetch
 from core.player_option_generator import PlayerOption, PlayerOptionGenerator
 from core.reviewer import SignalReviewer
+from core.turn_graph import Graph
 from core.working_memory import WorkingMemory
 from core.world import World
 
@@ -58,6 +60,76 @@ class SessionResult:
     summary: Optional[dict] = None
 
 
+@dataclass
+class TurnState:
+    """一轮对话里各个节点共享的状态。字段按“谁写、谁读”分组，对应 _build_graph 里登记的 reads / writes。"""
+    turn: int
+    ctx: Any = None
+    options: list = field(default_factory=list)
+    action: Any = None
+    nid: str = ""
+    before: set = field(default_factory=set)
+    forced: list = field(default_factory=list)
+    shown: list = field(default_factory=list)
+    press: Optional[dict] = None
+    text: str = ""
+    intent: Optional[str] = None
+    guard: Any = None
+    phys: Any = None
+    invite: Optional[dict] = None
+    felt: dict = field(default_factory=dict)
+    leaving: bool = False
+    dispatch: Optional[dict] = None
+    believe: bool = False
+    threatened: bool = False
+    odd: list = field(default_factory=list)
+    skills: list = field(default_factory=list)
+    context_lines: Any = None
+    reply: Any = None
+    newly: list = field(default_factory=list)
+    dismissed: bool = False
+    went: bool = False
+    ids: list = field(default_factory=list)
+    deg: int = 0
+    end: Optional[DialogueEndReason] = None
+    done: bool = False
+    pending: Any = None                         # 预取的模型调用（core/prefetch.py）
+
+
+TURN_NODES = (
+    # (节点名, 读哪些字段, 写哪些字段)；顺序就是执行顺序
+    ('pick_action', ('turn',), ('ctx', 'options', 'action', 'end', 'done')),
+    ('interpret_action', ('turn', 'ctx', 'action'), ('nid', 'before', 'forced', 'shown', 'press', 'text', 'intent', 'ctx')),
+    ('guard_input', ('action', 'text', 'nid', 'before', 'forced'), ('guard', 'forced')),
+    ('prefetch', ('action', 'guard', 'nid', 'ctx'), ('pending',)),
+    ('judge_say', ('action', 'guard', 'nid', 'ctx', 'pending'), ('phys', 'invite', 'felt')),
+    ('detect_leaving', ('action', 'guard', 'nid', 'felt', 'intent'), ('leaving', 'intent')),
+    ('decide_invite', ('phys', 'action', 'guard', 'nid', 'felt', 'invite'), ('invite',)),
+    ('social_effects', ('phys', 'action', 'guard', 'felt', 'nid'), ('dispatch', 'believe', 'threatened', 'odd')),
+    ('stash_conv', ('phys', 'action', 'nid', 'dispatch', 'believe', 'press', 'threatened', 'odd', 'forced', 'invite'), ()),
+    ('build_turn_ctx', ('turn', 'text', 'guard', 'action', 'intent', 'shown', 'nid'), ('ctx',)),
+    ('check_claims', ('ctx', 'guard', 'action', 'nid', 'pending'), ()),
+    ('log_guard', ('text', 'guard'), ()),
+    ('classify_branch', ('turn', 'action', 'guard', 'nid', 'intent', 'ctx', 'pending'), ('intent', 'ctx')),
+    ('echo_player', ('action', 'guard', 'press'), ()),
+    ('npc_reply', ('ctx', 'guard', 'intent', 'nid'), ('skills', 'context_lines', 'reply')),
+    ('settle', ('turn', 'guard', 'intent', 'action', 'shown', 'skills', 'options', 'context_lines', 'forced', 'reply'), ('newly',)),
+    ('world_effects', ('phys', 'nid', 'reply', 'newly'), ('dismissed', 'went', 'ids', 'deg')),
+    ('decide_end', ('action', 'reply', 'dismissed', 'leaving', 'went', 'ids', 'deg'), ('end',)),
+)
+
+
+def turn_graph(resolve=lambda name: None) -> Graph:
+    """一轮对话的图。resolve(节点名) 给出节点函数（会话对象传自己的 _n_xxx；测试 / 检查时不传，只看结构）。"""
+    names = [n for n, _, _ in TURN_NODES]
+    gr = Graph("turn", names[0], prefix="turn")
+    for name, reads, writes in TURN_NODES:
+        gr.node(name, resolve(name), reads, writes)
+    gr.edge(names[0], None, when=lambda st: st.done)            # 选了“保存并退出”：直接结束
+    gr.chain(names)
+    return gr
+
+
 class _NullSpan:
     def __enter__(self):
         return self
@@ -71,7 +143,8 @@ class DialogueSession:
                  world: World, settings: Settings, reviewer: SignalReviewer, budget: Budget,
                  event: Optional[EventDef] = None, compressor: Optional[Callable[[str, list[str]], str]] = None,
                  out: Callable[[str], None] = print, tracer: Any = None, branch: Any = None,
-                 player_view: Optional[Callable[[str, Optional[str]], dict]] = None, claims: Any = None):
+                 player_view: Optional[Callable[[str, Optional[str]], dict]] = None, claims: Any = None,
+                 parallel: bool = False):
         self.npc = npc
         self.player_view = player_view  # 玩家视角（Explorer.player_view）：选项 agent 只能看这个，看不到 NPC 的心思
         self.npc_names = set(god.physical.personas) if god.physical is not None else set()
@@ -96,6 +169,8 @@ class DialogueSession:
         self._last_ctx: Optional[TurnContext] = None
         self._ended_by_player = False
         self._clues_before = list(god.clues)
+        self.parallel = parallel        # 互不依赖的几次判定提前一起发出（只在连真模型时开；见 core/prefetch.py）
+        self._graph = turn_graph(lambda name: getattr(self, f"_n_{name}"))
 
     def _span(self, **kv):
         return self.tracer.span(**kv) if self.tracer else _NullSpan()
@@ -480,92 +555,132 @@ class DialogueSession:
         return SessionResult(end_reason=end, turns=turn, npc=p.id, transcript=self.transcript, signals=signals,
                              clues_gained=gained, degraded_turns=degraded, summary=summary)
 
+    # ------------------------------------------------------------ 一轮 = 一张图（core/turn_graph.py）
+    #
+    # 以前这是一个 287 行的函数，控制流藏在缩进里。现在每一步是一个节点（读哪些字段、写哪些字段都登记了），
+    # 顺序和以前完全一样；每个节点跑完会记一条 trace（node）并放一个崩溃点（turn.after.<节点名>）。
+
     def _turn(self, turn: int) -> tuple[Optional[DialogueEndReason], list[str], int]:
-        g = self.god
+        st = TurnState(turn=turn)
+        self._graph.run(st, on_node=lambda name, dt: self._log("node", name=name, ms=round(dt * 1000)))
+        return st.end, st.ids, st.deg
+
+    def _n_pick_action(self, st: TurnState) -> None:
+        """取上下文、列选项、等玩家选一个动作；选了“保存并退出”就在这里结束这一轮。"""
+        g, turn = self.god, st.turn
         ctx = self._last_ctx = self.build_ctx(turn)
         options = self._options(ctx)
         self.out("")
         action = self._resolve_action(ctx, options)
+        st.ctx, st.options, st.action = ctx, options, action
         if action.kind == "quit":
             self._show_npc(self.npc.farewell(ctx))
-            return DialogueEndReason.PLAYER_QUIT, [], 0
+            st.end, st.done = DialogueEndReason.PLAYER_QUIT, True
 
-        nid = self.npc.p.id
-        before = g.available_ids(check_turns=False)
-        forced: list[str] = []
-        shown: list[tuple[str, str]] = []          # 这一轮玩家递给对方看的东西（名字、内容）
-        press = None
-        if action.kind == "ask":
-            s = g.quest.signal(action.meta["signal"])
-            text, intent = (action.text if action.meta.get("line") else s.ask["text"]), action.intent or "推进任务"
-            forced = [s.id]
-        elif action.kind == "press":
-            s = g.quest.signal(action.meta["signal"])
-            text, intent = s.ask["text"], "推进任务"
-            lines = [f"{'玩家' if h['speaker'] == 'player' else self.npc.name}：{h['text']}" for h in ctx.history[-6:]]
-            strength = judge.persuasion(g, self.npc.name, s.desc, lines) or 0
-            p, why = g.press_chance(s, nid, strength)
-            prev = g.misses.get(f"press:{s.id}")
-            ok, pct = roll(g, f"press:{s.id}", p, attempt=prev["n"] if isinstance(prev, dict) else 0)
-            press = {"ok": ok, "desc": s.desc, "line": tag(pct, ok, why),
-                     "slip": s.partial if not ok and not isinstance(prev, dict) else ""}      # 第一次问崩了才漏口风，再逼也不会重复漏
-            if ok:
-                forced = [s.id]
-            else:
-                g.note_press_miss(s, nid)
-            self._log("press", npc=nid, signal=s.id, p=p, ok=ok)
-        elif action.kind == "clue":
-            c = action.meta["clue"]
-            g.mark_known(nid, [c])
-            # 递东西是个动作，不是一段台词：玩家这边只记一句动作，内容作为「对方亲眼看到的东西」交给 NPC 的情境
-            text, intent = f"（把「{g.quest.clue_name(c)}」递给{self.npc.name}看）", "出示线索"
-            shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"])]
-            ctx = self._last_ctx = self.build_ctx(turn)          # 出示之后对方知道的事变了，重建情境
-        elif action.kind == "report":
-            g.mark_known(nid, list(g.clues))
-            text = (action.text if action.meta.get("line") else "") + "（把这几天查到的事一五一十地说了出来）"
-            shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"].split("。")[0]) for c in g.clues]
-            intent = "汇报"
-            ctx = self._last_ctx = self.build_ctx(turn)
-        elif action.kind == "propose":
-            prop = next(p for p in g.quest.proposals if p["flag"] == action.meta["flag"])
-            g.propose(prop["flag"])
-            text, intent = (action.text if action.meta.get("line") else prop["text"]), "推进任务"
-            ctx = self._last_ctx = self.build_ctx(turn)
-        elif action.kind == "confront":
-            t = next(x for x in g.testimonies if x["id"] == action.meta["tid"])
-            c = action.meta["clue"]
-            res = g.confront(t["id"], c, self.npc.relationship.trust)
-            if c:
-                g.mark_known(nid, [c])
-                text = f"（拿出「{g.quest.clue_name(c)}」）你之前那句话，和这个对不上。"
-                shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"])]
-            else:
-                text = "你之前那句话，说实话，我不太信。"
-            intent = "对质"
-            self._apply_confrontation(res)
-            ctx = self._last_ctx = self.build_ctx(turn, query_text=t["said"])
-        elif action.kind == "leave":
-            together = g.physical is not None and nid in g.physical.party
-            # 按钮只是个动作，不替玩家写台词：想说什么由选项 agent 写（带 act）或玩家自己打字；
-            # 这里只记一句不带话的动作，对方怎么送、说不说话，交给对方自己
-            text, intent = (("（没再多说，继续往前走）", "闲聊") if together else ("（转身离开）", "告别"))
-            if action.meta.get("line"):
-                text = action.text
-        elif action.kind == "invite":
-            text, intent = (action.text if action.meta.get("line") else "难得有空，要不要和我一起出去走走？"), "邀请"
-        elif action.kind == "dismiss":
-            text, intent = (action.text if action.meta.get("line")
-                            else "今天就到这儿吧，你先回去歇着，改天再一起走走。"), "告别"
-        else:
-            text, intent = action.text, action.intent
+
+    # 动作 → 处理器。每个处理器只做一件事：把这种动作翻成 text / intent（以及它自己的副作用），读写 TurnState。
+    # 没登记的动作（自由发言、看一看……）走 _act_say。新增一种动作 = 加一个处理器 + 在这里登记一行。
+    ACTION_HANDLERS = {"ask": "_act_ask", "press": "_act_press", "clue": "_act_clue", "report": "_act_report",
+                       "propose": "_act_propose", "confront": "_act_confront", "leave": "_act_leave",
+                       "invite": "_act_invite", "dismiss": "_act_dismiss"}
+
+    def _n_interpret_action(self, st: TurnState) -> None:
+        """把玩家选的动作翻成“说了什么、什么意图、让哪些事此刻能谈、递了什么给对方看”（具体到每种动作见 _act_*）。"""
+        g, action = self.god, st.action
+        st.nid = self.npc.p.id
+        st.before = g.available_ids(check_turns=False)
+        st.forced, st.shown, st.press = [], [], None            # 这一轮玩家递给对方看的东西（名字、内容）
+        getattr(self, self.ACTION_HANDLERS.get(action.kind, "_act_say"))(st)
         if action.kind in ("clue", "report", "propose", "confront"):
             # 这个动作让哪些事此刻能谈了（出示了对方要看的证据 / 提出了方案），就由这个动作直接达成
             after = g.available_ids(check_turns=False)
-            forced = [s.id for s in g.quest.signals if s.id in after
-                      and (s.id not in before or (action.kind == "report" and s.id in g.act.complete_when))]
-        forced = [sid for sid in forced if not g.missing_prereqs(sid)]
+            st.forced = [s.id for s in g.quest.signals if s.id in after
+                         and (s.id not in st.before or (action.kind == "report" and s.id in g.act.complete_when))]
+        st.forced = [sid for sid in st.forced if not g.missing_prereqs(sid)]
 
+    def _act_ask(self, st: TurnState) -> None:
+        s = self.god.quest.signal(st.action.meta["signal"])
+        st.text, st.intent = (st.action.text if st.action.meta.get("line") else s.ask["text"]), st.action.intent or "推进任务"
+        st.forced = [s.id]
+
+    def _act_press(self, st: TurnState) -> None:
+        g, nid, action = self.god, st.nid, st.action
+        s = g.quest.signal(action.meta["signal"])
+        st.text, st.intent = s.ask["text"], "推进任务"
+        lines = [f"{'玩家' if h['speaker'] == 'player' else self.npc.name}：{h['text']}" for h in st.ctx.history[-6:]]
+        strength = judge.persuasion(g, self.npc.name, s.desc, lines) or 0
+        p, why = g.press_chance(s, nid, strength)
+        prev = g.misses.get(f"press:{s.id}")
+        ok, pct = roll(g, f"press:{s.id}", p, attempt=prev["n"] if isinstance(prev, dict) else 0)
+        st.press = {"ok": ok, "desc": s.desc, "line": tag(pct, ok, why),
+                    "slip": s.partial if not ok and not isinstance(prev, dict) else ""}      # 第一次问崩了才漏口风，再逼也不会重复漏
+        if ok:
+            st.forced = [s.id]
+        else:
+            g.note_press_miss(s, nid)
+        self._log("press", npc=nid, signal=s.id, p=p, ok=ok)
+
+    def _act_clue(self, st: TurnState) -> None:
+        g = self.god
+        c = st.action.meta["clue"]
+        g.mark_known(st.nid, [c])
+        # 递东西是个动作，不是一段台词：玩家这边只记一句动作，内容作为「对方亲眼看到的东西」交给 NPC 的情境
+        st.text, st.intent = f"（把「{g.quest.clue_name(c)}」递给{self.npc.name}看）", "出示线索"
+        st.shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"])]
+        st.ctx = self._last_ctx = self.build_ctx(st.turn)          # 出示之后对方知道的事变了，重建情境
+
+    def _act_report(self, st: TurnState) -> None:
+        g = self.god
+        g.mark_known(st.nid, list(g.clues))
+        st.text = (st.action.text if st.action.meta.get("line") else "") + "（把这几天查到的事一五一十地说了出来）"
+        st.shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"].split("。")[0]) for c in g.clues]
+        st.intent = "汇报"
+        st.ctx = self._last_ctx = self.build_ctx(st.turn)
+
+    def _act_propose(self, st: TurnState) -> None:
+        g, action = self.god, st.action
+        prop = next(p for p in g.quest.proposals if p["flag"] == action.meta["flag"])
+        g.propose(prop["flag"])
+        st.text, st.intent = (action.text if action.meta.get("line") else prop["text"]), "推进任务"
+        st.ctx = self._last_ctx = self.build_ctx(st.turn)
+
+    def _act_confront(self, st: TurnState) -> None:
+        g, action = self.god, st.action
+        t = next(x for x in g.testimonies if x["id"] == action.meta["tid"])
+        c = action.meta["clue"]
+        res = g.confront(t["id"], c, self.npc.relationship.trust)
+        if c:
+            g.mark_known(st.nid, [c])
+            st.text = f"（拿出「{g.quest.clue_name(c)}」）你之前那句话，和这个对不上。"
+            st.shown = [(g.quest.clue_name(c), g.quest.clues[c]["desc"])]
+        else:
+            st.text = "你之前那句话，说实话，我不太信。"
+        st.intent = "对质"
+        self._apply_confrontation(res)
+        st.ctx = self._last_ctx = self.build_ctx(st.turn, query_text=t["said"])
+
+    def _act_leave(self, st: TurnState) -> None:
+        g, action = self.god, st.action
+        together = g.physical is not None and st.nid in g.physical.party
+        # 按钮只是个动作，不替玩家写台词：想说什么由选项 agent 写（带 act）或玩家自己打字；
+        # 这里只记一句不带话的动作，对方怎么送、说不说话，交给对方自己
+        st.text, st.intent = (("（没再多说，继续往前走）", "闲聊") if together else ("（转身离开）", "告别"))
+        if action.meta.get("line"):
+            st.text = action.text
+
+    def _act_invite(self, st: TurnState) -> None:
+        st.text, st.intent = (st.action.text if st.action.meta.get("line") else "难得有空，要不要和我一起出去走走？"), "邀请"
+
+    def _act_dismiss(self, st: TurnState) -> None:
+        st.text, st.intent = (st.action.text if st.action.meta.get("line")
+                              else "今天就到这儿吧，你先回去歇着，改天再一起走走。"), "告别"
+
+    def _act_say(self, st: TurnState) -> None:
+        st.text, st.intent = st.action.text, st.action.intent
+
+    def _n_guard_input(self, st: TurnState) -> None:
+        """输入防护；打字说出手上线索的内容，等于出示了。"""
+        g, action, text, nid, before, forced = self.god, st.action, st.text, st.nid, st.before, st.forced
         guard = inspect_player_input(text, self.h.player_input_max_chars if action.kind == "say" else 2000)
         if guard.suspicious:
             forced = []
@@ -578,21 +693,54 @@ class DialogueSession:
                 forced = [s.id for s in g.quest.signals
                           if s.id in after and s.id not in before and not g.missing_prereqs(s.id)]
                 self._log("mention", npc=nid, clues=told, forced=forced)
+        st.guard, st.forced = guard, forced
+
+    def _judge_args(self, st: TurnState) -> Optional[tuple]:
+        """judge.turn 的参数；这一轮不判（没有物理世界、不是自由发言、注入、事件）时为 None。预取和实际调用共用，所以必然一致。"""
+        g, action, guard, nid, ctx = self.god, st.action, st.guard, st.nid, st.ctx
+        if g.physical is None or action.kind != "say" or guard.suspicious or self.event:
+            return None
+        open_hs = [] if g.hypotheses_for(nid, guard.text) else \
+            [h for h in g.quest.hypotheses if nid in h["listeners"]
+             and f"dispatched:{h['id']}" not in g.flags and not set(h["clues"]) <= set(g.clues)]
+        last_line = next((h["text"] for h in reversed(ctx.history) if h["speaker"] == "npc"), "")
+        return (g, self.npc.name, guard.text, open_hs, last_line, g.act.objective or "")
+
+    def _n_prefetch(self, st: TurnState) -> None:
+        """把互不依赖的三次判定（语气 / 声明抽取 / 方案识别）提前一起发出去；结果在原来的节点里取，状态仍按原顺序改。"""
+        pf = st.pending = Prefetch(self.parallel, self.tracer)
+        if not self.parallel or st.action.kind != "say" or st.guard.suspicious or self.event:
+            return
+        pf.start("judge", judge.turn, self._judge_args(st))
+        if self.claims is not None:
+            pf.start("claims", self.claims.extract, self.claims.request(st.guard.text))
+        if self.branch is not None:
+            pf.start("branch", judge.proposal, self.branch.request(st.nid, st.guard.text, st.guard.suspicious))
+
+    def _n_judge_say(self, st: TurnState) -> None:
+        """一句自由发言只判一次（Jev 或大模型）：语气、接不接得上、是不是在邀请、说中了哪几条推测。"""
+        g = self.god
         phys, invite, felt = g.physical, None, {}
-        if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
-            # 一句自由发言只判一次（Jev 或大模型）：语气、接不接得上、是不是在邀请、说中了哪几条推测。
+        args = self._judge_args(st)
+        if args is not None:
             # 判定器没开或出错时 felt 为空，下面各处退回关键词规则
-            open_hs = [] if g.hypotheses_for(nid, guard.text) else \
-                [h for h in g.quest.hypotheses if nid in h["listeners"]
-                 and f"dispatched:{h['id']}" not in g.flags and not set(h["clues"]) <= set(g.clues)]
-            last_line = next((h["text"] for h in reversed(ctx.history) if h["speaker"] == "npc"), "")
-            felt = judge.turn(g, self.npc.name, guard.text, open_hs, last_line, g.act.objective or "") or {}
+            felt = st.pending.get("judge", judge.turn, args) or {}
+        st.phys, st.invite, st.felt = phys, invite, felt
+
+    def _n_detect_leaving(self, st: TurnState) -> None:
+        """玩家打字说“我该走了”：走不走是玩家的事。"""
+        action, guard, nid, felt, intent = st.action, st.guard, st.nid, st.felt, st.intent
         # 玩家打字说「我该走了」：走不走是玩家的事，不用等对方点头。是不是在告别由判定模型答，结束会话由代码执行
         leaving = bool(felt.get("leaving")) and action.kind == "say"
         self._ended_by_player = action.kind in ("leave", "dismiss") or leaving
         if leaving:
             intent = "告别"
             self._log("leaving", npc=nid, text=guard.text)
+        st.leaving, st.intent = leaving, intent
+
+    def _n_decide_invite(self, st: TurnState) -> None:
+        """同行答不答应由代码按好感和对方有没有空判定。"""
+        phys, action, guard, nid, felt, invite = st.phys, st.action, st.guard, st.nid, st.felt, st.invite
         asked_out = felt["invite"] if "invite" in felt else bool(INVITE_RE.search(guard.text))
         if (phys is not None and not self.event and not guard.suspicious and nid not in phys.party and self.npc.p.outing
                 and (action.kind == "invite" or (action.kind == "say" and asked_out))):
@@ -601,6 +749,11 @@ class DialogueSession:
             dest_id, dest = self._place_name(guard.text)
             invite = {"accept": ok, "reason": why, "dest": dest}
             self._log("invite", npc=nid, accept=ok, reason=why, dest=dest_id, text=guard.text)
+        st.invite = invite
+
+    def _n_social_effects(self, st: TurnState) -> None:
+        """威胁、掷骰信不信、派人去查玩家说出的推测。"""
+        g, phys, action, guard, felt, nid = self.god, st.phys, st.action, st.guard, st.felt, st.nid
         dispatch, believe, threatened, odd = None, False, False, []
         self._roll_line = None
         if phys is not None and action.kind == "say" and not guard.suspicious and not self.event:
@@ -638,6 +791,12 @@ class DialogueSession:
                                 "plan": "；".join(h["plan"] for h in hs), "desc": "；".join(h["desc"] for h in hs),
                                 "location": "、".join(self.world.name(h["location"]) for h in hs)}
                     self._log("dispatch", npc=nid, hypotheses=dispatch["ids"], agent=agent)
+        st.dispatch, st.believe, st.threatened, st.odd = dispatch, believe, threatened, odd
+
+    def _n_stash_conv(self, st: TurnState) -> None:
+        """把这一轮的结算结果挂到对话状态上，NPC 的情境会读它。"""
+        g, phys, action, nid = self.god, st.phys, st.action, st.nid
+        dispatch, believe, press, threatened, odd, forced, invite = st.dispatch, st.believe, st.press, st.threatened, st.odd, st.forced, st.invite
         if g.conv is not None:
             g.conv["dispatch"] = dispatch
             g.conv["believe"] = believe
@@ -647,6 +806,10 @@ class DialogueSession:
             g.conv["forced"] = forced                  # NPC 这一轮会被告知要说出口的事
             g.conv["invite"] = invite
             g.conv["dismiss"] = action.kind == "dismiss" and phys is not None and nid in phys.party
+
+    def _n_build_turn_ctx(self, st: TurnState) -> None:
+        """按这句话检索往事、选这一轮提哪件事（节拍）、识别重复提问。"""
+        g, turn, text, guard, action, intent, shown, nid = self.god, st.turn, st.text, st.guard, st.action, st.intent, st.shown, st.nid
         ctx = self._last_ctx = self.build_ctx(turn, query_text=text)   # 按这句话检索相关的往事与即兴设定
         ctx.task["shown"] = [{"name": n, "desc": d} for n, d in shown]
         ctx.task["unverified"] = g.unverified_claims(nid, guard.text) if action.kind == "say" and not guard.suspicious else []
@@ -659,29 +822,53 @@ class DialogueSession:
         ctx.task["repeated"] = self._repeated_question(guard.text, action.kind) if not guard.suspicious else None
         if ctx.task["repeated"]:
             self._log("repeat_question", npc=nid, text=guard.text, earlier=ctx.task["repeated"]["asked"])
+        st.ctx = ctx
+
+    def _n_check_claims(self, st: TurnState) -> None:
+        """声明核对：玩家说自己做过什么，对着真实足迹核对。"""
+        ctx, guard, action, nid = st.ctx, st.guard, st.action, st.nid
         ctx.task["claims"] = []
         if self.claims is not None and action.kind == "say" and not guard.suspicious and not self.event:
-            ctx.task["claims"] = self.claims.check(nid, guard.text)       # 抽取归模型，真假和知不知情归代码
+            ctx.task["claims"] = self.claims.check(                       # 抽取归模型，真假和知不知情归代码
+                nid, guard.text, ask=lambda *a: st.pending.get("claims", self.claims.extract, a))
             if ctx.task["claims"]:
                 self._log("claim_check", npc=nid, text=guard.text, claims=[
                     {k: c[k] for k in ("kind", "target", "name", "verifiable", "verdict")} for c in ctx.task["claims"]])
+
+    def _n_log_guard(self, st: TurnState) -> None:
+        """记输入防护的结果。"""
+        text, guard = st.text, st.guard
         self._log("guard", raw=text, text=guard.text, flags=guard.flags, truncated=guard.truncated)
         if guard.suspicious and self.cfg.debug:
             self.out(f"    · 输入防护：{'；'.join(guard.flags)}（本轮不计进展）")
+
+    def _n_classify_branch(self, st: TurnState) -> None:
+        """自由输入里的处置方案 → 预设方案。"""
+        g, turn, action, guard, nid, intent, ctx = self.god, st.turn, st.action, st.guard, st.nid, st.intent, st.ctx
         if action.kind == "say" and not self.event and self.branch is not None:
             with self._span(agent="branch"):
-                prop = self.branch.classify(nid, guard.text, guard.suspicious, self.budget.degraded())
+                prop = self.branch.classify(nid, guard.text, guard.suspicious, self.budget.degraded(),
+                                            ask=lambda *a: st.pending.get("branch", judge.proposal, a))
             if prop:                              # 和点菜单提出方案走同一条路
                 g.propose(prop["flag"])
                 intent = "推进任务"
                 ctx = self._last_ctx = self.build_ctx(turn, query_text=guard.text)
                 if self.cfg.debug:
                     self.out(f"    · 分支：识别为{prop['label']}")
+        st.intent, st.ctx = intent, ctx
+
+    def _n_echo_player(self, st: TurnState) -> None:
+        """把玩家这句话（和硬问的结果）显示出来。"""
+        action, guard, press = st.action, st.guard, st.press
         if action.kind in ("ask", "press", "clue", "report", "propose", "confront", "invite", "dismiss") \
                 or action.meta.get("line"):
             self.out(f"\n{self.cfg.player_name}：{guard.text}")
         if press:
             self.out(f"    {press['line']}")
+
+    def _n_npc_reply(self, st: TurnState) -> None:
+        """NPC 回话：评估 → 说话（ReAct）→ 核对 → 记录。"""
+        g, ctx, guard, intent, nid = self.god, st.ctx, st.guard, st.intent, st.nid
         skills = self.npc.skills.route(intent, guard.text, g.act_id, guard.suspicious,
                                        has_locked=bool(ctx.task["locked_info"]), npc=nid)
         context_lines = self.wm.lines()
@@ -692,6 +879,12 @@ class DialogueSession:
         self.wm.add({"speaker": "npc", "text": reply.speech, "reply": reply.to_dict()})
         self.transcript.append(f"{self.cfg.player_name}：「{guard.text}」")
         self._show_speech(reply)                  # 先让对方把话说完，再显示获得的线索
+        st.skills, st.context_lines, st.reply = skills, context_lines, reply
+
+    def _n_settle(self, st: TurnState) -> None:
+        """进度审核与结算：线索、关系、幕。"""
+        turn, guard, intent, action, shown, skills, options, context_lines, forced, reply = st.turn, st.guard, st.intent, st.action, st.shown, st.skills, st.options, st.context_lines, st.forced, st.reply
+        g = self.god
         with self._span(agent="reviewer"):
             newly = self._settle(reply, turn, opening=False,
                                  player={"text": guard.text, "intent": intent, "kind": action.kind,
@@ -699,6 +892,11 @@ class DialogueSession:
                                          "flags": guard.flags, "skills": [s.name for s in skills]},
                                  options=options, flags=guard.flags, context_lines=context_lines, forced=forced)
         self._show_debug(reply)
+        st.newly = newly
+
+    def _n_world_effects(self, st: TurnState) -> None:
+        """对话之后落到世界上的事：派人去查、凭信任相信、同行、请对方先回去。"""
+        g, phys, nid, reply, newly = self.god, st.phys, st.nid, st.reply, st.newly
         dismissed = bool(g.conv and g.conv.get("dismiss"))
         went = False
         dsp = g.conv.pop("dispatch", None) if g.conv else None
@@ -743,27 +941,40 @@ class DialogueSession:
         ids = [s["id"] for s in newly]
         deg = int(reply.degraded)
 
+        st.dismissed, st.went, st.ids, st.deg = dismissed, went, ids, deg
+
+    def _n_decide_end(self, st: TurnState) -> None:
+        """这一轮之后谈话怎么收尾：结局、告辞 / 接着走、对方走了或结束、时间到、停滞，否则继续。"""
+        g, action, reply, dismissed, leaving, went, ids, deg = self.god, st.action, st.reply, st.dismissed, st.leaving, st.went, st.ids, st.deg
         self._flush_notices()
         if g.resolved:
-            return DialogueEndReason.RESOLVED, ids, deg
+            st.end = DialogueEndReason.RESOLVED
+            return
         if action.kind == "leave" or dismissed or leaving:
             together = self.god.physical is not None and self.npc.p.id in self.god.physical.party
             if together and not dismissed:             # 同行时的“接着走”不是告辞：别打“你起身告辞”，也别让摘要记成“告别了”
-                return DialogueEndReason.TRAVEL_ON, ids, deg
-            return DialogueEndReason.PLAYER_LEFT, ids, deg
+                st.end = DialogueEndReason.TRAVEL_ON
+                return
+            st.end = DialogueEndReason.PLAYER_LEFT
+            return
         if went:
-            return DialogueEndReason.NPC_LEFT, ids, deg
+            st.end = DialogueEndReason.NPC_LEFT
+            return
         if reply.wants_to_end:
-            return DialogueEndReason.NPC_ENDED, ids, deg
+            st.end = DialogueEndReason.NPC_ENDED
+            return
         if g.conversation_turn(spend_time=self.event is None):
             self.out(f"\n    （不知不觉，已是{g.time_label()}）")
             if g.deadline_reached():
-                return DialogueEndReason.DEADLINE, ids, deg
+                st.end = DialogueEndReason.DEADLINE
+                return
             if not self.event and g.where(self.npc.p) != g.location:
-                return DialogueEndReason.NPC_LEFT, ids, deg
+                st.end = DialogueEndReason.NPC_LEFT
+                return
         if g.stalled(self.h.stall_limit):
             self._log("stall", turns_since_progress=g.turns_since_progress, limit=self.h.stall_limit)
-            return DialogueEndReason.STALLED, ids, deg
+            st.end = DialogueEndReason.STALLED
+            return
         with self._span(agent="compress"):
             self.wm.maybe_compress()
-        return None, ids, deg
+        st.end = None

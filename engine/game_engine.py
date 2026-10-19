@@ -36,7 +36,9 @@ from core.scene import SceneAgent
 from core.skills import SkillLibrary
 from core.world import World
 from core import crashpoints
+from core.journal import Journal
 from core.uow import UnitOfWork
+from engine.journaled import JournaledDecider, JournaledPlayer, wrap_router
 from engine.recording import RecordingDecider, RecordingPlayer
 from engine.trace import Tracer
 from llm.base import LLMBackend
@@ -71,6 +73,14 @@ class GameResult:
     @property
     def quest_complete(self) -> bool:
         return self.ending in GOOD_ENDINGS
+
+
+def _rng_to_json(state: tuple) -> list:
+    return [state[0], list(state[1]), state[2]]
+
+
+def _rng_from_json(st: list) -> tuple:
+    return (st[0], tuple(st[1]), st[2])
 
 
 class GameEngine:
@@ -112,6 +122,10 @@ class GameEngine:
         if self.recovery["action"] != "none":
             self.tracer.log("recovery", **self.recovery)
         self.resumed = bool(state)
+        # 行动日志：回滚之后同一段代码重新跑时，问过的模型 / 判定 / 玩家选择直接用当时的答案（core/journal.py）。关掉 = 回滚后全部现问
+        self.journal = Journal(uow_dir / "journal.jsonl", self.uow) if h.resume_after_crash else None
+        if self.journal:
+            wrap_router(self.router, self.journal)
         self.god = GodEnv(self.quest, self.world.phases, self.world.start, self.world.turns_per_phase,
                           state.get("world"), clock=self.world.clock())
         if self.god.seed is None:
@@ -124,7 +138,7 @@ class GameEngine:
         self.god.tracer_log = lambda kind, **kw: self.tracer.log(kind, **kw)
         # 主线结束（结局）、截止时间到了之后还能继续玩；自动玩家 / 评测跑到结局就停
         self.continue_after_ending = g.continue_after_ending and not getattr(player, "stops_at_ending", False)
-        self.player = RecordingPlayer(player, self)      # 录制每次输入和两次输入之间的状态差异（见 core/eventlog.py）
+        self.player = RecordingPlayer(JournaledPlayer(player, self.journal) if self.journal else player, self)      # 录制每次输入和两次输入之间的状态差异（见 core/eventlog.py）
         rels = state.get("relationships", {})
 
         r, t, rep = self.router, self.tracer, lp.json_repair_attempts
@@ -173,7 +187,8 @@ class GameEngine:
             DirectorLLMAdapter(r.backend("director"), r.params("director"), t, min(rep, 1)),
             mode=h.director_mode, max_actions=h.director_max_actions, tracer=t)
         # 便宜的分支判定（Jev）：这句话是哪个动词、说中了哪条推测、是不是在威胁……没开或出错时一律退回关键词规则
-        self.decider = RecordingDecider(decider or make_decider(settings, backend.name, t, (r.backend("branch"), r.params("branch"))), t)
+        self.decider = decider or make_decider(settings, backend.name, t, (r.backend("branch"), r.params("branch")))
+        self.decider = RecordingDecider(JournaledDecider(self.decider, self.journal) if self.journal else self.decider, t)
         self.god.decider = self.decider
         self.option_gen.verify = lambda fp, texts: judge.unbacked(self.god, fp, texts)
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
@@ -261,7 +276,28 @@ class GameEngine:
                                        "relationships": {nid: a.relationship.to_dict() for nid, a in self.npcs.items()}},
                                       ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.save_path)
+        j = self.journal
+        stats = (dict(j.served), dict(j.live)) if j and (j.served or j.live) else None
         self.uow.commit(persist)
+        if stats:
+            self.tracer.log("resume_done", tx=self.uow.committed_tx, served=stats[0], live_after=stats[1])
+            j.served.clear()
+            j.live.clear()
+
+    def _begin_action(self) -> None:
+        """一次行动开始：写下日志的头（带着此刻各 NPC 的随机数状态）；要是上次有没提交的日志，就接着它走。"""
+        if not self.journal:
+            return
+        rngs = {nid: _rng_to_json(a.rng.getstate()) for nid, a in self.npcs.items()}
+        if self.journal.begin({"npc_rng": rngs}):
+            return
+        for nid, st in (self.journal.meta or {}).get("npc_rng", {}).items():     # 随机数回到上次这次行动开始时的样子
+            if nid in self.npcs:
+                self.npcs[nid].rng.setstate(_rng_from_json(st))
+        pending = {k: sum(1 for e in self.journal._entries if e["kind"] == k) for k in ("input", "llm", "decide")}
+        self.tracer.log("resume", tx=self.uow.tx, journaled=pending)
+        self.out(f"\n（上次有一步没做完。已回到那一步开始之前，里面问过的 {pending['llm'] + pending['decide']} 次判断和你做过的 "
+                 f"{pending['input']} 次选择会原样用上，不再重问。）")
 
     def intro(self) -> None:
         self.out(f"\n════ {self.quest.title} ════\n")
@@ -337,6 +373,7 @@ class GameEngine:
                     break
                 self._deadline_event()
                 show_panel = True
+            self._begin_action()
             if self.budget.exhausted():
                 result.stopped_by_budget = True
                 if not any(sr.end_reason is DialogueEndReason.BUDGET for sr in result.sessions[-1:]):
@@ -361,7 +398,9 @@ class GameEngine:
                 r = DialogueSession(npc, self.player, self.option_gen, g, self.world, self.settings, self.reviewer,
                                     self.budget, event=ev, compressor=self.compressor, out=self.out,
                                     tracer=self.tracer, branch=self.branch,
-                                    player_view=self.explorer.player_view, claims=self.claims).run()
+                                    player_view=self.explorer.player_view, claims=self.claims,
+                                    parallel=self.settings.harness.parallel_judges
+                                    and self.backend.name not in ("mock", "replay")).run()
                 result.sessions.append(r)
                 self._pass_word(npc, r, ev)
                 self.tracer.log("session_end", npc=r.npc, end_reason=r.end_reason.name, turns=r.turns,

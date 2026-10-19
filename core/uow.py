@@ -45,6 +45,7 @@ class UnitOfWork:
         self.marker = self.root / "marker.json"
         self.bak = self.root / "bak"
         self._files: dict[str, Optional[str]] = {}   # 本事务里碰过的文件 → 备份文件名（None = 当时不存在）
+        self.on_commit: list[Callable[[], None]] = []   # 提交完成后要做的清理（比如丢掉这次行动的日志，见 core/journal.py）
 
     @property
     def tx(self) -> int:
@@ -76,6 +77,8 @@ class UnitOfWork:
         crashpoints.hit("uow.after_state")          # 存档写完了，备份还没清：重启时要认出“其实已经提交了”
         self._clear()
         self.committed_tx = tx
+        for hook in self.on_commit:
+            hook()
         return tx
 
     def _clear(self) -> None:

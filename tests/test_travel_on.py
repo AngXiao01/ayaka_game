@@ -32,3 +32,14 @@ def test_walking_on_with_a_companion_is_not_a_farewell(tmp_path):
 def test_a_real_farewell_is_still_a_farewell(tmp_path):
     _, res, text = run(tmp_path, [{"kind": "talk", "npc": "ayaka"}, {"kind": "leave"}, "q"])
     assert res.sessions[0].end_reason.name == "PLAYER_LEFT" and "—— 你起身告辞 ——" in text
+
+
+def test_asking_a_companion_to_go_home_ends_the_walk_and_sends_them_back(tmp_path):
+    """“请对方先回去”这个动作以前整个测试套件里没有被执行过一次。"""
+    eng, res, text = run(tmp_path, [{"kind": "talk", "npc": "ayaka"}, {"kind": "invite"}, {"kind": "dismiss"}, "q"])
+    assert "ayaka" not in eng.god.physical.party                                    # 不再同行
+    assert res.sessions[0].end_reason.name == "PLAYER_LEFT" and "—— 你起身告辞 ——" in text      # 是告辞，不是“接着走”
+    assert "往" in text and "去了" in text                                           # “👋 绫华往……去了。”
+    ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]
+    turn = next(e for e in ev if e["event"] == "turn" and (e.get("player") or {}).get("kind") == "dismiss")
+    assert turn["player"]["intent"] == "告别" and "你先回去" in turn["player"]["text"]

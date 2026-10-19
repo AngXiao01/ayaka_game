@@ -44,15 +44,23 @@ class ClaimChecker:
 
     # ------------------------------------------------------------ 入口
 
-    def check(self, npc: str, text: str) -> list[dict]:
+    def request(self, text: str) -> Optional[tuple]:
+        """问模型要的东西：(玩家的话, 地点, 物件, 人物)。这句话不用核对时为 None。可以提前发出去（core/prefetch.py）。"""
         if len((text or "").strip()) < 4:
-            return []
+            return None
         w = self.world
-        places = {lid: w.name(lid) for lid in w.locations}
-        objects = {o["id"]: o["name"] for lid in w.locations for o in w.objects(lid)}
-        people = {nid: p.name for nid, p in self.personas.items()}
+        return (text, {lid: w.name(lid) for lid in w.locations},
+                {o["id"]: o["name"] for lid in w.locations for o in w.objects(lid)},
+                {nid: p.name for nid, p in self.personas.items()})
+
+    def check(self, npc: str, text: str, ask: Optional[Callable[..., list[dict]]] = None) -> list[dict]:
+        """ask 默认就是 self.extract；预取时换成“取预取结果，没有就当场问”，问的内容和判断都不变。"""
+        req = self.request(text)
+        if req is None:
+            return []
+        _, places, objects, people = req
         out = []
-        for c in self.extract(text, places, objects, people):
+        for c in (ask or self.extract)(*req):
             if c["kind"] == "talked" and c["target"] == npc:
                 continue                                   # 正在和他说话，不存在「说自己和他谈过」
             known = self.could_know(npc, c["kind"], c["target"])

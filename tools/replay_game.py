@@ -120,6 +120,7 @@ def replay(trace_path) -> dict:
             setattr(settings.game, k, v)
         for k, v in rs["harness"].items():
             setattr(settings.harness, k, v)
+        settings.harness.resume_after_crash = False              # 重放不需要行动日志
         settings.game.data_dir = tmp
         settings.harness.game_token_budget = 0
         backend, player = ReplayBackend(events), ReplayPlayer(events)
@@ -140,7 +141,7 @@ def replay(trace_path) -> dict:
                 return {"ok": False, "problem": f"第 {(a or b)[0]} 次输入之前的状态对不上", "inputs": player.i,
                         "differences": _compare(a[1] if a else [], b[1] if b else [])}
         return {"ok": True, "inputs": player.i, "llm_calls": backend.i, "decisions": getattr(decider, "i", 0), "ending": res.ending,
-                "deltas": len(want)}
+                "deltas": len(want), "reordered": backend.reordered + getattr(decider, "reordered", 0)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

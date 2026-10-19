@@ -57,7 +57,9 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 加一个新的判断（是不是 X） | `core/judge.py`（便宜的类型化判断）或 `llm/` 下新加一个单一职责的 agent |
 | 改记忆、检索 | `models/memory.py`、`core/working_memory.py`、`core/context_fs.py` |
 | 看某一局发生了什么 | `data/traces/*.jsonl`，用 `python3 tools/view_trace.py <文件>` |
+| 看 / 改“一轮对话”的流程（18 个节点、谁读谁写） | `core/dialogue_session.py` 的 `TURN_NODES` 和 `_n_*`；执行器 `core/turn_graph.py`；并行判定 `core/prefetch.py`；说明 `docs/turn_graph.md` |
 | 崩溃后恢复、验证“崩在哪都不会记忆领先于世界” | `core/uow.py`（事务）、`core/crashpoints.py`（崩溃注入点）、`tests/crash_harness.py`（崩溃矩阵，可复用），说明见 `docs/crash_recovery.md` |
+| 崩溃回滚之后“问过的不重问、选过的不重选” | `core/journal.py`（行动日志）、`engine/journaled.py`（接到模型 / 判定 / 玩家上）、`tests/test_resume.py`；`RESUME_AFTER_CRASH=0` 关掉 |
 | 检查剧情内容有没有漏洞（拿不到的线索、见不到的人、作证的人不在场） | `python3 tools/lint_story.py`，逻辑在 `core/story_lint.py` |
 | 给信号加“被问到又不能说”的腔调 / 硬问失败时的口风 | 信号里写 `lock_style`（direct / hesitate / deflect / bargain）、`partial`（`core/god_env.py` 的 `LOCK_STYLES`）；线索里写 `witness: {npc, phase, at, off_routine?}` |
 | 改了规则后确认没改坏别的 | `pytest` 里的金标准局会重放；有意改变行为后重录：`python3 tools/replay_game.py --make-golden tests/golden/mock_game.jsonl.gz` |

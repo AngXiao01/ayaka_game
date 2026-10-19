@@ -186,6 +186,8 @@ class HarnessSettings:
     decider_model: str = "typesafe/jev-1.13"
     decider_url: str = "https://openrouter.ai/api/alpha/decisions"
     decider_timeout_s: float = 8.0
+    resume_after_crash: bool = True             # 行动日志：崩溃回滚之后，同一步里问过的模型 / 判定 / 玩家选择原样用上（core/journal.py）
+    parallel_judges: bool = False               # 一句话的几次互不依赖的判定（语气 / 声明 / 方案）一起发出；mock 与重放永远不开。默认关：实测每轮只省 0.3~1 秒，而新线程的第一次连接可能多等十几秒（见 docs/turn_graph.md）
 
 
 @dataclass
@@ -277,6 +279,8 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         persona_mode=_env("PERSONA_MODE", h.persona_mode),
         decider_mode=_env("DECIDER_MODE", h.decider_mode).lower(),
         decider_model=_env("DECIDER_MODEL", h.decider_model),
+        resume_after_crash=_env_bool("RESUME_AFTER_CRASH", h.resume_after_crash),
+        parallel_judges=_env_bool("PARALLEL_JUDGES", h.parallel_judges),
         decider_url=_env("DECIDER_URL", h.decider_url),
         decider_timeout_s=_env_float("DECIDER_TIMEOUT_S", h.decider_timeout_s),
     )

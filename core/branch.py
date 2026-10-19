@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from core import judge
 from core.god_env import GodEnv
@@ -37,7 +37,15 @@ class BranchAgent:
         self.mode = mode
         self.tracer = tracer
 
-    def classify(self, npc_id: str, text: str, suspicious: bool = False, degraded: bool = False) -> Optional[dict]:
+    def request(self, npc_id: str, text: str, suspicious: bool = False) -> Optional[tuple]:
+        """先问便宜判定器时的参数；这一句不会问（没开、没有可提的方案、空话、注入）时为 None。"""
+        props = self.god.proposals_for(npc_id)
+        if self.mode == "off" or not props or not text.strip() or suspicious:
+            return None
+        return (self.god, npc_id, text, props)
+
+    def classify(self, npc_id: str, text: str, suspicious: bool = False, degraded: bool = False,
+                 ask: Optional[Callable[..., Any]] = None) -> Optional[dict]:
         """返回被采纳的预设方案（quest.proposals 里的一项），或 None。"""
         props = self.god.proposals_for(npc_id)
         if self.mode == "off" or not props or not text.strip():
@@ -45,7 +53,7 @@ class BranchAgent:
         if suspicious:
             self._log("skip", text, None, False, "输入防护命中，这一轮不判")
             return None
-        j = judge.proposal(self.god, npc_id, text, props)       # 先问便宜的 Jev：有把握就不用再调大模型
+        j = (ask or judge.proposal)(self.god, npc_id, text, props)   # 先问便宜的 Jev：有把握就不用再调大模型
         if j:
             flag, p = j
             prop = next((x for x in props if x["flag"] == flag), None)

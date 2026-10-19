@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -28,7 +29,8 @@ class Tracer:
             path.parent.mkdir(parents=True, exist_ok=True)
         self.run_id = uuid.uuid4().hex[:8]
         self.secrets = tuple(s for s in secrets if s and len(s) >= 6)
-        self.span_ctx: dict[str, Any] = {}
+        self._local = threading.local()                   # 每个线程自己的 span（并行的判定各带各的标签，互不串）
+        self._lock = threading.RLock()                     # seq 和写文件要一起：并行时两条记录不能交错
         self.seq = 0
         self.stats: dict[str, Any] = {
             "llm_calls": 0, "llm_errors": 0, "json_repairs": 0, "fallbacks": 0,
@@ -43,6 +45,16 @@ class Tracer:
 
     # ------------------------------------------------------------ span
 
+    @property
+    def span_ctx(self) -> dict[str, Any]:
+        if not hasattr(self._local, "ctx"):
+            self._local.ctx = {}
+        return self._local.ctx
+
+    @span_ctx.setter
+    def span_ctx(self, value: dict[str, Any]) -> None:
+        self._local.ctx = value
+
     @contextmanager
     def span(self, **kv) -> Iterator[None]:
         old = dict(self.span_ctx)
@@ -51,6 +63,10 @@ class Tracer:
             yield
         finally:
             self.span_ctx = old
+
+    def snapshot_span(self) -> dict[str, Any]:
+        """把当前线程的 span 拷一份——提交给别的线程干活之前拿着，让它在那边接着带上同样的标签。"""
+        return dict(self.span_ctx)
 
     # ------------------------------------------------------------ 写入
 
@@ -68,14 +84,19 @@ class Tracer:
         return obj
 
     def _write(self, rec: dict) -> None:
-        self.seq += 1
-        if self.path:
-            rec = {"seq": self.seq, "ts": round(time.time(), 3), "run": self.run_id,
-                   "span": dict(self.span_ctx), **rec}
-            with self.path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(self._redact(rec), ensure_ascii=False) + "\n")
+        with self._lock:
+            self.seq += 1
+            if self.path:
+                rec = {"seq": self.seq, "ts": round(time.time(), 3), "run": self.run_id,
+                       "span": dict(self.span_ctx), **rec}
+                with self.path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(self._redact(rec), ensure_ascii=False) + "\n")
 
     def log(self, event: str, /, **data) -> None:
+        with self._lock:                                   # 计数器和写文件一起：并行的判定同时记日志也不丢数
+            self._log(event, data)
+
+    def _log(self, event: str, data: dict) -> None:
         st = self.stats
         if event == "fallback":
             st["fallbacks"] += 1
@@ -111,6 +132,11 @@ class Tracer:
 
     def log_llm(self, req: LLMRequest, resp: Optional[LLMResponse], attempt: int, ok: bool,
                 error: Optional[str] = None) -> None:
+        with self._lock:
+            self._log_llm(req, resp, attempt, ok, error)
+
+    def _log_llm(self, req: LLMRequest, resp: Optional[LLMResponse], attempt: int, ok: bool,
+                 error: Optional[str]) -> None:
         st = self.stats
         st["llm_calls"] += 1
         if attempt > 0:
