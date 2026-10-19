@@ -334,15 +334,6 @@ def test_cost_is_summed_from_usage(tmp_path):
     assert "花费 $" in eng.stats_line()
 
 
-def test_eval_backend_flag_overrides_dotenv(clean_env, monkeypatch, capsys):
-    from evals import run_evals
-    monkeypatch.setattr(os, "environ", dict(os.environ))     # run() 会改环境变量，测完还原
-    os.environ["LLM_BACKEND"] = "gemma"                       # 相当于 .env 里还写着 gemma
-    code = run_evals.main(["--backend", "openrouter", "--personas", "cooperative", "--trials", "1",
-                           "--out", str(clean_env / "ev")])
-    assert code == 2 and "OPENROUTER_API_KEY" in capsys.readouterr().err
-
-
 # ---------------------------------------------------------------- tools/pick_model.py
 
 def test_pick_model_probes_and_pins_first_passing(clean_env, monkeypatch, capsys):

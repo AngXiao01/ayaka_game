@@ -24,7 +24,7 @@ engine/ web/ main.py  入口与外壳                        ← 串起来、存
 | `engine/` | 外壳 | `game_engine.py`（组装一切、地点层主循环、存档 = 事务提交点）、`trace.py`、`recording.py`、`journaled.py` |
 | `web/` | 网页版 | `server.py`、`index.html` |
 | `config/` | 配置 | `settings.py`（所有环境变量，样例见 `env.example`） |
-| `tests/` `evals/` | 测试与评测 | `tests/`（全离线，用假模型）、`evals/regression.py`（真模型回归）、`evals/claim_cases.py` |
+| `tests/` | 测试 | 全离线，用假模型 |
 | `data/` | 运行时产物 | `saves/`（存档）、`memories/`（各 NPC 长期记忆）、`traces/`（每局的 trace）、`uow/`（事务日志） |
 
 ## 一个回合是怎么走的
@@ -82,6 +82,5 @@ engine/ web/ main.py  入口与外壳                        ← 串起来、存
 - 玩：`python3 web/server.py --new`（网页）或 `python3 main.py`（终端）；换故事加 `STORY=duval`；模型相关的环境变量见 `env.example`
 - 离线测试：`~/miniforge3/envs/torch_arm/bin/python -m pytest -q`
 - 离线跑一局：`python3 main.py --mock --auto cooperative`
-- 真模型回归：`python3 evals/regression.py`
 - 看 trace：`python3 tools/view_trace.py data/traces/<文件>.jsonl`
 - 检查剧情内容：`python3 tools/lint_story.py`（有 error 退出码为 1；`--strict` 连疑点也算失败）

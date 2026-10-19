@@ -1,15 +1,23 @@
-"""端到端 harness：注入、停滞、截止、预算降级与耗尽、trace 结构、故障注入、记忆校验、评测脚本。"""
+"""端到端 harness：注入、停滞、截止、预算降级与耗尽、trace 结构、故障注入、记忆校验。"""
 import json
 
 from config.settings import load_settings
 from core.dialogue_session import DialogueEndReason
-from core.player_agent import AutoPlayer, ScriptedPlayer
+from core.player_agent import AutoPlayer, PlayerAction, ScriptedPlayer
 from engine.game_engine import GameEngine
 from engine.trace import Tracer
-from evals.personas import IdlePlayer
 from llm.mock_backend import MockBackend
 
 TALK_AYAKA = {"kind": "talk", "npc": "ayaka"}
+
+
+class IdlePlayer:
+    """从不查案、从不开口，只在地图上等：验证截止时间能把游戏收住（正确失败），而不是无限空转。"""
+
+    stops_at_ending = True
+
+    def choose(self, options, ctx):
+        return PlayerAction.of(next(o for o in options if o.kind == "wait"))
 
 
 def settings(tmp_path, **harness):
@@ -49,7 +57,7 @@ def test_deadline_ends_game_for_idle_player(tmp_path):
     save = tmp_path / "data/saves/late.json"
     save.parent.mkdir(parents=True)
     save.write_text(json.dumps({"world": {"day": 3, "phase_idx": 2, "act_id": "act2", "clues": ["c_case"]}}))
-    eng = GameEngine(s, MockBackend(seed=0), IdlePlayer(0), out=lambda s: None, save_name="late")
+    eng = GameEngine(s, MockBackend(seed=0), IdlePlayer(), out=lambda s: None, save_name="late")
     res = eng.run()
     assert res.ending == "too_late" and not res.quest_complete
 
@@ -100,13 +108,6 @@ def test_memory_grounding_drops_hallucinated_fact(tmp_path):
     w = next(e for e in events(eng) if e["event"] == "memory_write")
     assert "旅行者其实来自至冬国的皇室" in w["facts_dropped"]
     assert all("至冬" not in m.text for m in eng.npcs["ayaka"].memory.items)
-
-
-def test_evals_smoke(tmp_path):
-    from evals.run_evals import main
-    assert main(["--trials", "1", "--personas", "cooperative,injector", "--out", str(tmp_path)]) == 0
-    report = next(tmp_path.glob("*/report.md")).read_text()
-    assert "injector" in report
 
 
 def test_tracer_summary_percentiles():

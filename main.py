@@ -80,8 +80,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="神里绫华 · 叙事 Agent 游戏")
     ap.add_argument("--mock", action="store_true", help="用离线 Mock 后端")
     ap.add_argument("--check", action="store_true", help="只检查后端连通性与结构化输出")
-    ap.add_argument("--auto", choices=["cooperative", "chaotic", "idler", "injector", "steer"],
-                    help="自动玩家：cooperative 配合 / chaotic 乱选 / idler 只闲聊 / injector 夹带注入 / steer 带节奏")
+    ap.add_argument("--auto", choices=["cooperative", "chaotic"],
+                    help="自动玩家：cooperative 配合 / chaotic 乱选")
     ap.add_argument("--save", default=None, help="存档名（默认 default；设了 STORY 时默认用故事名，不会和别的故事的存档混在一起）")
     ap.add_argument("--new", action="store_true", help="清掉该存档（含记忆）重新开始")
     ap.add_argument("--max-actions", type=int, default=400, help="地点层最多行动次数（防失控）")
@@ -129,10 +129,7 @@ def main(argv=None) -> int:
         backend = with_free_first(settings.llm, backend)
         router = ModelRouter(backend, settings.llm, lambda m: build_llm(settings.llm, m))
 
-    if args.auto in ("idler", "injector", "steer"):
-        from evals.personas import make_player
-        player = make_player(args.auto, g.seed or 0, 6)
-    elif args.auto:
+    if args.auto:
         player = AutoPlayer(args.auto, seed=g.seed)
     else:
         player = HumanPlayer()

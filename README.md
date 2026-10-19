@@ -29,7 +29,6 @@ python3 main.py --mock --auto cooperative   # 离线 + AI 扮演玩家，自动�
 python3 main.py --debug                     # 连 OpenRouter 玩（先放好 key，见下）
 python3 web/server.py                       # 网页版，默认 http://127.0.0.1:8770
 python3 main.py --check                     # 检查后端：连通性、模型 id、结构化输出
-python3 -m evals.run_evals                  # 离线评测（五种玩家人设）
 ~/miniforge3/envs/torch_arm/bin/python -m pytest -q    # 测试（全离线）
 ```
 
@@ -113,9 +112,6 @@ GameEngine（Harness 外壳：组装、存档 = 事务提交点、预算、trace
   `--state-at N` 直接重建第 N 次输入之前的世界。测试里有一局“金标准局”（`tests/golden/`），世界走向变了就红。
 - **提示词预览**：`python3 tools/preview_prompt.py <存档> <npc> --say …`，不调模型，打印某个 NPC 此刻会收到的完整提示词；`--find 词` 查某个词有没有进他的提示词。
 - **剧情内容校验**：`python3 tools/lint_story.py`，不跑游戏，推演一遍找出走不通的地方（永远拿不到的线索、达成不了的信号、见不到的人）。
-- **评测**（`evals/`）：五种玩家人设（配合 / 只闲聊 / 夹带注入 / 乱选 / 带节奏）各跑多局，从 trace 里算指标并检查预期；
-  `python3 -m evals.run_evals --backend openrouter --trials 5`，`--set KEY=VALUE` 做消融。
-  `python3 evals/regression.py` 是真模型的回归套件（对抗式用例，`--show` 打印原话）。
 
 ## 目录
 
@@ -131,7 +127,6 @@ models/                        personality / memory / relationship / retrieval�
 llm/                           后端客户端（gemma_client、http_pool、free_first、model_picker、mock_backend）与各个单一职责的小 agent
 engine/                        game_engine（组装、存档）、trace、recording、journaled
 tools/                         view_trace / replay / replay_game / preview_prompt / lint_story / monitor / pick_model
-evals/                         评测与回归
 tests/                         pytest（全离线：假 HTTP 服务、金标准局、崩溃矩阵、续跑矩阵、故事测试）
 docs/                          architecture（设计决策）/ code_map（想改某件事去哪）/ turn_graph / crash_recovery / harness_design / reference_projects
 ```
