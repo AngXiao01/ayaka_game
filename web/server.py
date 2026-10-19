@@ -85,7 +85,7 @@ class WebPlayer:
     def choose(self, options, ctx) -> PlayerAction:
         io = self.io
         with io.cond:
-            io.options = [{"i": i, "text": o.text, "kind": o.kind, "intent": o.intent, "tone": o.tone,
+            io.options = [{"i": i, "text": o.text, "kind": o.kind, "intent": o.intent,
                            "line": bool(o.meta.get("line")), "act": o.meta.get("act_label", "")}
                           for i, o in enumerate(options)]
             io.allow_free = True              # 对话里自由发言；地点层自由写想查看什么

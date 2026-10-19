@@ -92,8 +92,8 @@ def test_abrupt_topic_jump_judged_by_jev(tmp_path):
 def test_options_never_parrot_the_npc():
     class Stub:
         def generate(self, ctx, npc, n):
-            return [{"text": "璃月……托马常提起那里的海与商船。祝您一路顺风。", "intent": "闲聊", "tone": "温和"},
-                    {"text": "等等，我说错了，我是想去离岛码头。", "intent": "闲聊", "tone": "直率"}]
+            return [{"text": "璃月……托马常提起那里的海与商船。祝您一路顺风。"},
+                    {"text": "等等，我说错了，我是想去离岛码头。"}]
     ctx = TurnContext(player_name="旅行者", scene={}, world={}, relationship={}, player_view={"known_text": ""},
                       history=[{"speaker": "npc", "text": "璃月……托马常提起那里的海与商船。祝您一路顺风，愿那里的风景能为您带来新的灵感。",
                                 "reply": {"action": ""}}])
@@ -113,8 +113,8 @@ def test_options_claiming_unbacked_visits_are_dropped(tmp_path):
     class Stub:
         def generate(self, ctx, npc, n):
             assert "还没去过" in ctx.player_view["footprint"]               # 选项 agent 看得到足迹
-            return [{"text": "刚去了木漏茶室，听说那晚连油豆腐和竹篮子都丢了。", "intent": "打听情报", "tone": "直率"},
-                    {"text": "听说木漏茶室也丢了东西？", "intent": "打听情报", "tone": "好奇"}]
+            return [{"text": "刚去了木漏茶室，听说那晚连油豆腐和竹篮子都丢了。"},
+                    {"text": "听说木漏茶室也丢了东西？"}]
     d = ScriptedDecider({"unbacked": {"o0": (True, 0.9), "o1": (False, 0.9)}})
     save = tmp_path / "data/saves/c.json"
     save.parent.mkdir(parents=True, exist_ok=True)

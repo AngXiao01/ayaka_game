@@ -206,7 +206,6 @@ function renderOptions(st) {
     const b = el("button", spoken ? "say" : (["ask", "report", "propose", "event", "confront_menu"].includes(o.kind) ? "primary" : ""));
     if (spoken) {
       b.append("「" + o.text + "」");
-      b.append(el("small", null, [o.tone, o.line ? "" : o.intent].filter(Boolean).join(" · ")));
       if (o.line) b.append(el("small", "act-tag", "→ " + o.act));      // 这句话会直接起作用：告辞、邀请、问出关键问题……
     }
     else b.append(o.text);

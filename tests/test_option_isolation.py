@@ -59,7 +59,7 @@ class Stub:
         self.options = options
 
     def generate(self, ctx, npc, n):
-        return [{"text": t, "intent": "打听情报", "tone": "好奇"} for t in self.options]
+        return [{"text": t} for t in self.options]
 
 
 def test_spoiler_and_ooc_options_are_dropped():

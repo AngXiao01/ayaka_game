@@ -17,7 +17,7 @@ engine/ web/ main.py  入口与外壳                        ← 串起来、存
 | 目录             | 干什么      | 重点文件                                                                                                                                                                                                                                                               |
 | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `content/`     | 一个完整的故事  | `quests/*.json`（线索、信号、幕、结局、议程）、`world.json`（地点、物件、格局）、`npcs/*.json`（人物卡）、`lore/*.md`（设定资料）、`skills/*.md`、`story.json`（主线 id 和主角 NPC）                                                                                                                               |
-| `core/`        | 世界规则与状态  | `god_env.py`（**状态的唯一真相**：时间、线索、信号、幕、结局）、`dialogue_session.py`（**一次谈话**：18 个节点）、`turn_graph.py`、`explorer.py`（地点层菜单）、`physical.py`（谁在哪、传话）、`npc_agent.py`（一个 NPC 的大脑）、`agent_loop.py`（有界 ReAct）、`claims.py`、`agendas.py`、`actions.py`、`story_lint.py`、`eventlog.py` |
+| `core/`        | 世界规则与状态  | `god_env.py`（**状态的唯一真相**：时间、线索、信号、幕、结局）、`dialogue_session.py`（**一次谈话**：19 个节点）、`turn_graph.py`、`explorer.py`（地点层菜单）、`physical.py`（谁在哪、传话）、`npc_agent.py`（一个 NPC 的大脑）、`agent_loop.py`（有界 ReAct）、`claims.py`、`agendas.py`、`actions.py`、`story_lint.py`、`eventlog.py` |
 | `core/` 里管可靠性的 | 事务、续跑、并行 | `uow.py`（事务）、`crashpoints.py`（崩溃注入点）、`journal.py`（行动日志）、`prefetch.py`（并行判定）                                                                                                                                                                                        |
 | `models/`      | 数据对象     | `personality.py`（人物卡）、`memory.py`（长期记忆）、`relationship.py`（好感与信任）、`retrieval.py`（BM25）、`knowledge.py`（设定库）                                                                                                                                                          |
 | `llm/`         | 模型调用     | `npc_llm_adapter.py`（NPC 上下文与系统提示）、`npc_stages.py`（评估、核对、记录）、`player_option_llm_adapter.py`、`gemma_client.py`（HTTP 客户端）、`http_pool.py`（连接复用）、`decider.py`（便宜的判定器）、`mock_backend.py`（离线假模型）、`replay.py`、`schemas.py`                                                |
@@ -32,7 +32,7 @@ engine/ web/ main.py  入口与外壳                        ← 串起来、存
 玩家在网页里点一下或打一句话，之后：
 
 1. `GameEngine.run()` 在**地点层**循环，`Explorer.menu()` 列出能做的事（交谈、查看、移动、等待……）；每次行动是一个事务，结束时 `save()` 提交。
-2. 选了“交谈”→ 建 `DialogueSession`，一轮按 `TURN_NODES` 的顺序走 18 个节点（`docs/turn_graph.md`）：  
+2. 选了“交谈”→ 建 `DialogueSession`，一轮按 `TURN_NODES` 的顺序走 19 个节点（`docs/turn_graph.md`）：  
    选动作 → 解释动作 → 输入防护 → 判定（语气、告别、邀请、说中的推测）→ 同行 / 威胁 / 掷骰 / 派人 → 拼上下文（记忆检索、节拍、重复提问）→ 声明核对 → 分支识别 → **NPC 回复** → 进度审核与结算 → 世界上的后果 → 判断这次谈话怎么收尾。
 3. NPC 回复：`NPCAgent` → `NPCLLMAdapter.reply()`，四步：**评估** → **说话**（有界 ReAct，只读工具）→ **核对**（对照事实，不对带理由重说）→ **记录**。
 4. `SignalReviewer` 审核“这轮是不是真的达成了某个信号”，`GodEnv.apply_signals()` 落地（给线索、推进幕、出结局）。

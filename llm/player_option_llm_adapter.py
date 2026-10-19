@@ -11,16 +11,13 @@ from config.settings import TaskParams
 from core import mind as mind_state
 from core.context import TurnContext
 from llm.base import LLMBackend, LLMError, LLMRequest
-from llm.schemas import (PLAYER_OPTIONS_SCHEMA, PLAYER_TONES, PLAYER_INTENTS, act_tag_schema, validate_act_tags,
-                         validate_player_options)
+from llm.schemas import PLAYER_OPTIONS_SCHEMA, act_tag_schema, validate_act_tags, validate_player_options
 from llm.structured import call_json
-
-OPTION_INTENTS = [i for i in PLAYER_INTENTS if i != "冒犯"]   # 想冒犯的话玩家可以自己打字，不往嘴里塞
 
 SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地的旅行者，独自来到稻妻；为人礼貌、好奇、有分寸，说话像普通人。{player}正在和{npc}说话，你替{player}想几句接下来可以说的话，给玩家参考——玩家也可以自己打字。
 
 要求：
-1. 给 0~{n} 句，看情况：接下来明显有几个不同的方向时才给满 {n} 句；对方只是在闲聊、或者明显该{player}自己回答一个具体问题时，给一两句就够，觉得不需要提示时可以一句不给（options 为空）。不要凑数，不要每次都是「一句关心、一句查案、一句玩笑」的固定套路。语气从这些里选：{tones}；意图从这些里选：{intents}。
+1. 给 0~{n} 句，看情况：多数时候一两句就够；接下来明显有几个不同的方向时才给到 {n} 句；对方只是在闲聊、或者明显该{player}自己回答一个具体问题时，给一句就够，觉得不需要提示时可以一句不给（options 为空）。不要凑数，不要给几句各占一个"类型"（一句关心、一句查案、一句玩笑）的套路组合，也不要给每句分类、贴标签——只写话。
 2. 每句都要接得上{npc}刚才说的话，带着具体的细节（对方说过的东西、眼前的景物、自己的旅途见闻），不要空泛的客套。
 3. 如果「可以问的方向」不为空，至少一句自然地朝那个方向问；方向为空时顺着对话聊，最多一句提到眼下的目标。私人时光里不谈公务。
 4. 不要重复{player}之前说过的话，也不要和之前的选项换汤不换药。
@@ -37,7 +34,7 @@ SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地�
 9. 有分寸：对初次见面或还不熟的人礼貌克制；亲昵、调情或带私人感情的话，只在对方是神里绫华、且关系到了「友好」以上时才用，最多一句。
 
 只输出一个 JSON 对象，不要任何其他文字，不要代码块：
-{{"options": [{{"text": "……", "intent": "打听情报", "tone": "好奇"}}, {{"text": "……", "intent": "闲聊", "tone": "温和"}}, …]}}"""
+{{"options": [{{"text": "……"}}, …]}}"""
 
 
 ACT_TAG_SYSTEM = """你是台词标注员。下面每句话是玩家对{npc}可能说的，你只判断：这句话**本身**是不是就在做「可以做的事」里的某一件。
@@ -106,9 +103,7 @@ class PlayerOptionLLMAdapter:
 请给出 0~{n} 句。"""
         req = LLMRequest(
             task="player_options",
-            messages=[{"role": "system", "content": SYSTEM.format(player=player, npc=npc_name, n=n, address="」「".join(pv.get("address") or [npc_name]),
-                                                                  tones="、".join(PLAYER_TONES),
-                                                                  intents="、".join(OPTION_INTENTS))},
+            messages=[{"role": "system", "content": SYSTEM.format(player=player, npc=npc_name, n=n, address="」「".join(pv.get("address") or [npc_name]))},
                       {"role": "user", "content": user}],
             temperature=self.params.temperature, max_tokens=self.params.max_tokens,
             json_schema=PLAYER_OPTIONS_SCHEMA, schema_name="player_options",
@@ -137,8 +132,5 @@ class PlayerOptionLLMAdapter:
             return lines
         out = []
         for i, o in enumerate(lines):
-            act = tags.get(i, "")
-            if act == "leave" and o.get("intent") != "告别":     # 写台词的那一步自己都没说这是告别：标注员认错了，不能让一句道谢变成“起身走人”
-                act = ""
-            out.append({**o, "act": act})
+            out.append({**o, "act": tags.get(i, "")})
         return out

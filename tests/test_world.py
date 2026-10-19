@@ -134,13 +134,13 @@ def test_shrine_needs_the_prints():
 def test_option_generator_drops_repeats():
     class Stub:
         def generate(self, ctx, npc, n):
-            return [{"text": "那晚您看见的人长什么样？", "intent": "打听情报", "tone": "直率"},
-                    {"text": "这茶真香。", "intent": "闲聊", "tone": "温和"},
-                    {"text": "今天天气不错呢。", "intent": "闲聊", "tone": "俏皮"}]
+            return [{"text": "那晚您看见的人长什么样？"},
+                    {"text": "这茶真香。"},
+                    {"text": "今天天气不错呢。"}]
     ctx = TurnContext(player_name="旅行者", scene={}, world={}, relationship={},
                       history=[{"speaker": "player", "text": "那晚您看见的人长什么样"}])
     opts, _ = PlayerOptionGenerator(Stub()).generate(ctx, "阿缘", [])
-    assert [o.text for o in opts] == ["这茶真香。", "今天天气不错呢。"] and opts[0].tone == "温和"
+    assert [o.text for o in opts] == ["这茶真香。", "今天天气不错呢。"]
 
 
 def test_every_place_has_a_layout_sheet():

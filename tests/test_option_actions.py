@@ -27,18 +27,18 @@ def ctx():
 
 def test_line_carries_its_action():
     opts, _ = PlayerOptionGenerator(Stub([
-        {"text": "承蒙挂心，那我先去花见坂了。", "intent": "告别", "tone": "温和", "act": "leave"},
-        {"text": "难得天晴，要不要一起去走走？", "intent": "邀请", "tone": "好奇", "act": "invite"},
-        {"text": "这茶真香。", "intent": "闲聊", "tone": "温和", "act": "ask:nope"}])).generate(ctx(), "绫华", [])
+        {"text": "承蒙挂心，那我先去花见坂了。", "act": "leave"},
+        {"text": "难得天晴，要不要一起去走走？", "act": "invite"},
+        {"text": "这茶真香。", "act": "ask:nope"}])).generate(ctx(), "绫华", [])
     assert [(o.kind, o.meta.get("act")) for o in opts] == [("leave", "leave"), ("invite", "invite"), ("say", None)]
     assert opts[0].meta["line"] and opts[0].meta["act_label"] == "🚪 告辞"
 
 
-def test_farewell_without_act_still_leaves_and_each_act_once():
+def test_untagged_line_stays_a_line_and_each_act_once():     # 谁在做哪件事由标注员说了算，台词本身不再带意图
     opts, _ = PlayerOptionGenerator(Stub([
-        {"text": "那我先告辞了。", "intent": "告别", "tone": "温和"},
-        {"text": "改天再来叨扰。", "intent": "告别", "tone": "温和", "act": "leave"}])).generate(ctx(), "绫华", [])
-    assert [o.kind for o in opts] == ["leave", "say"]
+        {"text": "那我先告辞了。"},
+        {"text": "改天再来叨扰。", "act": "leave"}])).generate(ctx(), "绫华", [])
+    assert [o.kind for o in opts] == ["say", "leave"]
 
 
 def run(tmp_path, options, script, state=None, rels=None):
@@ -62,7 +62,7 @@ def run(tmp_path, options, script, state=None, rels=None):
 
 
 def test_spoken_farewell_ends_talk_and_replaces_the_button(tmp_path):
-    line = {"text": "承蒙挂心，那我先去花见坂看看。", "intent": "告别", "tone": "温和", "act": "leave"}
+    line = {"text": "承蒙挂心，那我先去花见坂看看。", "act": "leave"}
     eng, shown, out = run(tmp_path, [line], [{"kind": "talk", "npc": "ayaka"}, 1, "q"])
     first = shown[0]
     assert first[0] == (line["text"], "leave", True)

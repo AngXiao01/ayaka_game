@@ -10,8 +10,6 @@ import re
 from typing import Any, Optional
 
 EMOTIONS = ["平静", "欣喜", "羞涩", "担忧", "严肃", "不悦", "感动", "好奇", "惊讶"]
-PLAYER_INTENTS = ["礼貌问候", "推进任务", "打听情报", "表达关心", "闲聊", "赞美", "试探", "冒犯", "告别"]
-PLAYER_TONES = ["温和", "俏皮", "直率", "深情", "谨慎", "好奇", "调侃"]
 FREE_INTENT = "自由发言"
 MAX_SPEECH_CHARS = 140
 MAX_ACTION_CHARS = 24
@@ -260,12 +258,8 @@ PLAYER_OPTIONS_SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "intent": {"type": "string", "enum": PLAYER_INTENTS},
-                    "tone": {"type": "string", "enum": PLAYER_TONES},
-                },
-                "required": ["text", "intent", "tone"],
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
             },
         },
     },
@@ -287,9 +281,7 @@ def validate_player_options(obj: Any, max_len: int = 60) -> list[dict]:
         if not text or text in seen:
             continue
         seen.add(text)
-        intent, tone = _str(it.get("intent")), _str(it.get("tone"))
-        out.append({"text": text, "intent": intent if intent in PLAYER_INTENTS else "闲聊",
-                    "tone": tone if tone in PLAYER_TONES else "", "act": _str(it.get("act"))})
+        out.append({"text": text, "act": _str(it.get("act"))})
     return out                  # 0~3 句都可以：不是每一轮都需要替玩家想台词
 
 
@@ -458,7 +450,7 @@ def validate_director(obj: Any, max_actions: int = 2) -> dict:
     return {"note": _str(obj.get("note"))[:120], "actions": out[: max(0, max_actions) + 2]}
 
 
-# ---------------------------------------------------------------- 分支（tree 层的模型部分）
+# ---------------------------------------------------------------- 分支（TREE 层的模型部分）
 
 def branch_schema(flags: list[str]) -> dict:
     return {

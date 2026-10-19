@@ -30,10 +30,9 @@ class PlayerAction:
 
 def render_option(i: int, o: PlayerOption) -> str:
     if o.kind == "say":
-        tag = "·".join(x for x in (o.tone, o.intent) if x)
-        return f"  {i}. 「{o.text}」  〔{tag}〕"
+        return f"  {i}. 「{o.text}」"
     if o.meta.get("line"):
-        return f"  {i}. 「{o.text}」  〔{o.tone + '·' if o.tone else ''}→ {o.meta.get('act_label', '')}〕"
+        return f"  {i}. 「{o.text}」  〔→ {o.meta.get('act_label', '')}〕"
     return f"  {i}. {o.text}"
 
 
@@ -76,7 +75,7 @@ class AutoPlayer:
         self.farewell_after = farewell_after
 
     def _say(self, o: PlayerOption) -> PlayerAction:
-        self.out(f"  ▸ {o.text}" + (f"  〔{o.intent}〕" if o.kind == "say" else ""))
+        self.out(f"  ▸ {o.text}")
         return PlayerAction.of(o)
 
     def choose(self, options: list[PlayerOption], ctx: Optional[TurnContext]) -> PlayerAction:

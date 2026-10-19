@@ -450,7 +450,7 @@ class DialogueSession:
                 self.out(f"    ✗ 未采纳 {v.id}（{v.layer}：{v.reason}）")
         self._log("turn", turn=turn, npc=self.npc.p.id, private_event=self.event.id if self.event else None,
                   stage_id=g.act_id, stage_title=g.act.title, scene=self.scene_id, time=g.time_label(),
-                  player=player, options=[{"text": o.text, "intent": o.intent, "kind": o.kind, "tone": o.tone}
+                  player=player, options=[{"text": o.text, "intent": o.intent, "kind": o.kind}
                                           for o in options] if options else None,
                   reply=r.to_dict(), degraded=r.degraded, loop=r.loop,
                   claimed=r.task_signals, new_signals=[s["id"] for s in newly],

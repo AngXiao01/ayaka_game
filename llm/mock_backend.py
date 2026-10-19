@@ -234,9 +234,9 @@ class MockBackend:
         objective = meta.get("objective", "眼下的事")
         turn = meta.get("turn", 0)
         return {"options": [
-            {"text": f"关于「{objective[:12]}」，您知道些什么吗？（第{turn}轮）", "intent": "推进任务", "tone": "直率"},
-            {"text": f"最近有没有见过什么可疑的人？（第{turn}轮）", "intent": "打听情报", "tone": "谨慎"},
-            {"text": f"这里的茶真香，雪见茶会也会用这种吗？（第{turn}轮）", "intent": "闲聊", "tone": "好奇"},
+            {"text": f"关于「{objective[:12]}」，您知道些什么吗？（第{turn}轮）"},
+            {"text": f"最近有没有见过什么可疑的人？（第{turn}轮）"},
+            {"text": f"这里的茶真香，雪见茶会也会用这种吗？（第{turn}轮）"},
         ]}
 
     def _claims(self, meta: dict) -> dict:

@@ -14,8 +14,10 @@ from typing import Any, Optional
 from core.context import TurnContext
 from llm.base import LLMError
 from llm.player_option_llm_adapter import PlayerOptionLLMAdapter
+from llm.schemas import FREE_INTENT
 from models.retrieval import bigram_jaccard
 
+ACT_INTENT = {"leave": "告别", "invite": "邀请"}     # 台词本身就在做这件事时，给对方看的意图标签；其余台词和自己打字一样算自由发言
 ECHO_THRESHOLD = 0.45          # 和对方最近说的话这么像，就是把对方的台词塞给了玩家
 REPEAT_THRESHOLD = 0.6
 OOC_RE = re.compile(r"游戏|玩家|剧情|选项|推进任务|系统|NPC|AI|人工智能|模型|派蒙", re.I)
@@ -28,7 +30,6 @@ class PlayerOption:
     kind: str = "say"           # say | show_menu | clue | report | propose | confront_menu | testimony | evidence | leave | cancel
                                 # | talk | event | examine | move | wait | view | quit
     meta: dict = field(default_factory=dict)
-    tone: str = ""
 
 
 class PlayerOptionGenerator:
@@ -72,15 +73,15 @@ class PlayerOptionGenerator:
         res, used = [], set()
         for o in out:
             act = o.get("act") or ""
-            if not act and o.get("intent") == "告别" and "leave" in acts:
+            if not act and o.get("intent") == "告别" and "leave" in acts:     # 只有作者写的兜底台词带意图
                 act = "leave"                          # 告别的话就是告辞：说了就走，不再另点按钮
             a = acts.get(act)
             if a and act not in used:                  # 只认此刻真能做的事，每件事一句
                 used.add(act)
-                res.append(PlayerOption(o["text"], o["intent"], kind=a["kind"], tone=o.get("tone", ""),
+                res.append(PlayerOption(o["text"], ACT_INTENT.get(act, ""), kind=a["kind"],
                                         meta={**a.get("meta", {}), "line": True, "act": act, "act_label": a["tag"]}))
             else:
-                res.append(PlayerOption(o["text"], o["intent"], tone=o.get("tone", "")))
+                res.append(PlayerOption(o["text"], o.get("intent") or FREE_INTENT))
         return res, degraded
 
     def _polish(self, raw: list[dict], said: list[str], known: str = "", terms: Optional[list[str]] = None,
