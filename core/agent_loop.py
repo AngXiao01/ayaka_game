@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
 
+from core import crashpoints
 from core.tools import ToolRegistry
 from llm.base import LLMBackend, LLMError, LLMRequest
 from llm.messages import check_conversation, messages_tokens
@@ -186,6 +187,7 @@ class ReActLoop:
                 else:
                     self._log("tool_call", step=step, tool=rec.tool, args=_brief(rec.args), thought=rec.thought,
                               ok=True, terminal=True, tokens=used, latency_s=rec.latency_s)
+                    crashpoints.hit("react.after_respond")       # 模型已经决定怎么答，但还没有任何东西落地（落地在循环之外，由代码做）
                     return finish(StopReason.FINISHED, final)
             else:
                 tool = self.registry.get(st["tool"])
@@ -210,6 +212,7 @@ class ReActLoop:
             self._log("tool_call", step=step, tool=rec.tool, args=_brief(rec.args), thought=rec.thought, ok=rec.ok,
                       error=rec.error or None, cached=rec.cached, observation=obs, tokens=used,
                       latency_s=rec.latency_s)
+            crashpoints.hit("react.after_tool")                  # 一步工具（RAG 检索等）刚拿到观察：这些都是读，崩在这里不该留下任何痕迹
             msgs = msgs + [
                 {"role": "assistant", "content": json.dumps({"thought": st["thought"], "tool": st["tool"],
                                                              "args": st["args"]}, ensure_ascii=False)},

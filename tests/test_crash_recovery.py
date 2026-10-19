@@ -13,7 +13,8 @@ from tests import crash_harness as ch
 
 SCRIPT = [{"kind": "talk", "npc": "ayaka"}, ("你好，聊聊茶会吧。", "闲聊"), ("再聊聊。", "闲聊"), {"kind": "leave"},
           {"kind": "talk", "npc": "thoma"}, ("那天夜里有谁来敲过后门吗？", "打听情报"), {"kind": "leave"}, "q"]
-EXPECTED_POINTS = {"uow.after_backup": 4, "memory.after_append": 4, "save.before_state": 3, "uow.after_state": 3, "memory.after_rewrite": 1}
+EXPECTED_POINTS = {"react.after_respond": 7, "react.after_tool": 2,                      # ReAct 循环里：工具（RAG 检索）刚拿到观察 / 模型刚决定怎么答
+                   "uow.after_backup": 4, "memory.after_append": 4, "save.before_state": 3, "uow.after_state": 3, "memory.after_rewrite": 1}
 ALL = [(name, n) for name, count in EXPECTED_POINTS.items() for n in range(1, count + 1)]
 
 
@@ -69,3 +70,18 @@ def test_the_matrix_can_see_the_original_bug(base, tmp_path, monkeypatch):
     ok, why = ch.recovered_to_last_commit(base, tmp_path)
     assert not ok and "mem/ayaka.jsonl" in why
     assert consistent(eng)[0] is False                                    # 世界说没见过面，绫华的记忆里却有这次谈话
+
+
+def test_a_crash_inside_the_react_loop_leaves_no_trace_even_though_retrieval_marks_memories_as_used(base, tmp_path):
+    """RAG 检索会把取到的记忆标成“刚被用到”（accessed）——读也有内存里的副作用。它只在提交时随存档一起落盘，
+    所以崩在循环中间（第 2 次工具刚拿到观察，托马的一条记忆刚被标成用过），磁盘上一点变化都没有。"""
+    crashpoints.arm("react.after_tool", 2)
+    crashed = make_engine(tmp_path, True)
+    with pytest.raises(crashpoints.SimulatedCrash):
+        crashed.run()
+    crashpoints.disarm()
+    assert any(m.accessed > 0 for m in crashed.npcs["thoma"].memory.items) and crashed.npcs["thoma"].memory._dirty   # 崩之前：内存里确实标了
+    eng = make_engine(tmp_path, False)                                                                       # 重启
+    ok, why = ch.recovered_to_last_commit(base, tmp_path)
+    assert ok, why
+    assert all(m.accessed == 0 for a in eng.npcs.values() for m in a.memory.items)                           # 之后：没有任何残留
