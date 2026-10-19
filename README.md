@@ -108,6 +108,7 @@ GameEngine（Harness 外壳：组装、存档 = 事务提交点、预算、trace
 - **整局重放**：`python3 tools/replay_game.py <trace>` 用记下的输入和模型回答把整局再跑一遍并逐段核对状态——验证的是**我们的代码**，不是模型；
   `--state-at N` 直接重建第 N 次输入之前的世界。测试里有一局“金标准局”（`tests/golden/`），世界走向变了就红。
 - **提示词预览**：`python3 tools/preview_prompt.py <存档> <npc> --say …`，不调模型，打印某个 NPC 此刻会收到的完整提示词；`--find 词` 查某个词有没有进他的提示词。
+- **清理 data/**：`python3 tools/prune_data.py` 只列出、`--apply` 真删；只留网页对局（`web`、`p_*`）里玩家在对话中至少说了 10 句（`--min` 可改）的，其余存档、记忆、trace、事务日志都删。
 - **剧情内容校验**：`python3 tools/lint_story.py`，不跑游戏，推演一遍找出走不通的地方（永远拿不到的线索、达成不了的信号、见不到的人）。
 
 ## 目录
@@ -122,7 +123,7 @@ core/                          世界规则与状态：god_env、physical、dial
 models/                        personality / memory / relationship / retrieval（BM25）/ knowledge
 llm/                           后端客户端（gemma_client、http_pool、free_first、model_picker、mock_backend）与各个单一职责的小 agent
 engine/                        game_engine（组装、存档）、trace、recording、journaled
-tools/                         view_trace / replay / replay_game / preview_prompt / lint_story / monitor / pick_model
+tools/                         view_trace / replay / replay_game / preview_prompt / lint_story / monitor / pick_model / prune_data
 tests/                         pytest（全离线：假 HTTP 服务、金标准局、崩溃矩阵、续跑矩阵、故事测试）
 docs/                          architecture（设计决策）/ code_map（想改某件事去哪）/ turn_graph / crash_recovery / harness_design / reference_projects
 ```
