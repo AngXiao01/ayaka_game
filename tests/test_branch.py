@@ -27,7 +27,7 @@ def engine(tmp_path, lines, **harness):
 
 
 def test_free_text_proposal_is_mapped_to_preset(tmp_path):
-    eng = engine(tmp_path, [TALK_AYAKA, ("我想还是不追究了吧，等茶碗修好，给他一个机会。", "自由发言"), "q"])
+    eng = engine(tmp_path, [TALK_AYAKA, ("我想还是不追究了吧，等茶盏修好，给他一个机会。", "自由发言"), "q"])
     eng.run()
     assert "proposed_mercy" in eng.god.flags
     ev = [json.loads(l) for l in eng.tracer.path.read_text().splitlines()]

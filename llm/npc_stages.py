@@ -180,7 +180,7 @@ def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnCont
     w = ctx.world
     known = [f"现在是 {w.get('clock', '')}，{w.get('daylight', '')}", p.identity] + list(sc.get("layout") or []) \
         + [t.get("npc_stance") or ""] + list(ctx.canon or []) + list(t.get("prior_clues") or []) + list(t.get("known_clues") or []) \
-        + [x["fact"] for x in t.get("achieved_signals", []) if x.get("fact")]
+        + [w.get("premise") or ""] + [x.get("audit_fact") or x["fact"] for x in t.get("achieved_signals", []) if x.get("fact")]
     known = [k for k in known if k]
     if not known:
         return [], 0

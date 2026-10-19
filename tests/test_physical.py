@@ -78,7 +78,7 @@ def test_messages_take_time_by_distance():
     g, phys, _ = world({"act_id": "act2", "phase_idx": 1, "location": "ritou", "clues": ["c_gate_visitor"]})
     got = []
     phys.on_deliver = got.append
-    msg = phys.send("soji", "kokichi", "有人在查茶碗的事，你小心。")
+    msg = phys.send("soji", "kokichi", "有人在查茶盏的事，你小心。")
     assert msg["deliver"] - msg["sent"] == 60                 # 离岛到花见坂要一个钟头
     g.pass_time(30)
     assert got == [] and phys.peek_inbox("kokichi") == []

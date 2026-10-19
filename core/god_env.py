@@ -932,7 +932,8 @@ class GodEnv:
             "achieved_signals": [{"id": s.id, "desc": s.desc,
                                   # 记“她当时实际说的话”，不是当初给她的指令（reveal 是“把事情说清楚……最后郑重地问对方愿不愿意”这类命令，
                                   # 事后塞进“已经说过的事实”，小模型会当成指令再执行一遍：问报酬也回一遍委托）
-                                  "fact": f"你当时是这么说的：「{self.told[s.id]}」" if self.told.get(s.id) else s.desc}
+                                  "fact": f"你当时说的是：「{self.told[s.id]}」" if self.told.get(s.id) else s.desc,
+                                  "audit_fact": s.reveal or s.desc}                # 核对员比对用的作者原文：NPC 自己口误过的话不能当标准
                                  for s in self.quest.signals
                                  if s.id in self.achieved and s.npc == npc],
             "pending_signals": pending,

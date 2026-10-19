@@ -18,8 +18,8 @@ def ayaka(tmp_path):
 
 def test_a_lie_whose_truth_mentions_what_she_cannot_know_is_dropped(tmp_path):
     eng, a = ayaka(tmp_path)
-    said = "茶碗怎么会是我藏的？"
-    reply = SimpleNamespace(speech=said, lies=[{"said": said, "truth": "茶碗是狐狸为修补旧裂纹带走的，现在在神龛上", "lie_id": "improvised"}])
+    said = "茶盏怎么会是我藏的？"
+    reply = SimpleNamespace(speech=said, lies=[{"said": said, "truth": "茶盏是狐狸为修补旧裂纹带走的，现在在神龛上", "lie_id": "improvised"}])
     out = a.record_lies(reply, eng.god, now=3)
     assert not out["kept"] and "不该知道" in out["dropped"][0]["reason"]
     assert not eng.god.testimonies and not [m for m in a.memory.items if m.kind == "lie"]

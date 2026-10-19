@@ -177,7 +177,8 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
         mind.append(f"- {player}给你看过、告诉过你的线索：" + "、".join(c.split("：", 1)[0] for c in t["known_clues"]))
     said = [x["fact"] for x in t["achieved_signals"] if x.get("fact")]
     if said and not focus:                         # 说过的事实以此为准：这些在历史里会被压缩掉，模型容易改口、编出矛盾的细节
-        mind.append("- 你已经告诉过对方、之后必须以此为准的事实（可以换着说，但不能改口，也不要添新的、和它矛盾的细节）：\n"
+        mind.append("- 你已经对对方说过的话（前后要一致，可以换着说，不要添新的、和它矛盾的细节；"
+                    "但如果你当时哪里说得和上面「局势」写明的事实对不上——比如日子、数目——以「局势」为准，自然地更正一句）：\n"
                     + _bullets(said, indent="  "))
     parts.append("## 你此刻的心思（只有你知道，不要原样念给对方听）\n" + "\n".join(mind))
     pl = ctx.place or {}

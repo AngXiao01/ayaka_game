@@ -134,7 +134,7 @@ class MockBackend:
         if "小时候" in text or "养过" in text:
             reply.update(speech="小时候我养过一只白猫，叫小雪，总爱趴在茶室的纸拉门边晒太阳。", emotion="欣喜",
                          affinity_delta=1, new_facts=[{"fact": "小时候养过一只叫小雪的白猫，爱趴在茶室纸拉门边晒太阳", "about": "self"},
-                                                      {"fact": "茶碗其实是托马藏起来的", "about": "world"}])
+                                                      {"fact": "茶盏其实是托马藏起来的", "about": "world"}])
             return reply
         if "托马" in text and "乐器" in text:
             reply.update(speech="托马会弹三味线哦，只是弹得不太好。", affinity_delta=1,

@@ -66,13 +66,13 @@ def test_spoiler_and_ooc_options_are_dropped():
     ctx = TurnContext(player_name="旅行者", scene={}, world={}, relationship={},
                       history=[{"speaker": "npc", "text": "我、我就是个扛货的。", "reply": {"action": ""}}],
                       player_view={"known_text": "宗次 离岛的搬运工", "spoiler_terms": ["小吉", "宗次", "辰巳"]})
-    gen = PlayerOptionGenerator(Stub(["是小吉找你帮忙补茶碗的吧？", "这个剧情选项好怪", "宗次，你在码头干了多久？",
+    gen = PlayerOptionGenerator(Stub(["是小吉找你帮忙补茶盏的吧？", "这个剧情选项好怪", "宗次，你在码头干了多久？",
                                       "扛货累不累？要不要吃个饭团？"]))
     opts, _ = gen.generate(ctx, "宗次", [])
     assert [o.text for o in opts] == ["宗次，你在码头干了多久？", "扛货累不累？要不要吃个饭团？"]
     ctx.history.append({"speaker": "npc", "text": "是小吉……小吉找我帮的忙。", "reply": {"action": ""}})
     opts, _ = gen.generate(ctx, "宗次", [])
-    assert "是小吉找你帮忙补茶碗的吧？" in [o.text for o in opts]       # 对方亲口说了，玩家就知道了
+    assert "是小吉找你帮忙补茶盏的吧？" in [o.text for o in opts]       # 对方亲口说了，玩家就知道了
 
 
 def test_npcs_only_know_the_commission_after_being_told():
