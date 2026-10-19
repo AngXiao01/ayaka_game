@@ -195,6 +195,7 @@ class GameEngine:
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
                                   mode=h.branch_mode, tracer=t, decider=self.decider)
         claim_llm = ClaimLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
+        self.status = lambda x: None                # 界面挂钩：此刻在忙什么（网页版会换成自己的）
         self.minds = MindLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
         self.claims = ClaimChecker(self.god, self.world, self.personas,
                                    lambda text, pl, ob, pe: claim_llm.extract(g.player_name, text, pl, ob, pe))
@@ -400,7 +401,7 @@ class GameEngine:
                 r = DialogueSession(npc, self.player, self.option_gen, g, self.world, self.settings, self.reviewer,
                                     self.budget, event=ev, compressor=self.compressor, out=self.out,
                                     tracer=self.tracer, branch=self.branch,
-                                    player_view=self.explorer.player_view, claims=self.claims, minds=self.minds,
+                                    player_view=self.explorer.player_view, claims=self.claims, minds=self.minds, status=lambda x: self.status(x),
                                     parallel=self.settings.harness.parallel_judges
                                     and self.backend.name not in ("mock", "replay")).run()
                 result.sessions.append(r)

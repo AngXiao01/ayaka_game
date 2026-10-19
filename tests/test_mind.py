@@ -49,9 +49,11 @@ def test_a_turn_updates_both_sides_and_feeds_the_next_prompts(tmp_path):
                 seen[req.task].append("\n".join(m.get("content") or "" for m in req.messages))
             return super().complete(req)
 
+    statuses = []
     eng = GameEngine(s, Recording(seed=0), ScriptedPlayer(
         [{"kind": "move", "dest": "kamisato_estate"}, {"kind": "talk", "npc": "ayaka"}, ("你好，聊聊茶会的事吧。", "闲聊"), ("茶会明天开始吗", "闲聊"),
          {"kind": "leave"}, "q"]), out=lambda x: None, save_name="m", new_game=True)
+    eng.status = statuses.append
     eng.run()
     state = eng.god.minds["ayaka"]
     assert state["npc"] and state["player"]                                    # 两边各有各的判断
@@ -62,4 +64,6 @@ def test_a_turn_updates_both_sides_and_feeds_the_next_prompts(tmp_path):
     assert eng.god.to_dict()["minds"]["ayaka"] == state                         # 存档里带着，重开游戏还在
     assert any("## 你对对方的判断" in x for x in seen["npc_step"][1:])           # 第一轮之后，NPC 的提示词里带着她自己的判断
     assert not any("## 你对对方的判断" in x for x in seen["npc_step"][:1])
-    assert all("以为" in x and "询问或试探" in x for x in seen["player_options"])    # 选项 agent 每次都带着“别替对方预设知道”的规矩
+    assert all("以为" in x and "询问或试探" in x for x in seen["player_options"])
+    assert all("是谁（站在面前就看得出来的）" in x and "别问显而易见的问题" in x for x in seen["player_options"])   # 选项 agent 知道对方是谁、不问明摆着的事
+    assert statuses[:2] == ["options", ""] and set(statuses) == {"options", ""}                          # 准备台词时界面显示的不是“对方正在想”    # 选项 agent 每次都带着“别替对方预设知道”的规矩

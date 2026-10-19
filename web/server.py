@@ -64,6 +64,11 @@ class WebIO:
         self.stop = False
         self.finished = False
         self.error = ""
+        self.status = ""                    # 引擎此刻在忙什么："" = 对方在想，options = 在准备你可说的话
+
+    def set_status(self, s: str) -> None:
+        with self.cond:
+            self.status = s
 
     def write(self, text: str, kind: str = "out") -> None:
         with self.cond:
@@ -161,6 +166,7 @@ class Game:
         self.engine = GameEngine(settings, backend, WebPlayer(io, settings.game.player_name), out=io.write,
                                  save_name=self.save, new_game=new_game, router=router,
                                  trace=not self.args.incognito)
+        self.engine.status = io.set_status
         if self._free_first is not None:
             self._free_first.tracer = self.engine.tracer       # 回落的时候写进 trace
 
@@ -367,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
             with io.cond:
                 payload = {"lines": io.lines[since:], "next": len(io.lines), "options": io.options,
                            "allow_free": io.allow_free, "in_dialogue": io.in_dialogue,
-                           "waiting": io.waiting, "finished": io.finished,
+                           "waiting": io.waiting, "finished": io.finished, "status": io.status,
                            "error": io.error}
             payload["panel"] = game.side_panel()
             self._json(payload)

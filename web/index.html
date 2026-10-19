@@ -191,7 +191,7 @@ function append(lines) {
 
 // ---------- 选项
 function renderOptions(st) {
-  const key = JSON.stringify([st.options, st.waiting, st.finished]);
+  const key = JSON.stringify([st.options, st.waiting, st.finished, st.status]);
   if (key === lastOptsKey) return;
   lastOptsKey = key;
   const box = $("options");
@@ -199,7 +199,7 @@ function renderOptions(st) {
   if (st.finished) {
     box.append(el("div", "typing", st.error ? "" : "游戏结束。点右上角「重新开始」可以再玩一局。"));
   } else if (!st.waiting) {
-    box.append(el("div", "typing", "对方正在想", el("span", null, "."), el("span", null, "."), el("span", null, ".")));
+    box.append(el("div", "typing", st.status === "options" ? "正在为你准备可说的话" : "对方正在想", el("span", null, "."), el("span", null, "."), el("span", null, ".")));
   }
   for (const o of st.options) {
     const spoken = o.kind === "say" || o.line;

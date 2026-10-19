@@ -147,7 +147,8 @@ class DialogueSession:
                  event: Optional[EventDef] = None, compressor: Optional[Callable[[str, list[str]], str]] = None,
                  out: Callable[[str], None] = print, tracer: Any = None, branch: Any = None,
                  player_view: Optional[Callable[[str, Optional[str]], dict]] = None, claims: Any = None,
-                 parallel: bool = False, minds: Any = None):
+                 parallel: bool = False, minds: Any = None,
+                 status: Callable[[str], None] = lambda s: None):
         self.npc = npc
         self.player_view = player_view  # 玩家视角（Explorer.player_view）：选项 agent 只能看这个，看不到 NPC 的心思
         self.npc_names = set(god.physical.personas) if god.physical is not None else set()
@@ -163,6 +164,7 @@ class DialogueSession:
         self.event = event
         self.out = out
         self.tracer = tracer
+        self.status = status            # 告诉界面此刻在忙什么：options = 正在替玩家准备台词（网页的“对方正在想”据此换字）
         self.minds = minds              # 心智状态维护（llm/mind_llm_adapter.py）：两个小 agent，各管 NPC 和玩家一边（可为 None）
         self.claims = claims            # 声明核对（core/claims.py）：玩家说自己做过什么，对着真实足迹核对
         self.branch = branch            # 分支 agent：自由输入里的处置方案 → 预设方案（可为 None）
@@ -289,11 +291,16 @@ class DialogueSession:
         acts = self._actions()
         if self.player_view is not None:
             ctx.player_view = self.player_view(nid, self.event.id if self.event else None)
+            ctx.player_view["npc_brief"] = f"{self.npc.p.title}：{self.npc.p.brief}"
             ctx.player_view["actions"] = [{"id": i, "desc": d, "kind": o.kind, "meta": o.meta, "tag": t}
                                           for i, o, d, t in acts]
-        with self._span(agent="options"):
-            says, degraded = self.option_gen.generate(ctx, self.npc.name, self.npc.p.fallback_options,
-                                                      force_static=self.budget.degraded())
+        self.status("options")
+        try:
+            with self._span(agent="options"):
+                says, degraded = self.option_gen.generate(ctx, self.npc.name, self.npc.p.fallback_options,
+                                                          force_static=self.budget.degraded())
+        finally:
+            self.status("")
         if degraded and self.cfg.debug:
             self.out("    · 选项生成失败，已用兜底选项")
         covered = {o.meta.get("act") for o in says if o.meta.get("line")}
