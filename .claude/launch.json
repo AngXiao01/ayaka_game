@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ayaka-web",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["web/server.py", "--port", "8771"],
+      "port": 8771
+    }
+  ]
+}
