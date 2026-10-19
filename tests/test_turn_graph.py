@@ -67,7 +67,7 @@ def test_lint_finds_unreachable_nodes_unwritten_reads_and_cycles():
 
 PIPELINE = ["pick_action", "interpret_action", "guard_input", "prefetch", "judge_say", "detect_leaving", "decide_invite", "social_effects",
             "stash_conv", "build_turn_ctx", "check_claims", "log_guard", "classify_branch", "echo_player", "npc_reply", "settle",
-            "world_effects", "decide_end"]
+            "world_effects", "update_minds", "decide_end"]
 
 
 def test_the_turn_pipeline_order_is_pinned():

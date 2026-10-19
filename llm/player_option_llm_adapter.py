@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from config.settings import TaskParams
+from core import mind as mind_state
 from core.context import TurnContext
 from llm.base import LLMBackend, LLMError, LLMRequest
 from llm.schemas import (PLAYER_OPTIONS_SCHEMA, PLAYER_TONES, PLAYER_INTENTS, act_tag_schema, validate_act_tags,
@@ -31,6 +32,7 @@ SYSTEM = """你替{player}想台词。{player}是游历过蒙德、璃月等地�
 8. 不出戏：每句都是{player}在稻妻当面说出口的话。不提「游戏」「玩家」「剧情」「任务」「选项」「系统」这类说法；不提这个故事里没有出场的同伴（比如派蒙）；不搬出与眼前无关的原作剧情。
 10. 告别是例外，不是默认选项：谈话还在进行（对方在答话、还有话题没聊完、刚抛出新线索）时一律不写告别的句子。只有对话已经自然收尾——事情谈完了、对方在送客或催着走、{player}说了要去别处——才可以写一句，而且要贴着此刻的情境，不要套「先聊到这儿」「我先告辞了」这类固定客套。
 11. 称呼：{player}说话时称呼{npc}只用「{address}」；不要自创别的称呼，尤其不要叫「姐」「妹」「亲」「大佬」。
+12. 站在{npc}的位置想一想：她大概知道什么、不知道什么。{player}自己都没听说过的人和事不要提；{player}知道、但{npc}未必知道的事，用询问或试探的口气（「您听说过……吗」），不要写成「你肯定知道」的陈述；也不要默认{npc}认识{player}认识的所有人。
 9. 有分寸：对初次见面或还不熟的人礼貌克制；亲昵、调情或带私人感情的话，只在对方是神里绫华、且关系到了「友好」以上时才用，最多一句。
 
 只输出一个 JSON 对象，不要任何其他文字，不要代码块：
@@ -78,6 +80,9 @@ class PlayerOptionLLMAdapter:
 
 # {player}已经知道的事（线索本）
 {chr(10).join('- ' + c for c in pv.get('clues', [])) or '（还没有线索）'}
+
+# {player}以为{npc_name}大概知道什么
+{mind_state.render_player((ctx.mind or {}).get("player", []), npc_name)}
 
 # {player}的足迹（只有这些是{player}亲身经历的）
 {pv.get('footprint') or '（无）'}

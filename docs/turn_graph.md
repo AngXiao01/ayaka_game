@@ -8,7 +8,7 @@
 
 ## 现在是什么
 
-18 个节点按固定顺序执行（`core/dialogue_session.py` 的 `TURN_NODES`，执行器在 `core/turn_graph.py`，只用标准库）。
+19 个节点按固定顺序执行（`core/dialogue_session.py` 的 `TURN_NODES`，执行器在 `core/turn_graph.py`，只用标准库）。
 每个节点：函数体从共享状态 `TurnState` 取变量、结尾写回，登记了读哪些字段、写哪些字段。唯一的条件边：玩家选了“保存并退出”，在第 1 个节点之后直接结束。
 
 | # | 节点 | 干什么 | 读 | 写 |
@@ -30,7 +30,8 @@
 | 15 | `npc_reply` | NPC 回话：评估 → 说话（ReAct）→ 核对 → 记录。 | ctx, guard, intent, nid | skills, context_lines, reply |
 | 16 | `settle` | 进度审核与结算：线索、关系、幕。 | turn, guard, intent, action, shown, skills, options, context_lines, forced, reply | newly |
 | 17 | `world_effects` | 对话之后落到世界上的事：派人去查、凭信任相信、同行、请对方先回去。 | phys, nid, reply, newly | dismissed, went, ids, deg |
-| 18 | `decide_end` | 这一轮之后谈话怎么收尾：结局、告辞 / 接着走、对方走了或结束、时间到、停滞，否则继续。 | action, reply, dismissed, leaving, went, ids, deg | end |
+| 18 | `update_minds` | 两个读人 agent 各更新一份心智状态：NPC 以为玩家知道 / 想听什么（她可以故意不说），玩家以为 NPC 知道什么（core/mind.py）。 | turn, nid, guard, reply, action | — |
+| 19 | `decide_end` | 这一轮之后谈话怎么收尾：结局、告辞 / 接着走、对方走了或结束、时间到、停滞，否则继续。 | action, reply, dismissed, leaving, went, ids, deg | end |
 
 每个节点跑完会：记一条 trace 事件 `node`（节点名、耗时 ms）、放一个崩溃点 `turn.after.<节点名>`（崩溃矩阵会自动覆盖）。
 

@@ -44,6 +44,7 @@ from engine.trace import Tracer
 from llm.base import LLMBackend
 from llm.branch_llm_adapter import BranchLLMAdapter
 from llm.claim_llm_adapter import ClaimLLMAdapter
+from llm.mind_llm_adapter import MindLLMAdapter
 from llm.decider import Decider, make_decider
 from llm.director_llm_adapter import DirectorLLMAdapter
 from llm.npc_llm_adapter import NPCLLMAdapter
@@ -194,6 +195,7 @@ class GameEngine:
         self.branch = BranchAgent(self.god, BranchLLMAdapter(r.backend("branch"), r.params("branch"), t, min(rep, 1)),
                                   mode=h.branch_mode, tracer=t, decider=self.decider)
         claim_llm = ClaimLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
+        self.minds = MindLLMAdapter(r.backend("small"), r.params("small"), t, min(rep, 1))
         self.claims = ClaimChecker(self.god, self.world, self.personas,
                                    lambda text, pl, ob, pe: claim_llm.extract(g.player_name, text, pl, ob, pe))
         self.scene = SceneAgent(self.god, self.world, self.explorer, self.world_canon, self.quest.canon_guard_terms,
@@ -398,7 +400,7 @@ class GameEngine:
                 r = DialogueSession(npc, self.player, self.option_gen, g, self.world, self.settings, self.reviewer,
                                     self.budget, event=ev, compressor=self.compressor, out=self.out,
                                     tracer=self.tracer, branch=self.branch,
-                                    player_view=self.explorer.player_view, claims=self.claims,
+                                    player_view=self.explorer.player_view, claims=self.claims, minds=self.minds,
                                     parallel=self.settings.harness.parallel_judges
                                     and self.backend.name not in ("mock", "replay")).run()
                 result.sessions.append(r)

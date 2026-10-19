@@ -256,6 +256,14 @@ class MockBackend:
                 out.append({"kind": "talked", "target": nid, "text": f"和{name}谈过"})
         return {"claims": out[:3]}
 
+    def _mind_update(self, meta: dict) -> dict:
+        text = (meta.get("last_player") or "")[:8]
+        if not text:
+            return {"items": []}
+        if meta.get("side") == "npc":
+            return {"items": [{"topic": text, "belief": "maybe", "interest": 1, "share": "undecided", "why": "对方刚提到"}]}
+        return {"items": [{"topic": text, "belief": "maybe", "why": "对方没明说"}]}
+
     def _option_acts(self, meta: dict) -> dict:
         return {"tags": [{"index": i, "act": "none"} for i in range(meta.get("n", 0))]}
 

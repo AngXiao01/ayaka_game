@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from config.settings import TaskParams
 from core.agent_loop import LoopLimits, LoopResult, ReActLoop
+from core import mind as mind_state
 from core.context import TurnContext
 from core.skills import Skill
 from core.tools import ToolRegistry
@@ -202,6 +203,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
                      f"对方没接话就不要再提）\n{t['background_note']}")
     if chat and t.get("curiosity") and ctx.turn % 3 == 2:
         parts.append(f"## 想问问对方（找个自然的时机问一句）\n{t['curiosity']}")
+    mine = mind_state.render_npc((ctx.mind or {}).get("npc", []))
+    if mine:                                       # 她对眼前这个人的主观判断：说不说、先说什么，由她自己定
+        parts.append("## 你对对方的判断（你自己的看法，不一定对；「先不说」的事别主动提，对方追问再看你的心思）\n" + mine)
     recent = [h["reply"].get("action") for h in ctx.history if h["speaker"] == "npc" and h.get("reply")][-4:]
     recent = [a for a in recent if a]
     if recent:

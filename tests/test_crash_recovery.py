@@ -14,7 +14,7 @@ from tests import crash_harness as ch
 SCRIPT = [{"kind": "talk", "npc": "ayaka"}, ("你好，聊聊茶会吧。", "闲聊"), ("再聊聊。", "闲聊"), {"kind": "leave"},
           {"kind": "talk", "npc": "thoma"}, ("那天夜里有谁来敲过后门吗？", "打听情报"), {"kind": "leave"}, "q"]
 STATIC_POINTS = {"react.after_respond": 7, "react.after_tool": 2,                       # ReAct 循环里：工具（RAG 检索）刚拿到观察 / 模型刚决定怎么答
-                 "journal.after_append": 49,                                                       # 行动日志：每记下一条模型答案 / 判定 / 玩家选择之后
+                 "journal.after_append": 55,                                                       # 行动日志：每记下一条模型答案 / 判定 / 玩家选择之后
                  "uow.after_backup": 4, "memory.after_append": 4, "save.before_state": 3, "uow.after_state": 3, "memory.after_rewrite": 1}
 def make_engine(data_dir, new_game):
     s = load_settings(env_file=data_dir / "none.env")

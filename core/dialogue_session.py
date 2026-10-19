@@ -18,6 +18,7 @@ from core.context import TurnContext
 from core.god_env import EventDef, GodEnv
 from core import judge
 from core.beats import pick_beat
+from core import mind as mind_state
 from models.memory import MemoryItem
 from models.retrieval import bigram_jaccard
 from core.dice import roll, tag
@@ -116,6 +117,7 @@ TURN_NODES = (
     ('npc_reply', ('ctx', 'guard', 'intent', 'nid'), ('skills', 'context_lines', 'reply')),
     ('settle', ('turn', 'guard', 'intent', 'action', 'shown', 'skills', 'options', 'context_lines', 'forced', 'reply'), ('newly',)),
     ('world_effects', ('phys', 'nid', 'reply', 'newly'), ('dismissed', 'went', 'ids', 'deg')),
+    ('update_minds', ('turn', 'nid', 'guard', 'reply', 'action'), ()),
     ('decide_end', ('action', 'reply', 'dismissed', 'leaving', 'went', 'ids', 'deg'), ('end',)),
 )
 
@@ -145,7 +147,7 @@ class DialogueSession:
                  event: Optional[EventDef] = None, compressor: Optional[Callable[[str, list[str]], str]] = None,
                  out: Callable[[str], None] = print, tracer: Any = None, branch: Any = None,
                  player_view: Optional[Callable[[str, Optional[str]], dict]] = None, claims: Any = None,
-                 parallel: bool = False):
+                 parallel: bool = False, minds: Any = None):
         self.npc = npc
         self.player_view = player_view  # 玩家视角（Explorer.player_view）：选项 agent 只能看这个，看不到 NPC 的心思
         self.npc_names = set(god.physical.personas) if god.physical is not None else set()
@@ -161,6 +163,7 @@ class DialogueSession:
         self.event = event
         self.out = out
         self.tracer = tracer
+        self.minds = minds              # 心智状态维护（llm/mind_llm_adapter.py）：两个小 agent，各管 NPC 和玩家一边（可为 None）
         self.claims = claims            # 声明核对（core/claims.py）：玩家说自己做过什么，对着真实足迹核对
         self.branch = branch            # 分支 agent：自由输入里的处置方案 → 预设方案（可为 None）
         self.wm = WorkingMemory(self.cfg.history_turns, self.cfg.player_name, npc.name, compressor,
@@ -204,7 +207,8 @@ class DialogueSession:
         return TurnContext(player_name=self.cfg.player_name, scene=scene, world=world,
                            relationship=self.npc.relationship.summary(), memories=memories,
                            history=list(self.wm.entries), history_summary=self.wm.summary, turn=turn, canon=canon,
-                           handoff=handoff, place=place, reflection=reflection)
+                           handoff=handoff, place=place, reflection=reflection,
+                           mind=dict(self.god.minds.get(p.id, {})))
 
     def _flush_notices(self) -> None:
         for line in self.god.notices:
@@ -977,6 +981,25 @@ class DialogueSession:
         deg = int(reply.degraded)
 
         st.dismissed, st.went, st.ids, st.deg = dismissed, went, ids, deg
+
+    def _n_update_minds(self, st: TurnState) -> None:
+        """每轮之后更新两份心智状态：NPC 以为玩家知道 / 想听什么（她可以故意不说），玩家以为 NPC 知道什么。"""
+        if self.minds is None or st.guard is None or st.reply is None or self.event or st.action.kind in ("leave", "quit"):
+            return
+        if self.budget.degraded():
+            return
+        g, nid = self.god, st.nid
+        player, npc = self.cfg.player_name, self.npc.name
+        exchange = "\n".join([f"{player}：「{st.guard.text}」", f"{npc}：「{st.reply.speech}」"])
+        recent = "\n".join(f"{player if e['speaker'] == 'player' else npc}：「{e['text']}」" for e in self.wm.entries[-4:])
+        mine = g.minds.setdefault(nid, {"npc": [], "player": []})
+        pv = self.player_view(nid, None) if self.player_view else {}
+        for side in ("npc", "player"):
+            known = (self.npc.p.stance(g.act_id) if side == "npc" else "\n".join(pv.get("clues", [])))[:700]
+            ups = self.minds.update(side, player, npc, recent or exchange, mine.get(side, []), known, st.guard.text)
+            if ups:
+                mine[side] = mind_state.merge(mine.get(side, []), ups, st.turn)
+                self._log("mind", npc=nid, side=side, items=ups)
 
     def _n_decide_end(self, st: TurnState) -> None:
         """这一轮之后谈话怎么收尾：结局、告辞 / 接着走、对方走了或结束、时间到、停滞，否则继续。"""

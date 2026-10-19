@@ -205,6 +205,7 @@ class GodEnv:
         self.resolved: bool = s.get("resolved", False)
         self.ending: Optional[str] = s.get("ending")
         self.journal: list[str] = s.get("journal", [])
+        self.minds: dict[str, dict[str, list[dict]]] = s.get("minds", {})   # npc -> {npc: [..], player: [..]}，见 core/mind.py
         self.testimonies: list[dict] = s.get("testimonies", [])   # 证词：真话与谎话同一格式，玩家分不出
         # 导演层的状态（同样外化进存档）：都只影响「节奏」，不影响线索、信号与结局
         self.director_slot: Optional[int] = s.get("director_slot")          # 导演上次运行时的时段序号
@@ -1029,4 +1030,5 @@ class GodEnv:
                 "testimonies": self.testimonies, "director_slot": self.director_slot,
                 "last_progress_slot": self.last_progress_slot, "nudges": self.nudges,
                 "npc_overrides": self.npc_overrides, "rumors": self.rumors,
+                **({"minds": self.minds} if self.minds else {}),
                 **({"physical": self.physical.to_dict()} if self.physical is not None else {})}

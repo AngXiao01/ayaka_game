@@ -22,6 +22,7 @@ class TurnContext:
     avoid: list[str] = field(default_factory=list)      # 刚被代码发现重复的自己的话：这一轮换个说法
     turn: int = 0
     player_view: dict = field(default_factory=dict)     # 玩家视角（Explorer.player_view），只给替玩家想台词的选项 agent
+    mind: dict = field(default_factory=dict)            # 心智状态（core/mind.py）：{npc: NPC 对玩家的判断, player: 玩家对 NPC 的判断}
     place: dict = field(default_factory=dict)           # 物理世界里这个 NPC 该知道的：身边的人、同行、提到的人在哪、口信
 
     @property
