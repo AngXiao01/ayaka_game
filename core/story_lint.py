@@ -129,7 +129,7 @@ def _reachability(q: Any, w: Any, personas: dict) -> list[Finding]:
                 flags.add(pf)
         for lid in locs:
             for o in w.objects(lid):
-                if o.get("clue") and set(o.get("requires_clues", [])) <= clues:
+                if o.get("clue") and set(o.get("requires_clues", [])) <= clues and set(o.get("requires_flags", [])) <= flags:
                     clues.add(o["clue"])
         for s in q.signals:
             if s.id in done:
@@ -145,7 +145,7 @@ def _reachability(q: Any, w: Any, personas: dict) -> list[Finding]:
             p = personas.get(s.npc)
             known = clues | set(getattr(p, "knows_clues", []) or [])
             if (present and set(s.requires) <= done and set(s.requires_clues) <= clues
-                    and (not s.requires_clues_any or set(s.requires_clues_any) & clues)
+                    and (not s.requires_clues_any or len(set(s.requires_clues_any) & clues) >= max(1, s.any_min))
                     and len(clues) >= s.clues_min
                     and (not s.requires_known_any or set(s.requires_known_any) & known)
                     and set(s.requires_flags) <= flags):
@@ -204,8 +204,8 @@ def _why(s, q, personas, w, clues, done, flags, acts, locs) -> str:
     miss = [("前置信号", sorted(set(s.requires) - done)), ("需要的线索", sorted(set(s.requires_clues) - clues)),
             ("需要的标记", sorted(set(s.requires_flags) - flags))]
     miss = [f"{k} {v}" for k, v in miss if v]
-    if s.requires_clues_any and not set(s.requires_clues_any) & clues:
-        miss.append(f"需要其中之一的线索 {s.requires_clues_any}")
+    if s.requires_clues_any and len(set(s.requires_clues_any) & clues) < max(1, s.any_min):
+        miss.append(f"需要其中 {max(1, s.any_min)} 条线索 {s.requires_clues_any}")
     if s.requires_known_any and not set(s.requires_known_any) & (clues | set(getattr(p, "knows_clues", []) or [])):
         miss.append(f"{s.npc} 需要知道其中之一 {s.requires_known_any}")
     return "；".join(miss) or "条件互相等待"

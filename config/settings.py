@@ -298,6 +298,21 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         debug=_env_bool("GAME_DEBUG", False),
         seed=int(seed) if seed else None,
     )
+    # 换一个故事：STORY=duval → stories/duval/（world.json、npcs/、quests/、lore/、skills/ 和一个 story.json 写主线 id 与主角 NPC）；
+    # 也可以直接用 CONTENT_DIR 指向任意内容目录。GAME_QUEST / GAME_NPC 显式写了就以它们为准。
+    story = _env("STORY", "")
+    content_dir = _env("CONTENT_DIR", "")
+    if story and not content_dir:
+        content_dir = str(ROOT / "stories" / story)
+    if content_dir:
+        game.content_dir = Path(content_dir)
+        meta = Path(content_dir) / "story.json"
+        if meta.exists():
+            info = json.loads(meta.read_text(encoding="utf-8"))
+            if not _env("GAME_QUEST", ""):
+                game.quest_id = info.get("quest_id", game.quest_id)
+            if not _env("GAME_NPC", ""):
+                game.npc_id = info.get("npc_id", game.npc_id)
     if _env("GAME_DATA_DIR", ""):
         game.data_dir = Path(_env("GAME_DATA_DIR", ""))
     return Settings(llm=llm, game=game, harness=harness)

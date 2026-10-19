@@ -1,0 +1,1004 @@
+{
+  "id": "duval_main",
+  "title": "雪见茶会与多出来的客人",
+  "companion": "ayaka",
+  "era": "锁国令解除后的第一个秋天过去，初雪刚落的稻妻。港口重新对外开放，来稻妻的外国人渐渐多了。",
+  "premise": "神里家要办一场小小的雪见茶会，只请三位客人：枫丹来的画家杜瓦尔女士、旅行者和派蒙。茶会当天，来了两位杜瓦尔。",
+  "public_premise": "听说神里家今年的雪见茶会请了一位枫丹来的女画家，只请了三位客人。",
+  "primer": [
+    "【给第一次来稻妻的你】",
+    "稻妻是雷电将军治下的岛国。神里家是三奉行之一的「社奉行」，管祭典和民间事务；神里绫华是神里家的大小姐，人称「白鹭公主」，托马是神里家的家政官。",
+    "锁国令与眼狩令废止后，稻妻重新向各国敞开。枫丹是远在大陆西北的水之国，稻妻很少有人去过。",
+    "你和派蒙受邀参加神里家的雪见茶会。派蒙第一次收到写着自己名字的请帖，高兴了好几天。"
+  ],
+  "how_to_play": [
+    "【怎么玩】",
+    "① 茶会在第三天午后开席。之前的两天可以自由走动，找托马、杜瓦尔女士或林子里的老先生聊聊——不去也行。",
+    "② 带 ❓ 的选项是关键问题，问出口对方就会说；也可以直接打字聊天。可以用「🔍 出示线索」把查到的东西拿给人看。",
+    "③ 茶会开席后，留意客人们的举止：用「查看」看看茶室的入口、点心席、画板、座席、两位客人的打扮——找到两处不对劲的地方。",
+    "④ 看出不对之后，悄悄告诉绫华，再和她（或派蒙）商量怎么收场。网页版右侧栏「下一步」、终端里「🧭」开头的提示会告诉你该找谁、去哪。"
+  ],
+  "prologue": [
+    "初雪刚落的稻妻。锁国令解除后的第一个秋天刚过，港口重新热闹起来，街头巷尾的话题，从神之眼换成了米价、鱼价，和刚落下来的雪。",
+    "神里家的家政官托马前几天给你和派蒙送来了请帖——派蒙是第一次收到写着自己名字的请帖，高兴了好几天。社奉行每年冬天都会在神里屋敷办一场雪见茶会，今年只请了三位客人：一位枫丹来的画家杜瓦尔女士，你，和派蒙。",
+    "茶会在三天后。你们决定提早一两天去屋敷，帮着托马张罗。",
+    "清晨，你沿着镇守之森边的石径，来到了神里屋敷的门前。"
+  ],
+  "deadline": {
+    "day": 3,
+    "phase": 3,
+    "label": "茶会散席"
+  },
+  "initial_tension": 0.2,
+  "acts": [
+    {
+      "id": "act1",
+      "title": "茶会之前与开席",
+      "objective": "雪见茶会第三天午后开席。之前可以自由走动；茶会上，留意那两位自称杜瓦尔的客人",
+      "hint": "之前的两天，可以去问问托马，也可以去离岛认识认识杜瓦尔女士，或者夜里守在后门看看。茶会开席后，用「查看」留意客人们的举止，找到两处不对劲的地方，就悄悄告诉绫华。",
+      "complete_when": [
+        "tells_noticed"
+      ],
+      "next": "act2",
+      "narration": "绫华听完你的话，沉默了片刻，不动声色地替两位客人各添了一盏茶。「……您打算怎么办？」\n\n【抉择】怎么收场，由你和绫华（或派蒙）一起决定。",
+      "checklist": [
+        {
+          "label": "后门外的怪事是怎么回事",
+          "clues_any": [
+            "c_paw_trail",
+            "c_walking_trail",
+            "c_floating_hat",
+            "c_practice",
+            "c_leaf",
+            "c_old_tanuki_tale"
+          ]
+        },
+        {
+          "label": "两位客人，哪一位有破绽",
+          "clues_any": [
+            "c_tell_entrance",
+            "c_tell_sweets",
+            "c_tell_sketch",
+            "c_tell_seat",
+            "c_tell_outfit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "act2",
+      "title": "收场",
+      "objective": "和绫华（或派蒙）商量怎么收场",
+      "hint": "和绫华商量怎么收场：交谈时选「⚖️ 提议」，说出你的主张。想让派蒙帮忙的话，去和派蒙说。",
+      "complete_when": [
+        "decided_expose",
+        "decided_expose_wrong",
+        "decided_private",
+        "decided_paimon"
+      ],
+      "next": null,
+      "narration": ""
+    }
+  ],
+  "clues": {
+    "c_missing_card": {
+      "name": "纸篓里不见了的请帖",
+      "desc": "托马说，他给杜瓦尔女士写的请帖，家纹盖反了，他重写了一张送去离岛，盖坏的那张随手扔进了后门外的纸篓。今早去倒废纸，那张不见了。",
+      "keywords": [
+        "请帖",
+        "家纹",
+        "纸篓",
+        "盖反"
+      ]
+    },
+    "c_paw_trail": {
+      "name": "雪地上的小爪印和蓝鸡毛",
+      "desc": "后门外的雪地上有一串小小的爪印通向林子，旁边落着一根染成靛蓝色的鸡毛。",
+      "keywords": [
+        "爪印",
+        "鸡毛",
+        "后门外",
+        "靛蓝"
+      ]
+    },
+    "c_walking_trail": {
+      "name": "后腿站直了走的印子",
+      "desc": "第二天，雪地上的爪印变了样：前爪不再着地，一前一后，像是用后腿站直了在走路，走几步就有个浅坑，像摔倒过又爬起来。",
+      "keywords": [
+        "站直",
+        "后腿",
+        "浅坑",
+        "摔倒"
+      ]
+    },
+    "c_floating_hat": {
+      "name": "飘过林边的大帽子",
+      "desc": "托马说，巡夜的家仆昨夜看见一顶大帽子从林边飘过去，帽子底下没有人，吓得没敢细看。",
+      "keywords": [
+        "大帽子",
+        "帽子底下",
+        "没有人",
+        "林边"
+      ]
+    },
+    "c_practice": {
+      "name": "水洼边练屈膝礼的小狸猫",
+      "desc": "你守在后门，夜深了看见：一只狸猫头顶一片叶子，后腿站直，对着结冰的水洼笨拙地练屈膝礼，最后被一顶宽檐大帽子整个扣在了底下。",
+      "keywords": [
+        "屈膝礼",
+        "水洼",
+        "狸猫",
+        "叶子",
+        "扣在"
+      ]
+    },
+    "c_leaf": {
+      "name": "被折过的叶子",
+      "desc": "林子里树下的落叶堆里，有一片被反复折过又展平的叶子，叶柄上沾着一点靛蓝色的颜料。附近的雪里有同样的小爪印。",
+      "keywords": [
+        "叶子",
+        "折过",
+        "颜料"
+      ]
+    },
+    "c_old_tanuki_tale": {
+      "name": "老狸猫的话",
+      "desc": "老狸猫说，林子里最爱瞎打听的小狸猫豆吉，叼回来一张神里家的废请帖叫他念；念到「请一位枫丹来的女士喝茶」，他随口补了句「枫丹的女人，都戴插羽毛的大帽子，穿蓬蓬裙」。豆吉从此念念不忘。狸猫变身要在头上顶一片叶子，叶子一掉就会变回原形。",
+      "keywords": [
+        "豆吉",
+        "枫丹",
+        "叶子",
+        "变身",
+        "帽子"
+      ]
+    },
+    "c_sketchbook": {
+      "name": "杜瓦尔的速写本",
+      "desc": "客栈窗边摊开着杜瓦尔的速写本：海岸、栈桥、搬运工的背影。最后一页画着一座有廊子的宅院和一棵积雪的树，旁边写着「受邀：雪见茶会」。她的画，视角都是站着看到的。",
+      "keywords": [
+        "速写本",
+        "画",
+        "写生"
+      ]
+    },
+    "c_duval_real": {
+      "name": "杜瓦尔平时的样子",
+      "desc": "杜瓦尔说，她一身简便的旅行装，不懂稻妻的茶道礼数，什么都想问；手指上总沾着颜料，画画时站着看到什么就画什么。",
+      "keywords": [
+        "旅行装",
+        "颜料",
+        "礼数",
+        "写生"
+      ]
+    },
+    "c_reversed_card": {
+      "name": "托盘里的四张请帖",
+      "desc": "茶会当天，客人们的请帖是一张张放进同一个漆托盘里的。发出去三张，托盘里却有四张，其中一张家纹是反的——托马认出，这是他扔进纸篓的那张。可请帖是客人自己放进托盘的，谁带来的，没人留意。",
+      "keywords": [
+        "四张",
+        "托盘",
+        "反的",
+        "家纹"
+      ]
+    },
+    "c_tell_entrance": {
+      "name": "茶室入口的举动",
+      "desc": "进茶室时，穿旅行装的那位摘下帽子拿在手里，弯腰钻进去；戴羽毛帽的那位被帽檐卡在门口，侧着身子硬挤，坚称「枫丹淑女从不摘帽」。",
+      "keywords": [
+        "入口",
+        "摘帽",
+        "帽檐",
+        "硬挤"
+      ]
+    },
+    "c_tell_sweets": {
+      "name": "点心席上的举动",
+      "desc": "穿旅行装的那位端着栗子羊羹，先问该怎么吃；戴羽毛帽的那位一口吞下，又趁人不注意往袖子里塞了一块。",
+      "keywords": [
+        "羊羹",
+        "点心",
+        "袖子",
+        "吞"
+      ]
+    },
+    "c_tell_sketch": {
+      "name": "两幅雪景",
+      "desc": "穿旅行装的那位画的是庭院、石灯笼和积雪；戴羽毛帽的那位画的全是膝盖那么高的视角：榻榻米边、大家的脚、点心盘底。",
+      "keywords": [
+        "画",
+        "雪景",
+        "膝盖",
+        "视角"
+      ]
+    },
+    "c_tell_seat": {
+      "name": "跪坐的样子",
+      "desc": "穿旅行装的那位坐不惯，悄悄换了好几次姿势；戴羽毛帽的那位坐得笔直，只有裙摆底下鼓起的一块偶尔会自己动。",
+      "keywords": [
+        "跪坐",
+        "裙摆",
+        "鼓起",
+        "姿势"
+      ]
+    },
+    "c_tell_outfit": {
+      "name": "两位客人的打扮",
+      "desc": "穿旅行装的那位小声说：「我祖母那一辈才这么穿。」另一位的羽毛宽檐帽和蓬蓬裙，像是几十年前画报里的样子。",
+      "keywords": [
+        "打扮",
+        "羽毛",
+        "蓬蓬裙",
+        "祖母"
+      ]
+    }
+  },
+  "signals": [
+    {
+      "acts": [
+        "act1"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [],
+      "requires_clues_any": [],
+      "grants": [
+        "c_missing_card"
+      ],
+      "flags": [],
+      "lock_hint": "",
+      "partial": "",
+      "lock_style": "",
+      "lead": "托马这两天心神不宁——问问他怎么了",
+      "ask": {
+        "label": "❓ 问托马：这两天为什么心神不宁",
+        "text": "托马，你这两天好像有心事？是茶会的事吗？"
+      },
+      "reveal": "叹了口气说出来：前几天写请帖，给杜瓦尔女士那张的家纹盖反了，你重写了一张送去离岛，盖坏的那张随手扔进了后门外的纸篓。今早去倒废纸，那张不见了；后门外的雪地上有一串小小的爪印，旁边落着一根染成靛蓝色的鸡毛。你想不通：一张废纸，谁会要。",
+      "evidence": [
+        [
+          "请帖",
+          "家纹"
+        ],
+        [
+          "纸篓",
+          "不见",
+          "爪印",
+          "鸡毛"
+        ]
+      ],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 0,
+      "group": null,
+      "event": null,
+      "id": "rv_thoma_card",
+      "npc": "thoma",
+      "desc": "托马说出请帖的小岔子：家纹盖反了、废的那张扔进纸篓，今早发现不见了，后门外有爪印和蓝鸡毛"
+    },
+    {
+      "acts": [
+        "act1"
+      ],
+      "requires": [
+        "rv_thoma_card"
+      ],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [
+        "trail_walks"
+      ],
+      "requires_clues_any": [],
+      "grants": [
+        "c_floating_hat"
+      ],
+      "flags": [],
+      "lock_hint": "",
+      "partial": "",
+      "lock_style": "",
+      "lead": "后门外的爪印变了样——再问问托马，昨夜有没有人看见什么",
+      "ask": {
+        "label": "❓ 问托马：昨夜巡夜的人看见了什么",
+        "text": "托马，昨夜巡夜的家仆，有没有看见什么奇怪的东西？"
+      },
+      "reveal": "压低声音说：巡夜的家仆昨夜看见一顶大帽子从林边飘过去，帽子底下没有人，吓得他没敢细看。你是个蒙德人，不太信这些，只当是风把什么东西吹起来了。",
+      "evidence": [
+        [
+          "帽子"
+        ],
+        [
+          "林",
+          "飘",
+          "没有人",
+          "没人"
+        ]
+      ],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 0,
+      "group": null,
+      "event": null,
+      "id": "rv_thoma_hat",
+      "npc": "thoma",
+      "desc": "托马说出巡夜的家仆看见一顶大帽子从林边飘过，帽子底下没有人"
+    },
+    {
+      "acts": [
+        "act1"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [],
+      "requires_clues_any": [],
+      "grants": [
+        "c_duval_real"
+      ],
+      "flags": [],
+      "lock_hint": "",
+      "partial": "",
+      "lock_style": "",
+      "lead": "离岛码头边住着那位枫丹来的画家杜瓦尔——去认识一下，听听她是个什么样的人（离岛·各时段）",
+      "ask": {
+        "label": "❓ 问杜瓦尔：说说您自己",
+        "text": "杜瓦尔女士，能说说您自己吗？您是怎么来稻妻的？"
+      },
+      "reveal": "很爽快地介绍起自己：你是枫丹的画家塞莱斯汀·杜瓦尔，锁国令解除后的第一个秋天来的稻妻，住在这间客栈里，每天去海边写生。你平时就穿这样简便的旅行装，手指上总沾着颜料；你不懂稻妻的茶道礼数，什么都想问；画画时站着看到什么就画什么。收到神里家的请帖你高兴极了，请帖上你的名字、家纹都印得端端正正。",
+      "evidence": [
+        [
+          "旅行装",
+          "颜料",
+          "写生",
+          "画家"
+        ],
+        [
+          "茶道",
+          "礼数",
+          "请帖",
+          "问"
+        ]
+      ],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 0,
+      "group": null,
+      "event": null,
+      "id": "rv_duval_self",
+      "npc": "duval",
+      "desc": "杜瓦尔说起自己：一身旅行装，不懂茶道礼数，什么都想问，画画爱画站着看到的东西"
+    },
+    {
+      "acts": [
+        "act1"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [],
+      "requires_clues_any": [
+        "c_paw_trail",
+        "c_walking_trail",
+        "c_floating_hat",
+        "c_practice",
+        "c_leaf",
+        "c_missing_card"
+      ],
+      "grants": [
+        "c_old_tanuki_tale"
+      ],
+      "flags": [],
+      "lock_hint": "你不会对不知道底细的人说起小辈的事",
+      "partial": "客人从哪儿听来这些事的……再多的，老夫不能说。",
+      "lock_style": "hesitate",
+      "lead": "林子里的老狸猫也许知道那串爪印的来历——带着你查到的东西，黄昏后去镇守之森问问",
+      "ask": {
+        "label": "❓ 问老狸猫：雪地里的爪印和那顶大帽子，是怎么回事",
+        "text": "老先生，雪地里那串后腿站直的爪印，还有飘过林边的大帽子，您知道是怎么回事吗？"
+      },
+      "reveal": "叹了口气，终于开口：是林子里最爱瞎打听的小狸猫豆吉。他在纸篓里翻到一张神里家的废请帖，叼回来叫你念；你念到「请一位枫丹来的女士喝茶」，随口补了一句「枫丹的女人，都戴插羽毛的大帽子，穿蓬蓬裙」。你识字，但印象停在几十年前。那孩子从此念念不忘，多半是自己变成枫丹女士，想进去看看茶会是什么。狸猫的规矩：变身时头上要顶一片叶子，叶子一掉就会变回原形。你求对方别为难他。",
+      "evidence": [
+        [
+          "豆吉",
+          "请帖",
+          "枫丹"
+        ],
+        [
+          "帽子",
+          "叶子",
+          "变",
+          "裙"
+        ]
+      ],
+      "clues_min": 0,
+      "any_min": 2,
+      "min_trust": 0,
+      "min_turns": 0,
+      "group": null,
+      "event": null,
+      "id": "rv_old_tanuki_tale",
+      "npc": "old_tanuki",
+      "desc": "老狸猫说出豆吉叼走废请帖、听了关于枫丹女人的话、变成枫丹女士的缘由"
+    },
+    {
+      "acts": [
+        "act1"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [
+        "party_open",
+        "duval_arrived"
+      ],
+      "requires_clues_any": [],
+      "grants": [
+        "c_reversed_card"
+      ],
+      "flags": [],
+      "lock_hint": "",
+      "partial": "",
+      "lock_style": "",
+      "lead": "茶会上两位自称杜瓦尔——问问托马，请帖收得怎么样",
+      "ask": {
+        "label": "❓ 问托马：请帖收得怎么样",
+        "text": "托马，门口收的请帖，对得上吗？"
+      },
+      "reveal": "脸色古怪，把你拉到一边小声说：发出去三张，漆托盘里却有四张，其中一张家纹是反的——就是你前几天扔进纸篓的那张！可客人们是自己把请帖放进托盘的，你当时在招呼人，没留意是谁放的。",
+      "evidence": [
+        [
+          "四张",
+          "托盘",
+          "三张"
+        ],
+        [
+          "反",
+          "家纹",
+          "扔"
+        ]
+      ],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 0,
+      "group": null,
+      "event": null,
+      "id": "rv_thoma_cards",
+      "npc": "thoma",
+      "desc": "托马说出托盘里有四张请帖，其中一张是他扔掉的那张，可不知是谁带来的"
+    },
+    {
+      "acts": [
+        "act1"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [
+        "party_open"
+      ],
+      "requires_clues_any": [
+        "c_tell_entrance",
+        "c_tell_sweets",
+        "c_tell_sketch",
+        "c_tell_seat",
+        "c_tell_outfit"
+      ],
+      "grants": [],
+      "flags": [
+        "tells_told"
+      ],
+      "lock_hint": "对方还没找到足够的不对劲的地方，你不会随便怀疑一位客人",
+      "partial": "",
+      "lock_style": "",
+      "lead": "两位杜瓦尔举止各有不对，找到两处破绽，就悄悄告诉绫华（茶会上·神里屋敷）",
+      "ask": {
+        "label": "❓ 悄悄告诉绫华：这两位杜瓦尔，有一位不对劲",
+        "text": "绫华小姐，借一步说话——这两位杜瓦尔女士，我看有一位不太对劲。"
+      },
+      "reveal": "听对方说完两处细节，不动声色地垂下眼，过了片刻才轻声说：您的意思是，其中一位……并不是杜瓦尔女士本人。你起先不愿相信，但对方说的细节你无法反驳。你问对方：您打算怎么办？",
+      "evidence": [],
+      "clues_min": 0,
+      "any_min": 2,
+      "min_trust": 0,
+      "min_turns": 0,
+      "group": null,
+      "event": null,
+      "id": "tells_noticed",
+      "npc": "ayaka",
+      "desc": "对方悄悄告诉绫华：两位杜瓦尔里有一位多半不是真的，并说出了两处不对劲的地方"
+    },
+    {
+      "acts": [
+        "act2"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [
+        "proposed_expose"
+      ],
+      "requires_clues_any": [],
+      "grants": [],
+      "flags": [
+        "expose"
+      ],
+      "lock_hint": "要等对方明确提出处置的办法",
+      "partial": "",
+      "lock_style": "",
+      "lead": "",
+      "ask": null,
+      "reveal": "对方提议当众指认那位戴羽毛帽的客人。你为难——不愿让任何一位客人难堪——但对方说得有理，你勉强同意，只请对方措辞留些情面。",
+      "evidence": [],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 1,
+      "group": "decision",
+      "event": null,
+      "id": "decided_expose",
+      "npc": "ayaka",
+      "desc": "对方提议当众指认戴羽毛帽的那位，绫华为难，但勉强同意"
+    },
+    {
+      "acts": [
+        "act2"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [
+        "proposed_expose_wrong"
+      ],
+      "requires_clues_any": [],
+      "grants": [],
+      "flags": [
+        "accused_wrong",
+        "paimon"
+      ],
+      "lock_hint": "要等对方明确提出处置的办法",
+      "partial": "",
+      "lock_style": "",
+      "lead": "",
+      "ask": null,
+      "reveal": "对方提议当众指认那位穿旅行装的客人。你为难，也有些意外，但对方很有把握，你勉强同意。",
+      "evidence": [],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 1,
+      "group": "decision",
+      "event": null,
+      "id": "decided_expose_wrong",
+      "npc": "ayaka",
+      "desc": "对方提议当众指认穿旅行装的那位，绫华为难，但勉强同意"
+    },
+    {
+      "acts": [
+        "act2"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [
+        "proposed_private"
+      ],
+      "requires_clues_any": [],
+      "grants": [],
+      "flags": [
+        "private"
+      ],
+      "lock_hint": "要等对方明确提出处置的办法",
+      "partial": "",
+      "lock_style": "",
+      "lead": "",
+      "ask": null,
+      "reveal": "对方提议不点破，茶会照常进行，散席后单独留下那位客人。你松了口气，明确表示赞同：这样没有任何一位客人会难堪。",
+      "evidence": [],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 1,
+      "group": "decision",
+      "event": null,
+      "id": "decided_private",
+      "npc": "ayaka",
+      "desc": "对方提议不当场点破，散席后单独留下那位客人，绫华明确表示赞同"
+    },
+    {
+      "acts": [
+        "act2"
+      ],
+      "requires": [],
+      "requires_clues": [],
+      "requires_known_any": [],
+      "requires_flags": [
+        "proposed_paimon"
+      ],
+      "requires_clues_any": [],
+      "grants": [],
+      "flags": [
+        "paimon"
+      ],
+      "lock_hint": "要等对方明确提出处置的办法",
+      "partial": "",
+      "lock_style": "",
+      "lead": "",
+      "ask": null,
+      "reveal": "听完旅行者的主意，眼睛一亮：「包在派蒙身上！」你会趁人不注意，从那位戴羽毛帽的客人头顶飞过，「不小心」把帽子撞飞。",
+      "evidence": [],
+      "clues_min": 0,
+      "any_min": 1,
+      "min_trust": 0,
+      "min_turns": 1,
+      "group": "decision",
+      "event": null,
+      "id": "decided_paimon",
+      "npc": "paimon",
+      "desc": "对方提议让派蒙「不小心」撞掉那位戴羽毛帽的客人的帽子，派蒙兴奋地答应了"
+    }
+  ],
+  "events": [],
+  "endings": [
+    {
+      "id": "too_late",
+      "title": "无人点破",
+      "when": {
+        "deadline_passed": true
+      },
+      "text": "雪见茶会就这样散了。两位「杜瓦尔」先后向绫华行礼告辞，没有人点破什么。那位戴羽毛帽的客人走出门时脚步轻快，袖子鼓鼓的，在后门外的拐角处一晃就不见了；穿旅行装的那位站在廊下，对着庭院里的积雪看了很久，掏出炭笔，又画了几笔。绫华送你们出门时轻声说：「今天……好像多出了一位客人。」"
+    },
+    {
+      "id": "paimon_after_wrong",
+      "title": "认错了人 · 让派蒙撞掉帽子",
+      "when": {
+        "flags": [
+          "accused_wrong"
+        ]
+      },
+      "text": "你当众指认了那位穿旅行装的客人。她愣了一下，笑着摘下帽子给大家看——帽子底下什么也没有，没有叶子，只有一头乱糟糟的短发。「我是真的杜瓦尔。」她笑着说，「不过我很高兴被怀疑，这样我也有机会好好看看另一位了。」满座尴尬。就在这时，派蒙「不小心」从那位戴羽毛帽的客人头顶飞过，一翅膀把羽毛帽撞飞，叶子跟着飘落下来。豆吉「砰」的一声现了原形，满座大笑，托马追着滚走的帽子跑了半个屋敷。绫华按着额头，笑得几乎直不起腰。"
+    },
+    {
+      "id": "expose",
+      "title": "当众揭穿",
+      "when": {
+        "flags": [
+          "expose"
+        ]
+      },
+      "text": "你站起身，朝那位戴羽毛宽檐帽的客人指了过去。她慌忙起身，帽子一歪，一片叶子从帽檐底下飘落下来。「砰」的一声，一只小狸猫出现在原地，宽檐帽正好扣在它头上，长裙软塌塌地堆在地上。它抱着那张盖反了家纹的请帖，从廊下一溜烟逃回了森林。托马愣了好一会儿才说：「……那是我扔掉的请帖。」真正的杜瓦尔女士笑得直不起腰，绫华用袖子掩着嘴说：「下次若是想来，直接说一声就好。」"
+    },
+    {
+      "id": "paimon",
+      "title": "让派蒙撞掉帽子",
+      "when": {
+        "flags": [
+          "paimon"
+        ]
+      },
+      "text": "派蒙「不小心」从那位戴羽毛帽的客人头顶飞过，一翅膀把羽毛帽撞飞，叶子跟着飘落下来。豆吉当场现了原形，满座大笑，托马追着滚走的帽子跑了半个屋敷。真正的杜瓦尔女士笑着拍手；绫华轻轻咳了一声，没有责怪谁。"
+    },
+    {
+      "id": "private",
+      "title": "私下告诉绫华",
+      "when": {
+        "flags": [
+          "private"
+        ]
+      },
+      "text": "绫华不点破，茶会照常进行到最后。散席后，她单独留下那位戴羽毛帽的客人，在廊下轻声问：「您真正的名字是什么？」对方攥着扇子，沉默了很久，才小声说出来。绫华重新写了一张请帖，在收件处写上了它的名字，双手交给它。杜瓦尔女士在一旁，把这一幕画了下来。"
+    }
+  ],
+  "proposals": [
+    {
+      "flag": "proposed_expose",
+      "npc": "ayaka",
+      "label": "⚖️ 提议：当众指认戴羽毛帽的那位",
+      "text": "（看着绫华）我想当众指认——那位戴羽毛宽檐帽的客人，不是真正的杜瓦尔女士。",
+      "keywords": [
+        "当众",
+        "揭穿",
+        "指认",
+        "拆穿",
+        "戴羽毛",
+        "羽毛帽",
+        "宽檐帽",
+        "戴帽子的那位"
+      ],
+      "group": "decision",
+      "acts": [
+        "act2"
+      ],
+      "requires_clues_any": [
+        "c_tell_entrance",
+        "c_tell_sweets",
+        "c_tell_sketch",
+        "c_tell_seat",
+        "c_tell_outfit"
+      ],
+      "any_min": 2
+    },
+    {
+      "flag": "proposed_expose_wrong",
+      "npc": "ayaka",
+      "label": "⚖️ 提议：当众指认穿旅行装的那位",
+      "text": "（看着绫华）我想当众指认——那位穿旅行装的客人，不是真正的杜瓦尔女士。",
+      "keywords": [
+        "穿旅行装",
+        "旅行装的那位",
+        "画画的那位",
+        "沾颜料"
+      ],
+      "group": "decision",
+      "acts": [
+        "act2"
+      ],
+      "requires_clues_any": [
+        "c_tell_entrance",
+        "c_tell_sweets",
+        "c_tell_sketch",
+        "c_tell_seat",
+        "c_tell_outfit"
+      ],
+      "any_min": 2
+    },
+    {
+      "flag": "proposed_private",
+      "npc": "ayaka",
+      "label": "⚖️ 提议：不点破，散席后单独留下那位客人",
+      "text": "（看着绫华）先别点破。茶会照常进行，散席后您单独留下那位客人，好好问一句。",
+      "keywords": [
+        "私下",
+        "悄悄",
+        "散席后",
+        "单独留下",
+        "不点破",
+        "别点破"
+      ],
+      "group": "decision",
+      "acts": [
+        "act2"
+      ],
+      "requires_clues_any": [
+        "c_tell_entrance",
+        "c_tell_sweets",
+        "c_tell_sketch",
+        "c_tell_seat",
+        "c_tell_outfit"
+      ],
+      "any_min": 2
+    },
+    {
+      "flag": "proposed_paimon",
+      "npc": "paimon",
+      "label": "⚖️ 提议：让派蒙「不小心」撞掉她的帽子",
+      "text": "（凑近派蒙）派蒙，你趁人不注意，从那位戴羽毛帽的客人头顶飞过，把她的帽子「不小心」撞飞，怎么样？",
+      "keywords": [
+        "撞掉",
+        "撞飞",
+        "撞帽子",
+        "碰掉帽子",
+        "把帽子撞"
+      ],
+      "group": "decision",
+      "acts": [
+        "act2"
+      ],
+      "requires_clues_any": [
+        "c_tell_entrance",
+        "c_tell_sweets",
+        "c_tell_sketch",
+        "c_tell_seat",
+        "c_tell_outfit"
+      ],
+      "any_min": 2
+    }
+  ],
+  "epilogue_by_tier": {
+    "疏远": "后来你再也没去过神里屋敷。偶尔听说，雪见茶会的传闻，在稻妻城里传了很久。",
+    "初识": "后来绫华偶尔会寄来一两封信，信末总是一句客气的问候。",
+    "友好": "后来，神里屋敷的门房见了你会直接放行。绫华说，明年的雪见茶会，还想请你来。",
+    "信赖": "后来，每当社奉行遇到不便出面的事，绫华第一个想到的总是你。她说：「有您在，我便安心了。」",
+    "知己": "后来，你成了神里屋敷的常客。绫华会在你面前毫无顾忌地笑，会偷偷问你枫丹的冬天是什么样子。"
+  },
+  "after_hint": "（雪见茶会结束了。稻妻的日子还在继续：去看看认识的人、约人一起走走。想结束时选「保存并退出」。）",
+  "late_note": "雪见茶会已经散席了，你们是在散席后的庭院里把这件事了结的。",
+  "unverified_note": "",
+  "canon_guard_terms": [
+    "豆吉",
+    "狸猫",
+    "叶子",
+    "变身",
+    "请帖",
+    "家纹",
+    "羽毛",
+    "帽子",
+    "爪印",
+    "鸡毛",
+    "屈膝礼",
+    "托盘"
+  ],
+  "lies": [],
+  "glossary": {
+    "稻妻": "雷电将军治下的岛国，本作的舞台。",
+    "社奉行": "神里家，掌管祭典、文化与民间事务。绫华是神里家的大小姐，兄长神里绫人是家主。",
+    "雪见茶会": "社奉行每年冬天在神里屋敷办的赏雪茶会，今年只请了三位客人。",
+    "枫丹": "水之国，远在大陆西北，稻妻很少有人去过。",
+    "托马": "神里家的家政官，来自蒙德，热心可靠，今年茶会的筹备由他张罗。",
+    "家纹": "世家的印记，请帖上要盖，盖反了是失礼的。",
+    "茶室": "神里屋敷廊子尽头的茶室，入口只有半人高，客人得弯腰钻进去。"
+  },
+  "spoiler_terms": [
+    "豆吉",
+    "狸猫",
+    "叶子",
+    "变身",
+    "化形",
+    "老狸猫"
+  ],
+  "hypotheses": [],
+  "belief": {},
+  "agendas": [
+    {
+      "id": "trail_changes",
+      "npc": null,
+      "trigger": {
+        "after": {
+          "day": 2,
+          "phase": "清晨"
+        }
+      },
+      "do": {
+        "set_flags": [
+          "trail_walks"
+        ]
+      }
+    },
+    {
+      "id": "practice_scene",
+      "npc": null,
+      "trigger": {
+        "after": {
+          "day": 2,
+          "phase": "夜晚"
+        }
+      },
+      "do": {
+        "set_flags": [
+          "practice_done"
+        ]
+      },
+      "witness": {
+        "at": "kamisato_estate",
+        "grants": [
+          "c_practice"
+        ],
+        "set_flags": [
+          "saw_practice"
+        ],
+        "text": "夜深了。后门外结冰的水洼边，一只小狸猫头顶一片叶子，后腿站直，笨拙地对着冰面屈膝行礼。它弯得太用力，一顶宽檐大帽子从它头上滑下来，整个扣在了它身上。帽子底下传出一声很轻的「哎呀」，然后是慌乱的窸窣声，帽子拖着一串歪歪扭扭的爪印滚进了林子。"
+      }
+    },
+    {
+      "id": "party_open",
+      "npc": null,
+      "trigger": {
+        "after": {
+          "day": 3,
+          "phase": "午后"
+        }
+      },
+      "do": {
+        "set_flags": [
+          "party_open"
+        ],
+        "notice": "午后，雪见茶会开席了。一位头戴插着三根羽毛的宽檐帽、身穿蓬蓬长裙的女士摇着扇子走进屋敷，进门就说：「日安，吾乃杜瓦尔。」托马在前厅收下她放进漆托盘的请帖。"
+      }
+    },
+    {
+      "id": "duval_arrives",
+      "npc": "duval",
+      "trigger": {
+        "after": {
+          "day": 3,
+          "phase": "午后"
+        },
+        "flags_all": [
+          "party_open"
+        ],
+        "delay": 30
+      },
+      "do": {
+        "go_to": "kamisato_estate",
+        "instant": true,
+        "stay": 480,
+        "set_flags": [
+          "duval_arrived"
+        ],
+        "notice": "半个时辰后，又有一位客人到了：一位穿旅行装的短发女士，一边拍着外套上的落叶，一边说：「你们的林子，路好像会自己转圈。」她也自报姓名：杜瓦尔。两位杜瓦尔撞了个正着，在场谁也没见过真正的她。绫华不愿失礼，把两位都请了进去。"
+      }
+    }
+  ],
+  "actions": {
+    "verbs": {
+      "stakeout": {
+        "label": "蹲守",
+        "keywords": [
+          "蹲守",
+          "守着",
+          "埋伏",
+          "守株待兔",
+          "在这里盯着",
+          "守在",
+          "守夜"
+        ],
+        "minutes": 0,
+        "p": 1.0
+      },
+      "search": {
+        "label": "仔细搜查",
+        "keywords": [
+          "搜一搜",
+          "搜查",
+          "仔细找",
+          "翻一翻",
+          "到处找",
+          "翻找"
+        ],
+        "minutes": 20,
+        "p": 1.0
+      }
+    },
+    "discoveries": []
+  },
+  "outcomes": [
+    {
+      "flags_all": [
+        "private",
+        "saw_practice"
+      ],
+      "text": "豆吉接过请帖，小声补了一句：「那个弯腰的礼，我练了两个晚上。」"
+    },
+    {
+      "flags_all": [
+        "saw_practice"
+      ],
+      "flags_none": [
+        "private"
+      ],
+      "text": "你想起那个深夜里，水洼边笨拙地练屈膝礼的小身影。"
+    },
+    {
+      "flags_all": [],
+      "text": "第二天一早，托马在后门外发现一个用落叶包着的小包。里面是一捧镇守之森的栗子，还有那张盖反了家纹的请帖，背面按着一个小小的爪印。\n\n开春后，杜瓦尔女士回了枫丹。她带回去的那幅雪景里，茶席末座多出一位戴宽檐羽毛帽的小个子客人，正把一块羊羹往袖子里塞。"
+    }
+  ],
+  "secrets": [
+    {
+      "id": "tanuki",
+      "desc": "其中一位杜瓦尔是镇守之森的小狸猫豆吉变的，头上顶着一片叶子",
+      "terms": [
+        "豆吉",
+        "狸猫",
+        "变身",
+        "化形",
+        "头顶的叶子",
+        "头上的叶子"
+      ],
+      "known_by": [
+        "fake_duval",
+        "old_tanuki"
+      ],
+      "unlocked_by_clues": [
+        "c_old_tanuki_tale",
+        "c_practice"
+      ],
+      "unlocked_by_signals": [
+        "rv_old_tanuki_tale"
+      ]
+    }
+  ],
+  "fragile": {}
+}

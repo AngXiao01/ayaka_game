@@ -36,7 +36,7 @@ class Explorer:
         return self.npcs_at(self.god.location, self.god.phase)
 
     def _grantable(self, lid: str, obj: dict) -> bool:
-        _, clue = self.world.examine(lid, obj["id"], self.god.clues)
+        _, clue = self.world.examine(lid, obj["id"], self.god.clues, self.god.flags)
         return bool(clue) and clue not in self.god.clues and not self.god.destroyed(clue)
 
     def _useful_here(self, lid: str, phase: str, cost: int) -> bool:
@@ -297,7 +297,7 @@ class Explorer:
 
     def examine(self, obj_id: str) -> tuple[str, list[str]]:
         g = self.god
-        desc, clue = self.world.examine(g.location, obj_id, g.clues)
+        desc, clue = self.world.examine(g.location, obj_id, g.clues, g.flags)
         g.pass_time(self.world.examine_minutes)
         if obj_id not in g.examined:
             g.examined.append(obj_id)

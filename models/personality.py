@@ -54,6 +54,7 @@ class Personality:
     outing: dict = field(default_factory=dict)                 # 能不能和玩家一起出门：min_affinity / phases / tell / secret / note …
     confidants: list[str] = field(default_factory=list)        # 见过玩家之后会去跟谁说（托人带话）
     absent_when_flags: list[str] = field(default_factory=list) # 剧情走到这些标记之后就不在地图上了（比如被送官）
+    present_when_flags: list[str] = field(default_factory=list) # 这些标记都立起来之后才出现在地图上（比如茶会开始后才到场的客人）
 
     @classmethod
     def load(cls, path: Path) -> "Personality":

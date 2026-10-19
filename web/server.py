@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import os
 import hashlib
 import hmac
 import secrets
@@ -117,7 +118,7 @@ class Game:
 
     def __init__(self, args, save: Optional[str] = None):
         self.args = args
-        self.save = save or args.save
+        self.save = save or args.save or os.environ.get("STORY") or "web"
         self.last_seen = time.time()
         self.io = WebIO()
         self.engine: Optional[GameEngine] = None
@@ -265,7 +266,7 @@ class Share:
             if g is None:
                 if len(self.games) >= self.args.max_games:
                     return None
-                g = Game(self.args, save=f"p_{sid[:12]}")
+                g = Game(self.args, save=(f"{os.environ['STORY']}_" if os.environ.get("STORY") else "") + f"p_{sid[:12]}")
                 g.start(new_game=False)
                 self.games[sid] = g
             g.last_seen = time.time()
@@ -407,7 +408,7 @@ def main(argv=None) -> int:
     global GAME
     ap = argparse.ArgumentParser(description="神里绫华 · 网页版")
     ap.add_argument("--port", type=int, default=8770)
-    ap.add_argument("--save", default="web")
+    ap.add_argument("--save", default=None)
     ap.add_argument("--new", action="store_true")
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--incognito", action="store_true", help="无痕：不留存档、记忆和 trace")

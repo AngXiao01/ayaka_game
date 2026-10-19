@@ -63,6 +63,8 @@ class PhysicalWorld:
         p = self.personas[npc]
         if set(getattr(p, "absent_when_flags", []) or []) & set(self.god.flags):
             return None
+        if not set(getattr(p, "present_when_flags", []) or []) <= set(self.god.flags):
+            return None
         return p.location_at(phase or self.god.phase, self.god.act_id)
 
     def where(self, npc: str, phase: Optional[str] = None) -> Optional[str]:

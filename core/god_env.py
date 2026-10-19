@@ -26,6 +26,7 @@ class SignalDef:
     requires_flags: list[str] = field(default_factory=list)      # 必须已有的标记（如玩家明确提出的方案）
     requires_clues_any: list[str] = field(default_factory=list)  # 玩家至少掌握其中之一
     clues_min: int = 0
+    any_min: int = 1                            # requires_clues_any 里至少要掌握几条（默认 1 条）
     min_trust: int = 0
     min_turns: int = 0
     group: Optional[str] = None                 # 互斥组：组内只能达成一个
@@ -387,6 +388,8 @@ class GodEnv:
     def proposals_for(self, npc: str) -> list[dict]:
         return [p for p in self.quest.proposals if p["npc"] == npc and self.act_id in p.get("acts", [self.act_id])
                 and set(p.get("requires_clues", [])) <= set(self.clues)          # 有的方案要先知道某件事才提得出来
+                and (not p.get("requires_clues_any")
+                     or len(set(p["requires_clues_any"]) & set(self.clues)) >= max(1, p.get("any_min", 1)))
                 and not any(s.group == p.get("group") and s.id in self.achieved for s in self.quest.signals)]
 
     # ------------------------------------------------------------ 证词与说谎
@@ -505,7 +508,7 @@ class GodEnv:
             return "locked", s.lock_hint or "要等对方明确提出来"
         if s.requires_clues and not set(s.requires_clues) <= set(self.clues):
             return "locked", s.lock_hint or "对方还没掌握相关的情况，你不会主动提"
-        if s.requires_clues_any and not set(s.requires_clues_any) & set(self.clues):
+        if s.requires_clues_any and len(set(s.requires_clues_any) & set(self.clues)) < max(1, s.any_min):
             return "locked", s.lock_hint or "对方还没掌握关键的证据"
         if s.clues_min and len(self.clues) < s.clues_min:
             return "locked", s.lock_hint or "对方带来的线索还不够"

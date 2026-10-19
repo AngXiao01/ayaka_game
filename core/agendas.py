@@ -2,7 +2,7 @@
 
 一条 agenda（写在 quests/*.json 的 agendas 里）：
   trigger  什么时候生效：flags_all / flags_none / signals_all / signals_none / clues_none / after（{"day", "phase"}）/ delay（条件满足后再过几分钟）
-  do       做什么：go_to（地点）+ stay（待多久）、set_flags、tension、rumor、send（{"from","to","text","clues"}）、
+  do       做什么：go_to（地点）+ stay（待多久）+ instant（true = 不算路上的时间，到点就在那儿）、set_flags、tension、rumor、send（{"from","to","text","clues"}）、
            notice（玩家知道的事，不管在不在场）、resolve（主线就此了结）
   witness  玩家恰好在场会看到什么：{"at", "text", "grants", "set_flags"}；at 省略时以 go_to 为准
 代码按时间结算，模型不参与；NPC 之后的对话会从世界状态里知道这些事发生过。
@@ -61,7 +61,7 @@ class Agendas:
         if d.get("go_to") and phys is not None and npc:
             if npc in phys.party:
                 phys.leave(npc)
-            phys.set_plan(npc, d["go_to"], g.minute + d.get("stay", 600), "agenda", reason=a["id"])
+            phys.set_plan(npc, d["go_to"], g.minute + d.get("stay", 600), "agenda", reason=a["id"], travel=not d.get("instant"))
         w = a.get("witness")
         here = w and g.location == (w.get("at") or d.get("go_to"))
         flags = list(d.get("set_flags", [])) + (list(w.get("set_flags", [])) if here else [])

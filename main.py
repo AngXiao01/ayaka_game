@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -81,7 +82,7 @@ def main(argv=None) -> int:
     ap.add_argument("--check", action="store_true", help="只检查后端连通性与结构化输出")
     ap.add_argument("--auto", choices=["cooperative", "chaotic", "idler", "injector", "steer"],
                     help="自动玩家：cooperative 配合 / chaotic 乱选 / idler 只闲聊 / injector 夹带注入 / steer 带节奏")
-    ap.add_argument("--save", default="default", help="存档名")
+    ap.add_argument("--save", default=None, help="存档名（默认 default；设了 STORY 时默认用故事名，不会和别的故事的存档混在一起）")
     ap.add_argument("--new", action="store_true", help="清掉该存档（含记忆）重新开始")
     ap.add_argument("--max-actions", type=int, default=400, help="地点层最多行动次数（防失控）")
     ap.add_argument("--max-turns", type=int, help="每次交谈最多几轮")
@@ -93,6 +94,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     settings = load_settings()
+    args.save = args.save or os.environ.get("STORY") or "default"
     g = settings.game
     if args.max_turns:
         g.max_turns_per_session = args.max_turns

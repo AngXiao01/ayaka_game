@@ -68,6 +68,10 @@ engine/ web/ main.py 入口与外壳           ← 把以上串起来、存档�
 | 让某个抉择要先知道某条线索才出现在菜单里 | 提议里写 `requires_clues`（`core/god_env.py` 的 `proposals_for`） |
 | 验证“玩家说真话 / 谎话 / 半真半假 / 没法核实”被代码逐条核对，与 NPC 回什么无关 | `tests/test_deaf_liar.py`（玩家完全不看回话，只按脚本说） |
 | 开 / 关一句话里几次判定的并行 | `PARALLEL_JUDGES=1`（默认关；mock 与重放永远不开），原理与实测见 `docs/turn_graph.md` |
+| 换一个故事 / 加一个新故事 | 内容包放在 `stories/<名字>/`（`world.json`、`npcs/`、`quests/`、`lore/`、`skills/`、`story.json` 写主线 id 和主角）；用 `STORY=<名字>` 启动，存档默认叫故事名；检查：`python3 tools/lint_story.py --content stories/<名字>`。例子：`stories/duval/`（说明见 `plot.md`） |
+| 让某个物件要等剧情走到某个标记才看得到 | 物件里写 `requires_flags` + `locked_desc`；标记可以由议程（`agendas`）按时间立起来 |
+| 让某个人物要等剧情走到某个标记才出现 / 议程让某人瞬间到场 | 人物卡 `present_when_flags` / 议程 `do` 里写 `instant: true`（不算路上的时间） |
+| 要求「线索里至少掌握 N 条」 | 信号 / 提议里写 `requires_clues_any` + `any_min: N` |
 | 加测试 | `tests/`，用 `MockBackend`，不花钱 |
 
 ## 建议的阅读顺序

@@ -365,6 +365,18 @@ python3 -m evals.run_evals --backend openrouter --set PERSONA_MODE=index    # A/
 | 截断 | 识别 `finish_reason=length`，让模型写短 |
 | 网络 / 5xx / 429 | 指数退避重试；401 提示检查 key；超长抛 `ContextLengthError` |
 
+## 换一个故事
+
+内容和引擎是分开的。默认故事在 `content/`；另一个故事放在 `stories/<名字>/`，用 `STORY=<名字>` 选它（也可以直接 `CONTENT_DIR=…`），存档默认用故事名，不会和别的故事的存档混在一起：
+
+```bash
+STORY=duval python3 main.py          # 雪见茶会与多出来的客人
+STORY=duval python3 web/server.py
+python3 tools/lint_story.py --content stories/duval
+```
+
+`stories/duval/plot.md` 是这个故事的剧情和把它放进引擎时的取舍。
+
 ## 目录
 
 ```

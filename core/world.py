@@ -68,10 +68,12 @@ class World:
     def objects(self, lid: str) -> list[dict]:
         return list(self.loc(lid).get("objects", []))
 
-    def examine(self, lid: str, obj_id: str, clues: list[str]) -> tuple[str, Optional[str]]:
-        """返回 (描写, 可获得的线索 id)。条件不满足时给 locked_desc，不给线索。"""
+    def examine(self, lid: str, obj_id: str, clues: list[str], flags: Optional[list[str]] = None) -> tuple[str, Optional[str]]:
+        """返回 (描写, 可获得的线索 id)。条件（线索 requires_clues、标记 requires_flags）不满足时给 locked_desc，不给线索。"""
         obj = next(o for o in self.objects(lid) if o["id"] == obj_id)
         if obj.get("requires_clues") and not set(obj["requires_clues"]) <= set(clues):
+            return obj.get("locked_desc", obj["desc"]), None
+        if obj.get("requires_flags") and not set(obj["requires_flags"]) <= set(flags or []):
             return obj.get("locked_desc", obj["desc"]), None
         return obj["desc"], obj.get("clue")
 
