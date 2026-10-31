@@ -20,7 +20,7 @@ from core.skills import Skill
 from core.tools import ToolRegistry
 from llm.base import LLMBackend
 from llm.messages import estimate_tokens, messages_tokens
-from core.guardrails import knowledge_boundary, locked_reveal, slip_missing
+from core.guardrails import knowledge_boundary, locked_reveal, self_conceal, slip_missing
 from llm.npc_stages import DEFAULT_APPRAISAL, annotate, appraise, audit
 from llm.schemas import SPEAK_SCHEMA, validate_npc_reply, validate_speak
 from models.personality import Personality
@@ -165,6 +165,11 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     if t.get("event"):
         parts.append(f"## 私人时光：{t['event']['title']}\n{t['event']['premise']}")
     mind = [f"- 你的立场：{t['npc_stance']}"]
+    if t.get("npc_knows"):                         # 到此刻为止已经发生、他知道的事（人物卡 knowledge，按时间和标记由代码筛过）
+        mind.append("- 到此刻为止你知道的事（只有这些；没写的还没发生，或者你没听说）：\n" + _bullets(t["npc_knows"], indent="  "))
+    if t.get("concealing"):
+        mind.append("- 你在瞒着的事（不说出口、不暗示，照对外的说法撑住）：\n"
+                    + _bullets([x["desc"] + (f"。对外：{x['cover']}" if x["cover"] else "") for x in t["concealing"]], indent="  "))
     if pend and not focus:
         mind.append(("- 这一轮可以顺势提起的一件事（话头合适就自然地说；其余的事这一轮不提）：\n" if beat_mode else
                      "- 你知道、此刻可以说的事（看对方表现，自然地说，一次一件）：\n")
@@ -472,6 +477,8 @@ class NPCLLMAdapter:
             said = [h["text"] for h in ctx.history if h["speaker"] == "player"][-3:] + ([player_text] if player_text is not None else [])
             if not ctx.task.get("must_reveal"):                                    # 先过确定性的两道门（不调模型，开场也要守）：知识边界、锁住的事
                 problems = knowledge_boundary(res.final["speech"], res.final["action"], ctx.task.get("blocked_terms", {}), said)
+                if not problems:
+                    problems = self_conceal(res.final["speech"], res.final["action"], ctx.task.get("concealed_terms", {}), said)
                 if not problems:
                     problems = locked_reveal(res.final["speech"], res.final["action"], ctx.task.get("locked_evidence", []), said)
             press = ctx.task.get("press") or {}

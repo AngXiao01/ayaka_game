@@ -43,6 +43,7 @@ class Personality:
     schedule: list[dict] = field(default_factory=list)         # [{location, phases, acts?}]，按顺序取第一条匹配
     stances: dict[str, str] = field(default_factory=dict)      # 每一幕的立场，key 为 act id 或 default
     secrets: list[dict] = field(default_factory=list)          # [{min_trust, text}]
+    knowledge: list[dict] = field(default_factory=list)        # [{text, when?}]：他知道的事，when 没满足之前（事还没发生）不进提示词；when 的写法同 agenda 的 trigger
     fallback_options: list[dict] = field(default_factory=list)
     opinions: dict[str, str] = field(default_factory=dict)     # 话题 -> 她自己的看法（让聊天有态度）
     anecdotes: list[str] = field(default_factory=list)         # 可以随口讲的小事、往事（让聊天有细节）

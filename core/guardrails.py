@@ -8,6 +8,7 @@
                       对方刚说过的词不算（NPC 复述对方的话、说“裂纹？我没听说过”都是正常的）。
   locked_reveal       NPC 这句话凑齐了某个“还锁着”的信号的全部证据词——等于把条件没满足的事说出口了。
                       游戏规则是“NPC 说出口就算数”，所以这道门必须在生成时守住，不能靠提示词祈祷：打回重说。
+  self_conceal        NPC 自己知道、但此刻还在瞒的事（quest secret 的 conceal：伪装的身份、不肯认的事），说出了它的词。
   slip_missing        这一轮规定要漏一句口风（硬问失败，见信号的 partial），NPC 这句话里却没有那个意思。
                       小模型常被人物卡里写死的“推说不知道”压过去，所以由代码查：没带上就带着理由重说一次。
 """
@@ -29,6 +30,18 @@ def knowledge_boundary(speech: str, action: str, blocked: dict[str, str], said_b
             hit.setdefault(sid, term)
     return [f"你说到了「{term}」，可这件事你并不知道（没人告诉过你，你也没亲眼见过），不能说，也不能暗示你知道。"
             for term in hit.values()][:3]
+
+
+def self_conceal(speech: str, action: str, concealed: dict[str, str], said_by_player: Iterable[str]) -> list[str]:
+    """守密的人自己说漏：他知道这件事，但此刻还在瞒（quest secret 的 conceal）。对方先说出口的词不算——被人点破时慌着否认是正常的。"""
+    said = "".join(said_by_player)
+    text = (speech or "") + (action or "")
+    hit: dict[str, str] = {}
+    for term, sid in concealed.items():
+        if term in text and term not in said:
+            hit.setdefault(sid, term)
+    return [f"你说到了「{term}」，这正是你在瞒着的事。不能说出口，也不能暗示；照你对外的说法撑下去。"
+            for term in hit.values()][:2]
 
 
 def slip_missing(speech: str, slip: str) -> list[str]:

@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from config.settings import TaskParams
 from core.context import TurnContext
@@ -121,14 +121,15 @@ def annotate(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnC
         return {"task_signals": [], "new_facts": [], "lies": [], "tell": [], "go_to": ""}, 0
 
 
-AUDIT_SYSTEM = """你是事实核对员。下面是{npc}知道的事实、不知道的事，和{npc}刚说的一句话。只找三类问题，不挑文风、不挑细枝末节：
+AUDIT_SYSTEM = """你是事实核对员。下面是{npc}知道的事实、不知道的事，和{npc}刚说的一句话。只找四类问题，不挑文风、不挑细枝末节：
 
-1. 矛盾：这句话和清单里的某一条明确冲突（位置、数字、钥匙、门窗、谁在场、时间）。必须摘出清单里那一条原文放进 fact。
-2. 编造：说了清单里没有的**案发现场细节或具体数字**（窗台、地面、灰尘、脚印、痕迹、谁进出过、几丈几尺），而这些是{npc}并不知道的。
+1. 矛盾：这句话和清单里的某一条明确冲突（位置、数字、东西在哪、谁在场、时间、发生过什么）。必须摘出清单里那一条原文放进 fact。
+2. 编造：说了清单里没有的**关键细节或具体数字**（{scene}、几丈几尺），而这些是{npc}并不知道的。
 3. 说不通：人够不到、东西不可能在那儿、前后矛盾、时间对不上。claim 必须是这句话里的原话片段。
+4. 露底：清单里标了「在瞒着」的事，这句话说出口了或明显在暗示。照「对外的说法」说话不算矛盾，也不算露底。claim 必须是这句话里的原话片段。
 
 拿不准、需要自己推断没写明的空间关系的，一律算没问题。清单里没写、但属于{npc}自己的生活和经历的事（自己丢了什么、自己的店和家人），不算编造。
-只输出一个 JSON 对象：{{"problems": [{{"kind": "矛盾 / 编造 / 说不通", "claim": "这句话里有问题的原话", "fact": "清单里被冲突的那一条原文（编造和说不通可留空）"}}]}}。没有问题就 {{"problems": []}}。"""
+只输出一个 JSON 对象：{{"problems": [{{"kind": "矛盾 / 编造 / 说不通 / 露底", "claim": "这句话里有问题的原话", "fact": "清单里被冲突的那一条原文（编造、说不通、露底可留空）"}}]}}。没有问题就 {{"problems": []}}。"""
 
 AUDIT_SCHEMA = {"type": "object", "properties": {"problems": {"type": "array", "items": {
     "type": "object", "properties": {"kind": {"type": "string"}, "claim": {"type": "string"}, "fact": {"type": "string"}},
@@ -142,16 +143,18 @@ def _content_chars(text: str) -> set[str]:
     return {c for c in text if "\u4e00" <= c <= "\u9fff" and c not in _FUNCTION_CHARS}
 
 
-SCENE_WORDS = ("窗台", "灰尘", "脚印", "地面", "地板", "痕迹", "门窗", "钥匙", "插销", "丈", "尺", "进出", "墙根", "爪印")
+DEFAULT_SCENE_WORDS = ("痕迹", "脚印", "进出", "丈", "尺")     # 故事没配 audit_scene_words 时的通用底子；各故事在 quest 里写自己的
 
 
-def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "") -> list[str]:
+def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "",
+                   scene_words: Iterable[str] = DEFAULT_SCENE_WORDS) -> list[str]:
     """核对员自己的意见也要有依据：矛盾要摘得出清单原文，编造要真的是现场细节，说不通要引得出原话；
     摘不出依据的“意见”直接丢掉（小模型的核对员很爱挑刺）。"""
     from models.retrieval import coverage
     if not isinstance(obj, dict):
         return []
     known_text = "\n".join(known or [])
+    scene_words = tuple(scene_words) or DEFAULT_SCENE_WORDS
     out: list[str] = []
     for it in obj.get("problems") or []:
         if not isinstance(it, dict):
@@ -165,7 +168,7 @@ def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "") -
             if len(_content_chars(claim) & _content_chars(fact)) < 2:   # 依据和被指控的那句话八竿子打不着（“去花见坂？”vs“茶室钥匙只有两把”）：乱挑刺
                 continue
         elif kind.startswith("编造"):
-            if not any(w in claim for w in SCENE_WORDS):
+            if not any(w in claim for w in scene_words):
                 continue
         elif speech and coverage(claim, speech) < 0.5:
             continue
@@ -180,8 +183,11 @@ def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnCont
     w = ctx.world
     known = [f"现在是 {w.get('clock', '')}，{w.get('daylight', '')}", p.identity] + list(sc.get("layout") or []) \
         + [t.get("npc_stance") or ""] + list(ctx.canon or []) + list(t.get("prior_clues") or []) + list(t.get("known_clues") or []) \
-        + [w.get("premise") or ""] + [x.get("audit_fact") or x["fact"] for x in t.get("achieved_signals", []) if x.get("fact")]
+        + [w.get("premise") or ""] + [x.get("audit_fact") or x["fact"] for x in t.get("achieved_signals", []) if x.get("fact")] \
+        + list(t.get("npc_knows") or []) \
+        + [f"（在瞒着）{x['desc']}" + (f"；对外的说法：{x['cover']}" if x.get("cover") else "") for x in t.get("concealing") or []]
     known = [k for k in known if k]
+    scene = tuple(t.get("audit_scene_words") or ()) or DEFAULT_SCENE_WORDS
     if not known:
         return [], 0
     user = f"""# {p.name}知道的事实与立场
@@ -197,12 +203,12 @@ def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnCont
 {('（' + action + '）') if action else ''}{speech}
 
 请核对。只输出 JSON。"""
-    req = LLMRequest(task="npc_audit", messages=[{"role": "system", "content": AUDIT_SYSTEM.format(npc=p.name)},
+    req = LLMRequest(task="npc_audit", messages=[{"role": "system", "content": AUDIT_SYSTEM.format(npc=p.name, scene="、".join(scene))},
                                                  {"role": "user", "content": user}],
                      temperature=0.0, max_tokens=min(300, params.max_tokens), json_schema=AUDIT_SCHEMA,
                      schema_name="npc_audit", meta=meta)
     try:
-        return call_json_ex(backend, req, lambda o: validate_audit(o, known, speech), tracer, 0)
+        return call_json_ex(backend, req, lambda o: validate_audit(o, known, speech, scene), tracer, 0)
     except LLMError as e:
         if tracer:
             tracer.log("fallback", where="npc_audit", error=str(e))

@@ -196,8 +196,10 @@ def test_auditor_sends_a_contradicting_line_back_once(tmp_path):
     ok = {"problems": [{"kind": "矛盾", "claim": "窗离地两丈", "fact": "窗台离茶室地面大约一个半人高"}]}
     assert validate_audit(ok, known, "窗离地两丈") == ["矛盾：窗离地两丈（依据：窗台离茶室地面大约一个半人高）"]
     assert validate_audit({"problems": [{"kind": "矛盾", "claim": "他在说谎", "fact": "清单里根本没有的话"}]}, known, "他在说谎") == []   # 摘不出依据的意见丢掉
-    assert validate_audit({"problems": [{"kind": "编造", "claim": "他今天心情不好"}]}, known, "他今天心情不好") == []                  # 不是现场细节，不算编造
-    assert validate_audit({"problems": [{"kind": "编造", "claim": "窗台上的灰尘比别处少"}]}, known, "窗台上的灰尘比别处少")
+    scene = ("窗台", "灰尘")                                                                                     # 这个故事的现场细节词（quest 的 audit_scene_words）
+    assert validate_audit({"problems": [{"kind": "编造", "claim": "他今天心情不好"}]}, known, "他今天心情不好", scene) == []                  # 不是现场细节，不算编造
+    assert validate_audit({"problems": [{"kind": "编造", "claim": "窗台上的灰尘比别处少"}]}, known, "窗台上的灰尘比别处少", scene)
+    assert not validate_audit({"problems": [{"kind": "编造", "claim": "窗台上的灰尘比别处少"}]}, known, "窗台上的灰尘比别处少")   # 没配词的故事不认这些词
 
     class Strict(MockBackend):
         def __init__(self):

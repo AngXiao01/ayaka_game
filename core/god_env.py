@@ -129,7 +129,9 @@ class QuestDef:
     agendas: list[dict] = field(default_factory=list)         # NPC 自己的打算（core/agendas.py）
     actions: dict = field(default_factory=dict)               # 自由行动的动词表与发现（core/actions.py）
     outcomes: list[dict] = field(default_factory=list)
-    secrets: list[dict] = field(default_factory=list)         # 不许谁说漏的案情事实：{id, terms, known_by, unlocked_by_clues, unlocked_by_signals}
+    secrets: list[dict] = field(default_factory=list)         # 不许谁说漏的案情事实：{id, terms, known_by, unlocked_by_clues, unlocked_by_signals, conceal?}
+                                                              # conceal：{by, until: {min_trust?, flags_any?…}, extra_terms?, cover?}，知道的人自己也要瞒着
+    audit_scene_words: list[str] = field(default_factory=list)  # 核对员判“编造”时认的现场细节词（这个故事里编错了会坏事的那类东西）
     milestone: dict = field(default_factory=dict)             # 玩家和 NPC 都要知道还有多久的那个时刻：{label, day, phase}（比如茶会开席）
     fragile: dict = field(default_factory=dict)               # 会被毁掉的证据：{clue: {flag, text}}        # 结局由状态拼出来：满足条件就加一段
 
@@ -154,6 +156,13 @@ class QuestDef:
 
     def event(self, eid: str) -> Optional[EventDef]:
         return next((e for e in self.events if e.id == eid), None)
+
+    def event_flags(self) -> set[str]:
+        """世界里会“发生”的标记：由 agenda（到点 / 条件满足自己发生的事，含目击）立起来的，不是玩家提议出来的。"""
+        out: set[str] = set()
+        for a in self.agendas:
+            out |= set((a.get("do") or {}).get("set_flags", [])) | set((a.get("witness") or {}).get("set_flags", []))
+        return out
 
     def clue_name(self, cid: str) -> str:
         return self.clues.get(cid, {}).get("name", cid)
@@ -230,6 +239,27 @@ class GodEnv:
     def phase_start(self, day: int, phase_idx: int) -> int:
         """第 day 天第 phase_idx 个时段开始的那一分钟（从第 1 天 00:00 起算）。"""
         return self.day_start + (day - 1) * 1440 + self.phase_offsets[phase_idx]
+
+    def condition_met(self, t: dict) -> bool:
+        """agenda 的 trigger、人物卡知识条目的 when 共用的判据：flags_all / flags_any / flags_none / signals_all / signals_none /
+        clues_none / after（{"day", "phase"}）。空条件 = 满足。"""
+        if not set(t.get("flags_all", [])) <= set(self.flags):
+            return False
+        if t.get("flags_any") and not set(t["flags_any"]) & set(self.flags):
+            return False
+        if set(t.get("flags_none", [])) & set(self.flags):
+            return False
+        if not set(t.get("signals_all", [])) <= set(self.achieved):
+            return False
+        if set(t.get("signals_none", [])) & set(self.achieved):
+            return False
+        if set(t.get("clues_none", [])) & set(self.clues):
+            return False
+        if t.get("after"):
+            day, ph = t["after"]["day"], self.phases.index(t["after"].get("phase", self.phases[0]))
+            if self.minute < self.phase_start(day, ph):
+                return False
+        return True
 
     def _split(self, minute: int) -> tuple[int, int]:
         rel = minute - self.day_start
@@ -545,6 +575,8 @@ class GodEnv:
         if s.acts and self.act_id not in s.acts:
             return "hidden", ""
         if s.requires_flags and not set(s.requires_flags) <= set(self.flags):
+            if (set(s.requires_flags) - set(self.flags)) & self.quest.event_flags():
+                return "hidden", ""               # 事还没发生：他不是“知道但不说”，是还不知道
             return "locked", s.lock_hint or "要等对方明确提出来"
         if s.requires_clues and not set(s.requires_clues) <= set(self.clues):
             return "locked", s.lock_hint or "对方还没掌握相关的情况，你不会主动提"
@@ -756,6 +788,26 @@ class GodEnv:
                 out.update({t: s["id"] for t in s.get("terms", [])})
         return out
 
+    def concealing(self, npc: str, trust: int) -> list[dict]:
+        """这个 NPC 知道、但此刻还在瞒着的秘密（secret.conceal.by 里有他，且 until 还没满足）。
+        until：min_trust（信任到了就肯说）和 / 或一组 condition_met 的条件（比如被当众揭穿的标记），任一满足就不再瞒。"""
+        out = []
+        for s in self.quest.secrets:
+            c = s.get("conceal") or {}
+            if npc not in c.get("by", []):
+                continue
+            until = dict(c.get("until") or {})
+            need = until.pop("min_trust", None)
+            if (need is not None and trust >= need) or (until and self.condition_met(until)):
+                continue
+            out.append(s)
+        return out
+
+    def concealed_terms(self, npc: str, trust: int) -> dict[str, str]:
+        """{词: 秘密编号}：他知道、但现在不肯说出口的词（守密的人自己也不许说漏）。"""
+        return {t: s["id"] for s in self.concealing(npc, trust)
+                for t in s.get("terms", []) + (s.get("conceal") or {}).get("extra_terms", [])}
+
     def pending_signals(self) -> list[dict]:
         return [{"id": s.id, "desc": s.desc, "requires": s.requires} for s, _ in self._conv_signals("available")]
 
@@ -924,10 +976,14 @@ class GodEnv:
         elif self.tension >= 0.5:
             g.append("气氛有些紧绷，说话会更加斟酌。")
         if scene_public:
-            g.append("这里人来人往，谈到奉行所的事务时要隐晦，避免被旁人听见。")
+            g.append("这里人来人往，谈到不便让外人知道的事时要隐晦，避免被旁人听见。")
         if 0 < self.slots_left() <= 2:
             g.append(f"{self.quest.deadline['label']}就在眼前，时间不多了。")
         return g
+
+    def knowledge_of(self, persona) -> list[str]:
+        """人物卡 knowledge 里此刻已经成立的条目：事还没发生，他就不知道（立场里不写具体的事，免得第一天就知道第二天的事）。"""
+        return [k["text"] for k in getattr(persona, "knowledge", []) if self.condition_met(k.get("when") or {})]
 
     def stance_of(self, persona) -> str:
         """主线结束后用后日谈的立场（可以按结局细分：after:mercy）。"""
@@ -973,6 +1029,11 @@ class GodEnv:
                                 for s, why in self._conv_signals("locked", check_turns=False) if s.evidence],
             "secrets_unlocked": [x["text"] for x in persona.secrets if trust >= x.get("min_trust", 0)],
             "blocked_terms": self.blocked_terms(persona.id),
+            "concealed_terms": self.concealed_terms(persona.id, trust),
+            "concealing": [{"desc": s["desc"], "cover": (s.get("conceal") or {}).get("cover", "")}
+                           for s in self.concealing(persona.id, trust)],
+            "npc_knows": self.knowledge_of(persona),
+            "audit_scene_words": list(self.quest.audit_scene_words),
             "prior_clues": [self.quest.clues[c]["desc"] for c in getattr(persona, "knows_clues", []) if c in self.quest.clues],
             "known_clues": [f"{self.quest.clue_name(c)}：{self.quest.clues[c]['desc']}" for c in self.known.get(npc, [])],
             "player_clue_count": len(self.clues),

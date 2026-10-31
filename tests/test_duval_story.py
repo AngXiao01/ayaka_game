@@ -197,6 +197,53 @@ def test_the_hosts_cards_do_not_know_who_is_who():
     assert "豆吉" in personas["fake_duval"].identity and "绝不" in "".join(personas["fake_duval"].speech_style)
 
 
+def test_people_only_know_what_has_happened_by_now():
+    """立场是整幕不变的；具体的事写在 knowledge 里按时间 / 标记放出来——第一天早上的托马不该知道茶会上托盘里有四张请帖。"""
+    personas = Personality.load_all(STORY / "npcs")
+    morning = make_god({"day": 1, "phase_idx": 0, "location": "ritou", "flags": [], "act_id": "act1"})
+    party = make_god(party_world(flags=["trail_walks", "party_open", "duval_arrived"]))
+    early, late = "".join(morning.knowledge_of(personas["thoma"])), "".join(party.knowledge_of(personas["thoma"]))
+    assert "鸡毛" in early and "四张" not in early and "大帽子" not in early
+    assert "四张" in late and "大帽子" in late
+    assert not morning.knowledge_of(personas["duval"]) and "半个时辰" in "".join(party.knowledge_of(personas["duval"]))
+    assert not morning.knowledge_of(personas["paimon"]) and "两位" in "".join(party.knowledge_of(personas["paimon"]))
+    for nid, p in personas.items():                                           # 立场里不再写死要等事情发生才知道的事
+        stance = "".join(p.stances.values())
+        assert "四张" not in stance and "晚到了半个时辰" not in stance, nid
+    assert party.npc_task_detail(personas["thoma"], 30)["npc_knows"] == party.knowledge_of(personas["thoma"])
+
+
+def test_the_tanuki_keeps_its_own_secret_until_trusted_or_exposed():
+    """豆吉知道自己是谁（知识边界不拦他），但得自己瞒着：信任到了、或者已经被揭穿，才不再瞒。"""
+    g = make_god(party_world())
+    terms = g.concealed_terms("fake_duval", 20)
+    assert {"狸猫", "豆吉", "叶子", "尾巴"} <= set(terms) and "狸猫" not in g.blocked_terms("fake_duval")
+    assert not g.concealed_terms("fake_duval", 70)                            # 有人悄悄、客气地问，信任够了就肯认
+    assert not make_god(party_world(flags=["party_open", "duval_arrived", "expose"])).concealed_terms("fake_duval", 20)
+    assert not g.concealed_terms("thoma", 20) and not g.concealed_terms("old_tanuki", 20)
+    task = g.npc_task_detail(Personality.load_all(STORY / "npcs")["fake_duval"], 20)
+    assert task["concealed_terms"] == terms and "杜瓦尔" in task["concealing"][0]["cover"]
+
+
+def test_a_disguised_guest_saying_her_own_secret_is_sent_back():
+    from core.guardrails import self_conceal
+    terms = make_god(party_world()).concealed_terms("fake_duval", 20)
+    assert self_conceal("淑女从不摘帽，一摘叶子就会掉。", "", terms, ["您为什么不摘帽子？"])
+    assert not self_conceal("叶子？什么叶子，淑女听不懂。", "", terms, ["您头上是不是有片叶子？"])    # 被点破时慌着否认，不算说漏
+    assert not self_conceal("日安，吾乃杜瓦尔。", "（摇了摇扇子）", terms, [])
+
+
+def test_what_goes_into_a_disguised_guests_prompt_does_not_spell_out_her_secret():
+    """看法、往事、语气示例会被模型顺嘴说出来：守密的人这几样里不能带着他在瞒的词。"""
+    personas = Personality.load_all(STORY / "npcs")
+    g = make_god(party_world())
+    for nid, p in personas.items():
+        terms = g.concealed_terms(nid, 0)
+        for line in list(p.opinions.values()) + p.anecdotes + p.style_examples:
+            hit = [t for t in terms if t in line]
+            assert not hit, f"{nid}：{line} 带了 {hit}"
+
+
 def test_a_whole_party_scene_plays_through_the_engine_without_error(tmp_path):
     script = [{"kind": "examine", "obj": "o_tea_entrance"}, {"kind": "examine", "obj": "o_sweets"}, {"kind": "talk", "npc": "ayaka"},
               ("绫华小姐，借一步说话——这两位杜瓦尔女士，我看有一位不太对劲。", "自由发言"), {"kind": "leave"}, "q"]
@@ -328,3 +375,13 @@ def test_small_talk_with_nothing_at_stake_winds_down_even_while_getting_warmer(t
     assert g.chat_idle(g.CHAT_HARD_STOP)                                         # 对方没收住，代码兜底
     g.note_engagement()                                                          # 真有进展就重新计数
     assert g.idle_turns == 0
+
+
+def test_what_has_not_happened_yet_is_not_even_a_locked_topic():
+    """信号等的是世界里还没发生的事（agenda 立的标记）：连「你知道一些，现在不说」都不该有；玩家还没提的方案仍然只是锁着。"""
+    g = make_god({"day": 1, "phase_idx": 0, "location": "kamisato_estate", "flags": [], "act_id": "act1"})
+    thoma, ayaka = g.quest.signal("rv_thoma_cards"), g.quest.signal("decided_private")
+    assert g.signal_status(thoma, "thoma", None, 99)[0] == "hidden"
+    assert make_god(party_world()).signal_status(thoma, "thoma", None, 99)[0] != "hidden"
+    act2 = make_god(party_world(act_id="act2"))
+    assert act2.signal_status(ayaka, "ayaka", None, 99)[0] == "locked"           # proposed_private 是玩家提出来的，不是“发生”的

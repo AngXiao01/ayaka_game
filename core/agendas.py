@@ -20,24 +20,7 @@ class Agendas:
         self.state: dict[str, dict] = god.agenda_state
 
     def _ready(self, a: dict) -> bool:
-        g, t = self.god, a.get("trigger", {})
-        if not set(t.get("flags_all", [])) <= set(g.flags):
-            return False
-        if t.get("flags_any") and not set(t["flags_any"]) & set(g.flags):
-            return False
-        if set(t.get("flags_none", [])) & set(g.flags):
-            return False
-        if not set(t.get("signals_all", [])) <= set(g.achieved):
-            return False
-        if set(t.get("signals_none", [])) & set(g.achieved):
-            return False
-        if set(t.get("clues_none", [])) & set(g.clues):
-            return False
-        if t.get("after"):
-            day, ph = t["after"]["day"], g.phases.index(t["after"].get("phase", g.phases[0]))
-            if g.minute < g.phase_start(day, ph):
-                return False
-        return not g.resolved
+        return self.god.condition_met(a.get("trigger", {})) and not self.god.resolved
 
     def tick(self) -> list[str]:
         g, lines = self.god, []

@@ -45,6 +45,8 @@
 ## 三、知识与保密
 
 - **secrets 注册表**（`quest.secrets` + `GodEnv.blocked_terms`）：真相里的关键事实，写明谁本来就知道、被出示什么线索后知道、哪个信号达成后知道。
+- **知道的事按时间放出来**（人物卡 `knowledge: [{text, when}]` + `GodEnv.knowledge_of`）：立场整幕不变，只写性格、目标、态度；具体的事写成条目，`when` 和 agenda 的 trigger 同一套判据（`GodEnv.condition_met`），没满足就不进提示词，也不进核对员的清单。信号的 `requires_flags` 里有 agenda 立的标记（世界里“发生”的事）还没立起来时，信号是 hidden 而不是 locked——他不是“知道但不说”，是还不知道。
+- **守密的人自己也要瞒**（`secret.conceal: {by, until, extra_terms, cover}` + `guardrails.self_conceal`）：`known_by` 只管“知不知道”，`conceal` 管“肯不肯说”。伪装的人在 `until`（信任到了 / 被揭穿的标记）之前说出自己的秘密词就打回重说；核对员把这件事标成「在瞒着」，照 `cover` 说话不算矛盾，说漏算「露底」。
 - **确定性知识边界检查**：NPC 台词里出现他还不该知道的词（对方刚说过的词除外），不调模型就能判，违规带理由重说。
 - **锁住的事，说出口前先挡**（`guardrails.locked_reveal`）：NPC 说出口就算数，所以条件没满足时模型一冲动全盘托出，门槛就形同虚设；这句话凑齐了某个“还锁着”的信号的全部证据词就打回重说。开场白也要守。
 - **要公开的事归代码，不能靠模型自觉**：硬问失败时 NPC 漏一句只给方向的口风（`SignalDef.partial`），由 `slip_missing` 查有没有漏，没漏就带理由重说，仍不肯就由代码把口风原文接在后面。

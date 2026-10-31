@@ -1001,7 +1001,8 @@ class DialogueSession:
         mine = g.minds.setdefault(nid, {"npc": [], "player": []})
         pv = self.player_view(nid, None) if self.player_view else {}
         for side in ("npc", "player"):
-            known = (self.npc.p.stance(g.act_id) if side == "npc" else "\n".join(pv.get("clues", [])))[:700]
+            known = ("\n".join([self.npc.p.stance(g.act_id)] + g.knowledge_of(self.npc.p)) if side == "npc"
+                     else "\n".join(pv.get("clues", [])))[:700]
             ups = self.minds.update(side, player, npc, recent or exchange, mine.get(side, []), known, st.guard.text)
             if ups:
                 mine[side] = mind_state.merge(mine.get(side, []), ups, st.turn)
