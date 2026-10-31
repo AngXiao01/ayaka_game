@@ -14,6 +14,11 @@
 
 三、引用：秘密、谎话、会毁掉的证据、议程里引用的线索 / 信号 / 人 / 地点都存在。
 
+四、自洽（人物卡和剧情之间说不说得通）
+  守密的人（secret.conceal.by）的看法 / 往事 / 语气示例 / 兜底台词里不能带着他在瞒的词——这几样会被模型顺嘴说出来；
+  knowledge 的 when 引用的标记必须是剧情里真能立起来的；days 不能写到散席之后；
+  立场整幕不变，里面写「第 N 天」的具体事，多半该拆成 knowledge；兜底选项不再带 tone 和「告别」以外的 intent。
+
 结果分两级：error（结构上走不通，必须改）和 warn（说不通，要作者决定怎么圆）。
 """
 from __future__ import annotations
@@ -37,6 +42,7 @@ def lint(quest: Any, world: Any, personas: dict) -> list[Finding]:
     out += _references(quest, world, personas)
     out += _reachability(quest, world, personas)
     out += _witnesses(quest, world, personas)
+    out += _consistency(quest, world, personas)
     return out
 
 
@@ -245,4 +251,62 @@ def _witnesses(q: Any, w: Any, personas: dict) -> list[Finding]:
             out.append(Finding("warn", "witness_absent",
                                f"线索 {c}：{personas[npc].name}平时{phase}{where}，却说自己在{w.name(at)}见到了——"
                                f"要么调整作息，要么给线索的 witness 写上 off_routine 说明为什么这天不一样"))
+    return out
+
+
+# ------------------------------------------------------------ 四、自洽
+
+def _settable_flags(q: Any) -> set[str]:
+    """剧情里任何地方能立起来的标记：议程 / 目击 / 信号 / 动作 / 结果的 set_flags、信号的 flags、提议的 flag。"""
+    out: set[str] = set()
+
+    def walk(x: Any) -> None:
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k == "set_flags" and isinstance(v, list):
+                    out.update(v)
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+        elif hasattr(x, "__dict__"):
+            walk(vars(x))
+    walk(vars(q))
+    for sg in q.signals:
+        out.update(sg.flags)
+    out.update(p["flag"] for p in q.proposals if p.get("flag"))
+    return out
+
+
+def _consistency(q: Any, w: Any, personas: dict) -> list[Finding]:
+    import re
+    out = []
+    flags = _settable_flags(q)
+    last_day = (q.deadline or {}).get("day")
+    for nid, p in personas.items():
+        terms = [t for s in q.secrets if nid in (s.get("conceal") or {}).get("by", [])
+                 for t in s.get("terms", []) + (s.get("conceal") or {}).get("extra_terms", [])]
+        spoken = list(p.opinions.values()) + list(p.anecdotes) + list(p.style_examples) + list(p.farewell_lines) \
+            + [x for lines in (p.fallback_lines or {}).values() for x in lines]
+        for line in spoken:
+            hit = [t for t in terms if t in line]
+            if hit:
+                out.append(Finding("error", "concealer_spells_it_out",
+                                   f"{nid} 在瞒「{'、'.join(hit)}」，可他会顺嘴说出来的话里写着：{line}"))
+        for k in p.knowledge:
+            when = k.get("when") or {}
+            bad = sorted({f for key in ("flags_all", "flags_any", "flags_none") for f in when.get(key, [])} - flags)
+            if bad:
+                out.append(Finding("error", "knowledge_bad_flag", f"{nid} 的知识「{k['text'][:20]}…」等的标记 {bad} 剧情里没有地方会立起来"))
+        if last_day:
+            late = [d for d in p.days if d.isdigit() and int(d) > last_day]
+            if late:
+                out.append(Finding("warn", "days_after_deadline", f"{nid} 的 days 写到了第 {'、'.join(late)} 天，可主线第 {last_day} 天就散席"))
+        for act, text in p.stances.items():
+            if re.search(r"第\s*\d+\s*天", text):
+                out.append(Finding("warn", "stance_has_dated_facts",
+                                   f"{nid} 的立场（{act}）里写了「第 N 天」的事：整幕都会看到，第一天就知道后面的事——拆成 knowledge 按时间放出来"))
+        stale = [o.get("text", "")[:12] for o in p.fallback_options if "tone" in o or o.get("intent") not in (None, "告别")]
+        if stale:
+            out.append(Finding("warn", "option_tags_left", f"{nid} 的兜底选项还带着 tone / intent 标签（只有「告别」还有用）：{stale}"))
     return out

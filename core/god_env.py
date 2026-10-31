@@ -121,6 +121,7 @@ class QuestDef:
     glossary: dict[str, str] = field(default_factory=dict)    # 名词速查
     spoiler_terms: list[str] = field(default_factory=list)    # 玩家没听说过就不该出现在玩家台词选项里的词
     public_premise: str = ""                                  # 城里人都知道的版本（不知道绫华托人查访的 NPC 用这个）
+    premise_after: list[dict] = field(default_factory=list)   # [{text, when}]：局势里后来才成立的部分（茶会当天来了两位客人），when 满足才接在 premise 后面
     after_hint: str = ""                                      # 结局之后继续玩时的一句提示
     hypotheses: list[dict] = field(default_factory=list)      # 玩家直接说出的推测 → 谁会派人去查、查到什么
     belief: dict = field(default_factory=dict)                # 关系够深时，委托人直接信玩家说出的真相（跳过查证）
@@ -673,10 +674,18 @@ class GodEnv:
                 and any(k and k in text for k in self.quest.clues[c].get("keywords", []))]
 
     def unverified_claims(self, npc: str, text: str) -> list[str]:
-        """玩家嘴上说了、手上却没有的线索（keywords 在话里出现）：对方没法核实。只返回线索名，是否追问凭据由对方的性格决定。"""
+        """玩家嘴上说了、手上却没有的线索（keywords 在话里出现）：对方没法核实。是否追问凭据由对方的性格决定。
+        返回的是**玩家自己说出口的词**，不是线索名：线索名是作者写的，里面常常就是答案（「托盘里的四张请帖」），
+        玩家只问了一句「托盘里有几张」，NPC 就从这里读到了还没发生的事。"""
         known = set(self.known.get(npc, []))
-        return [self.quest.clue_name(c) for c, d in self.quest.clues.items()
-                if c not in self.clues and c not in known and any(k and k in text for k in d.get("keywords", []))]
+        out: list[str] = []
+        for c, d in self.quest.clues.items():
+            if c in self.clues or c in known:
+                continue
+            hit = [k for k in d.get("keywords", []) if k and k in text]
+            if hit:
+                out.append("、".join(hit))
+        return list(dict.fromkeys(out))
 
     def spoken_signals(self, speech: str, player_text: str = "") -> list[str]:
         """NPC 这句话里自己说出了哪件事（信号的 evidence：每组至少一个词在 NPC 的话里、且不是玩家刚说过的）。
@@ -1074,8 +1083,9 @@ class GodEnv:
         return {
             "quest_title": self.quest.title,
             # 绫华托人暗中查访这件事，只有绫华自己和被告知过（看过线索）的人知道；其余的人只知道城里的传言
-            "premise": self.quest.premise if persona.role == "companion" or self.known.get(persona.id)
-                       else (self.quest.public_premise or self.quest.premise),
+            "premise": "".join([self.quest.premise if persona.role == "companion" or self.known.get(persona.id)
+                                else (self.quest.public_premise or self.quest.premise)]
+                               + [x["text"] for x in self.quest.premise_after if self.condition_met(x.get("when") or {})]),
             "era": self.quest.era,
             "time_label": self.time_label(),
             "clock": self.clock_label(),

@@ -9,11 +9,14 @@
   locked_reveal       NPC 这句话凑齐了某个“还锁着”的信号的全部证据词——等于把条件没满足的事说出口了。
                       游戏规则是“NPC 说出口就算数”，所以这道门必须在生成时守住，不能靠提示词祈祷：打回重说。
   self_conceal        NPC 自己知道、但此刻还在瞒的事（quest secret 的 conceal：伪装的身份、不肯认的事），说出了它的词。
+  break_character     跳出角色：说了「AI」「语言模型」「玩家」这类戏外的词、夹英文或表情符号、替对方说台词。
+                      人物卡的 taboos 只是写给模型看的，这里是代码那一半。
   slip_missing        这一轮规定要漏一句口风（硬问失败，见信号的 partial），NPC 这句话里却没有那个意思。
                       小模型常被人物卡里写死的“推说不知道”压过去，所以由代码查：没带上就带着理由重说一次。
 """
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 from models.retrieval import coverage
@@ -42,6 +45,28 @@ def self_conceal(speech: str, action: str, concealed: dict[str, str], said_by_pl
             hit.setdefault(sid, term)
     return [f"你说到了「{term}」，这正是你在瞒着的事。不能说出口，也不能暗示；照你对外的说法撑下去。"
             for term in hit.values()][:2]
+
+
+META_TERMS = ("AI", "人工智能", "语言模型", "大模型", "提示词", "玩家", "NPC", "系统提示", "剧本", "这个游戏", "游戏里")   # 戏外的词（taboos 里那几个，去掉会误伤的单字词）
+_LATIN = re.compile(r"[A-Za-z]{3,}")
+_EMOJI = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
+
+
+def break_character(speech: str, action: str, player_name: str, said_by_player: Iterable[str]) -> list[str]:
+    said = "".join(said_by_player)
+    text = (speech or "") + (action or "")
+    out = []
+    meta = [t for t in META_TERMS if t in text and t not in said]
+    if meta:
+        out.append(f"你说到了「{meta[0]}」，这是戏外的话。你就是你自己，不知道什么{meta[0]}；用你自己的身份和说话方式重说。")
+    latin = [w for w in _LATIN.findall(text) if w not in said]
+    if latin:
+        out.append(f"你的话里夹了外文「{latin[0]}」。你说话不夹外文，换成你自己的说法。")
+    if _EMOJI.search(text):
+        out.append("你的话里有表情符号。你说话不用表情符号，把它去掉。")
+    if player_name and re.search(rf"{re.escape(player_name)}[：:]\s*[「“\"]", speech or ""):
+        out.append(f"你替{player_name}说了台词。只说你自己的话，对方说什么由对方决定。")
+    return out[:2]
 
 
 def slip_missing(speech: str, slip: str) -> list[str]:

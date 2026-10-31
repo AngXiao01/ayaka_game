@@ -147,7 +147,8 @@ DEFAULT_SCENE_WORDS = ("痕迹", "脚印", "进出", "丈", "尺")     # 故事�
 
 
 def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "",
-                   scene_words: Iterable[str] = DEFAULT_SCENE_WORDS) -> list[str]:
+                   scene_words: Iterable[str] = DEFAULT_SCENE_WORDS, concealing: Iterable[dict] = (),
+                   player_text: str = "") -> list[str]:
     """核对员自己的意见也要有依据：矛盾要摘得出清单原文，编造要真的是现场细节，说不通要引得出原话；
     摘不出依据的“意见”直接丢掉（小模型的核对员很爱挑刺）。"""
     from models.retrieval import coverage
@@ -172,6 +173,13 @@ def validate_audit(obj: Any, known: list[str] | None = None, speech: str = "",
                 continue
         elif speech and coverage(claim, speech) < 0.5:
             continue
+        elif kind.startswith("露底"):
+            # 小模型的核对员常把「对外的说法」本身、或者复述对方的话判成露底（探针实测：「吾乃杜瓦尔，枫丹来的」）。
+            # 去掉对外说法和对方原话里的字，剩下的还得和瞒着的那件事沾边，才算真的说漏
+            cover = "".join(x.get("cover", "") for x in concealing) + player_text
+            secret = _content_chars("".join(x.get("desc", "") for x in concealing))
+            if len((_content_chars(claim) - _content_chars(cover)) & secret) < 2:
+                continue
         out.append(f"{kind or '问题'}：{claim}" + (f"（依据：{fact}）" if fact else ""))
     return out[:3]
 
@@ -208,7 +216,7 @@ def audit(backend: LLMBackend, params: TaskParams, p: Personality, ctx: TurnCont
                      temperature=0.0, max_tokens=min(300, params.max_tokens), json_schema=AUDIT_SCHEMA,
                      schema_name="npc_audit", meta=meta)
     try:
-        return call_json_ex(backend, req, lambda o: validate_audit(o, known, speech, scene), tracer, 0)
+        return call_json_ex(backend, req, lambda o: validate_audit(o, known, speech, scene, t.get("concealing") or (), player_text), tracer, 0)
     except LLMError as e:
         if tracer:
             tracer.log("fallback", where="npc_audit", error=str(e))

@@ -28,7 +28,7 @@ def codes(findings, level=None):
 def test_real_content_has_no_structural_errors(content):
     findings = lint(*content)
     assert not [str(f) for f in findings if f.level == "error"]
-    assert codes(findings) <= {"witness_absent"}                      # 就算有，也只能是“说不通、要作者决定”的疑点，不能是结构问题
+    assert codes(findings) <= {"witness_absent", "option_tags_left"}  # 就算有，也只能是“说不通、要作者决定”的疑点，不能是结构问题（旧故事的兜底选项还带标签）
 
 
 def test_cli_exit_code(content, capsys):

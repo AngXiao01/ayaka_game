@@ -42,9 +42,7 @@
   ],
   "fallback_options": [
     {
-      "text": "派蒙，你觉得这些点心怎么样？",
-      "intent": "闲聊",
-      "tone": "轻松"
+      "text": "派蒙，你觉得这些点心怎么样？"
     }
   ],
   "opinions": {

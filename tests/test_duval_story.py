@@ -385,3 +385,55 @@ def test_what_has_not_happened_yet_is_not_even_a_locked_topic():
     assert make_god(party_world()).signal_status(thoma, "thoma", None, 99)[0] != "hidden"
     act2 = make_god(party_world(act_id="act2"))
     assert act2.signal_status(ayaka, "ayaka", None, 99)[0] == "locked"           # proposed_private 是玩家提出来的，不是“发生”的
+
+
+def test_breaking_character_is_sent_back_by_code():
+    """人物卡的 taboos 只是写给模型看的；戏外的词、夹英文、表情符号、替对方说台词，由代码打回。"""
+    from core.guardrails import break_character
+    assert break_character("作为一个AI，我没法回答。", "", "旅行者", [])
+    assert break_character("Bonjour，日安。", "", "旅行者", [])
+    assert break_character("妙极了😀", "", "旅行者", [])
+    assert break_character("好呀。旅行者：「那我们走吧。」", "", "旅行者", [])
+    assert not break_character("日安，吾乃杜瓦尔。", "（摇了摇扇子）", "旅行者", [])
+    assert not break_character("您说的AI是什么？", "", "旅行者", ["你是不是AI？"])           # 对方先说的，复述不算
+
+
+def test_the_lint_catches_what_would_make_people_contradict_themselves():
+    """把这次修掉的几处原样装回去，lint 必须报出来——否则它是摆设。"""
+    from core.story_lint import lint
+    q, w, personas = lint_story.load(STORY, "duval_main")
+    assert not [f for f in lint(q, w, personas) if f.code in ("concealer_spells_it_out", "knowledge_bad_flag",
+                                                               "stance_has_dated_facts", "option_tags_left")]
+    personas["fake_duval"].opinions["帽子"] = "淑女从不摘帽。因为一摘，叶子就会掉。"
+    personas["thoma"].stances["act1"] += "第 2 天爪印变成了像后腿站直了走的样子。"
+    personas["thoma"].knowledge.append({"text": "x", "when": {"flags_all": ["no_such_flag"]}})
+    personas["ayaka"].fallback_options.append({"text": "你好", "intent": "闲聊", "tone": "温和"})
+    codes = {f.code for f in lint(q, w, personas)}
+    assert {"concealer_spells_it_out", "knowledge_bad_flag", "stance_has_dated_facts", "option_tags_left"} <= codes
+
+
+def test_the_premise_does_not_tell_anyone_how_the_party_turns_out():
+    """局势是每个 NPC 每轮都看的：「茶会当天来了两位杜瓦尔」要等它发生了才接上（探针抓到：第一天早上绫华就知道有两位）。"""
+    personas = Personality.load_all(STORY / "npcs")
+    morning = make_god({"day": 1, "phase_idx": 0, "location": "kamisato_estate", "flags": [], "act_id": "act1"})
+    assert "两位" not in morning.world_state_summary(personas["ayaka"], 30)["premise"]
+    assert "两位" in make_god(party_world()).world_state_summary(personas["ayaka"], 30)["premise"]
+
+
+def test_an_unverified_claim_is_reported_in_the_players_words_not_the_clue_name():
+    """探针抓到：玩家问「托盘里有几张」，提示词里写的却是线索名「托盘里的四张请帖」——答案从这里漏给了第一天的托马。"""
+    g = make_god({"day": 1, "phase_idx": 0, "location": "kamisato_estate", "flags": [], "act_id": "act1"})
+    said = g.unverified_claims("thoma", "托马，门口的托盘里一共几张请帖？")
+    assert said and not any("四张" in x for x in said)
+
+
+def test_the_auditor_cannot_call_the_cover_story_itself_a_slip():
+    """探针实测：核对员把「吾乃杜瓦尔，枫丹来的」判成露底，白白重说三次。代码只留真和秘密沾边的那种。"""
+    from llm.npc_stages import validate_audit
+    c = make_god(party_world()).npc_task_detail(Personality.load_all(STORY / "npcs")["fake_duval"], 20)["concealing"]
+    judge = lambda claim, speech, player="": validate_audit({"problems": [{"kind": "露底", "claim": claim}]},  # noqa: E731
+                                                            ["x"], speech, (), c, player)
+    assert not judge("吾乃杜瓦尔，枫丹来的。", "吾乃杜瓦尔，枫丹来的。淑女还能是谁。")
+    assert not judge("我侧身才挤进来", "我侧身才挤进来")                                      # 立场里写着的举止
+    assert not judge("镇守之森？凭什么这么说", "镇守之森？凭什么这么说", "您是不是镇守之森里来的？")  # 复述对方的话
+    assert judge("我头上的叶子有点痒", "哎呀，我头上的叶子有点痒")

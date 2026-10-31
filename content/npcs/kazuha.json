@@ -42,14 +42,10 @@
   ],
   "fallback_options": [
     {
-      "text": "你在码头看什么呢？",
-      "intent": "闲聊",
-      "tone": "好奇"
+      "text": "你在码头看什么呢？"
     },
     {
-      "text": "能给我念念你刚写的诗吗？",
-      "intent": "闲聊",
-      "tone": "好奇"
+      "text": "能给我念念你刚写的诗吗？"
     }
   ],
   "opinions": {

@@ -119,7 +119,7 @@ GameEngine（Harness 外壳：组装、存档 = 事务提交点、预算、trace
 |---|---|---|---|---|---|
 | **NPC 评估** | `llm/npc_stages.py` | small | 每轮，说话之前 | 接不接得上、情绪、好感信任张力的变化、这一轮打算怎么回 | 退回默认心态 |
 | **NPC 说话**（唯一的循环） | `core/agent_loop.py` + `llm/npc_llm_adapter.py` | npc（0.8 / 700） | 每轮 | 只读工具若干次，最后 `respond` 交付台词 | 兜底台词 |
-| **NPC 核对** | `llm/npc_stages.py` + `core/guardrails.py` | small | 每轮，说话之后 | 台词对照事实表，矛盾 / 编造就带理由重说一次；知识边界、锁住的事、漏口风这几项是**不调模型**的确定性检查 | 不核对 |
+| **NPC 核对** | `llm/npc_stages.py` + `core/guardrails.py` | small | 每轮，说话之后 | 台词对照事实表，矛盾 / 编造 / 露底就带理由重说一次；知识边界、出戏、自己守的秘密、锁住的事、漏口风这几项是**不调模型**的确定性检查 | 不核对 |
 | **NPC 记录** | `llm/npc_stages.py` | small | 每轮 | 哪些待说的事说出口了、新设定、谎话、带话、去向 | “什么都没记” |
 | **进度审核** `SignalReviewer` | `core/reviewer.py` | review（0.1 / 500） | 每轮，NPC 声称达成信号时 | 逐个信号判定 + 原文证据 | fail-closed：不推进 |
 | **读人 ×2** | `llm/mind_llm_adapter.py`、`core/mind.py` | small | 每轮之后各一次 | NPC 以为玩家知道 / 想听什么（含愿不愿意说），玩家以为 NPC 知道什么 | 不更新 |
@@ -222,7 +222,9 @@ NPC 说话那次请求是：`system`（每个角色整局只构建一次，逐�
 - **整局重放**：`python3 tools/replay_game.py <trace>` 用记下的输入和模型回答把整局再跑一遍并逐段核对状态——验证的是**我们的代码**，不是模型；
   `--state-at N` 直接重建第 N 次输入之前的世界。测试里有一局“金标准局”（`tests/golden/`），世界走向变了就红。
 - **提示词预览**：`python3 tools/preview_prompt.py <存档> <npc> --say …`，不调模型，打印某个 NPC 此刻会收到的完整提示词；`--find 词` 查某个词有没有进他的提示词。
-- **剧情内容校验**：`python3 tools/lint_story.py`，不跑游戏，推演一遍找出走不通的地方（永远拿不到的线索、达成不了的信号、见不到的人）。
+- **剧情内容校验**：`python3 tools/lint_story.py`，不跑游戏，推演一遍找出走不通的地方（永远拿不到的线索、达成不了的信号、见不到的人），再查人物卡和剧情说不说得通（守密的人顺嘴会说出的话里带着秘密、立场里写死了「第 N 天」的事、知识条目等一个永远立不起来的标记）。
+- **一致性探针**：`python3 tools/probe_consistency.py`，连真模型跑几段专门找茬的对话（第一天就追问托马茶会上的事、逼问羽毛帽女士的来历……），
+  看护栏之后还剩多少“提前知道 / 露底 / 出戏”。判据从故事数据里来（还没满足的 knowledge、secret.conceal），结果会抖，看比例。
 
 ## 目录
 

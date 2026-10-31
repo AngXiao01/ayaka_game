@@ -41,14 +41,10 @@
   ],
   "fallback_options": [
     {
-      "text": "今早有什么推荐的吗？",
-      "intent": "闲聊",
-      "tone": "好奇"
+      "text": "今早有什么推荐的吗？"
     },
     {
-      "text": "茶泡饭是怎么做的？",
-      "intent": "闲聊",
-      "tone": "好奇"
+      "text": "茶泡饭是怎么做的？"
     }
   ],
   "opinions": {
