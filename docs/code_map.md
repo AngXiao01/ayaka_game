@@ -80,7 +80,7 @@ engine/ web/ main.py  入口与外壳                        ← 串起来、存
 ## 怎么跑与怎么看
 
 - 玩：`python3 web/server.py --new`（网页）或 `python3 main.py`（终端）；模型相关的环境变量见 `env.example`
-- 离线测试：`~/miniforge3/envs/torch_arm/bin/python -m pytest -q`
+- 离线测试：`python3 -m pip install -r requirements.txt && python3 -m pytest`（网页 HTTP 见 `tests/test_web_server.py`；CI：`.github/workflows/test.yml`）
 - 离线跑一局：`python3 main.py --mock --auto cooperative`
 - 看 trace：`python3 tools/view_trace.py data/traces/<文件>.jsonl`
 - 检查剧情内容：`python3 tools/lint_story.py`（有 error 退出码为 1；`--strict` 连疑点也算失败）

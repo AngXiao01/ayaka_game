@@ -26,7 +26,8 @@ python3 main.py --mock --auto cooperative   # 离线 + AI 扮演玩家，自动�
 python3 main.py --debug                     # 连 OpenRouter 玩（先放好 key，见下）
 python3 web/server.py                       # 网页版，默认 http://127.0.0.1:8770
 python3 main.py --check                     # 检查后端：连通性、模型 id、结构化输出
-~/miniforge3/envs/torch_arm/bin/python -m pytest -q    # 测试（全离线）
+python3 -m pip install -r requirements.txt && python3 -m pytest    # 测试（全离线；含网页 HTTP）
+python3 tools/lint_story.py                     # 检查 content/ 剧情数据
 ```
 
 常用参数：`--save 名字`、`--new`（清掉存档重来）、`--incognito`（不留存档和 trace）、`--no-hints`、`--options static`、`--max-turns N`、`--seed N`。
