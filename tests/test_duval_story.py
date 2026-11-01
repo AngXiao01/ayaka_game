@@ -402,14 +402,27 @@ def test_the_lint_catches_what_would_make_people_contradict_themselves():
     """把这次修掉的几处原样装回去，lint 必须报出来——否则它是摆设。"""
     from core.story_lint import lint
     q, w, personas = lint_story.load(STORY, "duval_main")
-    assert not [f for f in lint(q, w, personas) if f.code in ("concealer_spells_it_out", "knowledge_bad_flag",
-                                                               "stance_has_dated_facts", "option_tags_left")]
+    checks = ("concealer_spells_it_out", "knowledge_bad_flag", "stance_has_dated_facts", "option_tags_left", "stance_no_after")
+    assert not [f for f in lint(q, w, personas) if f.code in checks]
     personas["fake_duval"].opinions["帽子"] = "淑女从不摘帽。因为一摘，叶子就会掉。"
-    personas["thoma"].stances["act1"] += "第 2 天爪印变成了像后腿站直了走的样子。"
+    personas["thoma"].stances["default"] += "第 2 天爪印变成了像后腿站直了走的样子。"
     personas["thoma"].knowledge.append({"text": "x", "when": {"flags_all": ["no_such_flag"]}})
     personas["ayaka"].fallback_options.append({"text": "你好", "intent": "闲聊", "tone": "温和"})
+    personas["ayaka"].stances["default"] = personas["ayaka"].stances.pop("after")      # 散场后的话写进了 default
     codes = {f.code for f in lint(q, w, personas)}
-    assert {"concealer_spells_it_out", "knowledge_bad_flag", "stance_has_dated_facts", "option_tags_left"} <= codes
+    assert set(checks) <= codes
+
+
+def test_the_second_act_does_not_hear_the_epilogue_and_the_epilogue_does_not_stay_in_the_second_act():
+    """探针扩场景时发现：散场后的立场写在 default 里，第二幕（茶会还没散）的托马、老狸猫读到的就是「茶会过去了」；
+    收场以后绫华、真画家又一直停在第二幕「要不要点破」的心思里。default 给没单独写的那几幕，散场以后读 after。"""
+    personas = Personality.load_all(STORY / "npcs")
+    act2 = make_god(party_world(act_id="act2"))
+    for nid in ("thoma", "old_tanuki", "paimon"):
+        assert "过去了" not in act2.stance_of(personas[nid]) and "散了" not in act2.stance_of(personas[nid]), nid
+    done = make_god(party_world(act_id="act2", resolved=True, ending="private", flags=["party_open", "duval_arrived", "private"]))
+    for nid in ("ayaka", "duval", "thoma", "old_tanuki", "paimon"):
+        assert done.stance_of(personas[nid]) == personas[nid].stances["after"], nid
 
 
 def test_the_premise_does_not_tell_anyone_how_the_party_turns_out():
@@ -423,7 +436,8 @@ def test_the_premise_does_not_tell_anyone_how_the_party_turns_out():
 def test_an_unverified_claim_is_reported_in_the_players_words_not_the_clue_name():
     """探针抓到：玩家问「托盘里有几张」，提示词里写的却是线索名「托盘里的四张请帖」——答案从这里漏给了第一天的托马。"""
     g = make_god({"day": 1, "phase_idx": 0, "location": "kamisato_estate", "flags": [], "act_id": "act1"})
-    said = g.unverified_claims("thoma", "托马，门口的托盘里一共几张请帖？")
+    assert g.unverified_claims("thoma", "托马，门口的托盘里一共几张请帖？") == []        # 只是问一句：一条线索只说中一个词（mention_min）
+    said = g.unverified_claims("thoma", "托马，听说门口托盘里有张请帖的家纹是反的？")
     assert said and not any("四张" in x for x in said)
 
 
@@ -437,3 +451,115 @@ def test_the_auditor_cannot_call_the_cover_story_itself_a_slip():
     assert not judge("我侧身才挤进来", "我侧身才挤进来")                                      # 立场里写着的举止
     assert not judge("镇守之森？凭什么这么说", "镇守之森？凭什么这么说", "您是不是镇守之森里来的？")  # 复述对方的话
     assert judge("我头上的叶子有点痒", "哎呀，我头上的叶子有点痒")
+
+
+def test_a_disguise_covering_up_its_secret_is_not_a_contradiction():
+    """探针实测：立场写「裙摆底下那一块偶尔会动（那是你的尾巴）」，她说「是蓬蓬裙的褶子」，核对员判矛盾、逼她重说。
+    被“冲突”的那条正是她在瞒的事：这是守密，不是说错；不再瞒了（被揭穿以后）才照常核对。"""
+    from llm.npc_stages import validate_audit
+    d = make_god(party_world()).npc_task_detail(Personality.load_all(STORY / "npcs")["fake_duval"], 20)
+    speech = "动？那是蓬蓬裙的褶子，淑女跪坐本就这样。"
+    lie = {"problems": [{"kind": "矛盾", "claim": speech, "fact": "跪坐时坐得笔直，只有裙摆底下鼓起的一块偶尔会动（那是你的尾巴）。"}]}
+    assert validate_audit(lie, [d["npc_stance"]], speech, (), d["concealing"], "", d["concealed_terms"]) == []
+    assert validate_audit(lie, [d["npc_stance"]], speech, (), [], "", {})
+
+
+class _Picky(MockBackend):
+    """核对员每轮都挑一句「请帖放进托盘」的刺；第二次开口（重说）换成 second。"""
+    def __init__(self, kind="编造", second="托盘？哎呀，我的尾巴……", both_true=False):
+        super().__init__(seed=0)
+        self.kind, self.second, self.both_true, self.spoken = kind, second, both_true, 0
+
+    def _npc_step(self, meta):
+        out = super()._npc_step(meta)
+        if out.get("tool") == "respond" and meta.get("player_text"):
+            self.spoken += 1
+            out["args"] = {**out["args"], "speech": "请帖我早放进托盘了。" if self.spoken == 1 else self.second}
+        return out
+
+    def _npc_audit(self, meta):
+        fact = "茶会那天，托马会在前厅门口收客人的请帖，客人把请帖放进同一个漆托盘里。" if self.kind == "矛盾" else ""
+        return {"problems": [{"kind": self.kind, "claim": "请帖我早放进托盘了", "fact": fact}]}
+
+    def _npc_audit_confirm(self, meta):
+        return {"verdicts": [{"i": i, "why": "", "both_true": self.both_true} for i in range(meta.get("n", 0))]}
+
+
+def _talk_to_the_hat(tmp_path, backend):
+    f = tmp_path / "data/saves/d.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"world": party_world()}))
+    eng = GameEngine(settings(tmp_path), backend, ScriptedPlayer([{"kind": "talk", "npc": "fake_duval"}, ("您的请帖呢？", "自由发言"), "q"]),
+                     out=lambda s: None, save_name="d", new_game=False)
+    eng.run(max_actions=3)
+    ev = [json.loads(x) for x in eng.tracer.path.read_text(encoding="utf-8").splitlines()]
+    said = [e["reply"]["speech"] for e in ev if e["event"] == "turn" and e.get("npc") == "fake_duval" and e.get("player")]
+    return ev, said[-1]
+
+
+def test_a_reroll_that_breaks_a_hard_rule_is_thrown_away(tmp_path):
+    """重说的那句不再请核对员，但确定性的门照样要过：原句只是核对员有意见，重说反倒说出了她在瞒的「尾巴」，就留原句。"""
+    ev, final = _talk_to_the_hat(tmp_path, _Picky())
+    assert [e["problems"] for e in ev if e["event"] == "audit"] == [["编造：请帖我早放进托盘了"]]
+    assert any("尾巴" in p for e in ev if e["event"] == "reroll_rejected" for p in e["problems"])
+    assert final == "请帖我早放进托盘了。"
+    _, final = _talk_to_the_hat(tmp_path / "ok", _Picky(second="请帖？托马在门口收着呢。"))
+    assert final == "请帖？托马在门口收着呢。"                                         # 重说没撞门就用重说的
+
+
+def test_the_auditors_contradictions_are_double_checked(tmp_path):
+    """核对员说矛盾，再一对一对地问「这两句能不能同时为真」：能，就不逼她重说（探针实测核对员的矛盾大半是误报）。"""
+    ev, final = _talk_to_the_hat(tmp_path, _Picky(kind="矛盾", both_true=True))
+    assert not [e for e in ev if e["event"] == "audit"] and final == "请帖我早放进托盘了。"
+    assert [e for e in ev if e["event"] == "audit_overruled"]
+    ev, _ = _talk_to_the_hat(tmp_path / "real", _Picky(kind="矛盾", second="请帖？托马在门口收着呢。"))
+    assert [e["problems"] for e in ev if e["event"] == "audit"] and not [e for e in ev if e["event"] == "audit_overruled"]
+
+
+def test_hearsay_about_what_has_not_happened_yet_is_sent_back_without_telling_the_answer(tmp_path):
+    """探针实测：第一天问派蒙「茶会上会来几位杜瓦尔」，她顺着说「只听说有两位」。还没发生的事只给核对员
+    （NPC 的提示词里只有一句「没写的你都没听说过」），核对员判「提前知道」；打回重说的意见里不带答案。"""
+    from llm.npc_stages import validate_audit
+    from tools import preview_prompt as pp
+    day1 = {"day": 1, "phase_idx": 0, "location": "kamisato_estate", "flags": [], "act_id": "act1"}
+    paimon = Personality.load_all(STORY / "npcs")["paimon"]
+    d = make_god(day1).npc_task_detail(paimon, 30)
+    assert any("两位" in x for x in d["audit_not_yet"]) and not make_god(party_world()).npc_task_detail(paimon, 30)["audit_not_yet"]
+    asked = "派蒙，你觉得茶会上会来几位杜瓦尔女士？"
+    judge = lambda speech, player=asked: validate_audit({"problems": [{"kind": "提前知道", "claim": speech}]},  # noqa: E731
+                                                        [d["npc_stance"]], speech, (), [], player, {}, d["audit_not_yet"])
+    slip = judge("派蒙只听说有两位杜瓦尔女士")
+    assert slip and "两位杜瓦尔女士" in slip[0] and "自称" not in slip[0]               # 引的是她的原话，不是还没发生的那条
+    assert not judge("两位？这消息你从哪儿听来的？", "听说茶会上会来两位杜瓦尔女士？")    # 对方先说的，她只是反问
+    assert not judge("真来了两位，也得都请进去", "听说茶会上会来两位杜瓦尔女士，你打算怎么办？")   # 立场里写着的打算，只撞上「来了」
+    thoma = make_god(day1).npc_task_detail(Personality.load_all(STORY / "npcs")["thoma"], 30)
+    assert not validate_audit({"problems": [{"kind": "提前知道", "claim": "巡夜的人？我这边没听谁提过。你是在哪儿听来的"}]},
+                              [thoma["npc_stance"]] + thoma["npc_knows"], "巡夜的人？我这边没听谁提过。你是在哪儿听来的", (), [],
+                              "我听说巡夜的人昨晚看见林边有什么东西飘过去，是真的吗？", {}, thoma["audit_not_yet"])
+    f = tmp_path / "data/saves/d.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"world": day1}))
+    pv = pp.capture("d", "paimon", say=asked, settings=settings(tmp_path))
+    spoken = "\n".join(m["content"] for r in pv.requests if r.task != "npc_audit" for m in r.messages)
+    assert "两位自称杜瓦尔" not in spoken and "没写的你都没听说过" in spoken
+    assert "两位自称杜瓦尔" in "\n".join(m["content"] for r in pv.requests if r.task == "npc_audit" for m in r.messages)
+
+
+def test_a_scene_word_the_other_side_just_used_is_only_made_up_when_something_new_is_said_about_it():
+    """「请帖的事还没说完呢」只是接着对方的话头（探针实测被判成编造、白白重说）；对方问「几张」、答「四张」才是在报数。"""
+    from llm.npc_stages import validate_audit
+    scene = make_god(party_world()).quest.audit_scene_words
+    made_up = lambda claim, player: validate_audit({"problems": [{"kind": "编造", "claim": claim}]}, ["x"], claim, scene, (), player)  # noqa: E731
+    assert not made_up("请帖的事还没说完呢", "托马最近是不是为请帖的事发愁？")
+    assert made_up("数过了，四张", "门口的托盘里一共几张？")
+    assert made_up("请帖上都盖着金色的家纹", "托马最近是不是为请帖的事发愁？")
+    assert not made_up("那栗子羊羹还有第二块么", "")
+
+
+def test_a_passing_word_does_not_hand_over_a_whole_clue():
+    """探针实测：玩家只问了真画家一句「您觉得她是狸猫变的吗？」，「水洼边练屈膝礼的小狸猫」这条线索就算告诉了她，
+    她接着就「想起水洼边练屈膝礼的小家伙」。这个故事的 keywords 里有谁都会顺口说的词，要说中两个才算（quest.mention_min）。"""
+    g = make_god(party_world(clues=["c_practice", "c_reversed_card"]))
+    assert g.mentioned_clues("duval", "您觉得她是狸猫变的吗？") == []
+    assert g.mentioned_clues("duval", "我昨晚在后门外的水洼边，看见一只狸猫练屈膝礼。") == ["c_practice"]
+    assert g.mentioned_clues("duval", "托盘里一共四张请帖吧？") == ["c_reversed_card"]

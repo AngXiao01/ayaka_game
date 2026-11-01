@@ -117,6 +117,9 @@ class MockBackend:
     def _npc_audit(self, meta: dict) -> dict:
         return {"problems": []}
 
+    def _npc_audit_confirm(self, meta: dict) -> dict:          # 离线时核对员说矛盾就算矛盾
+        return {"verdicts": [{"i": i, "why": "", "both_true": False} for i in range(meta.get("n", 0))]}
+
     def _npc_annotate(self, meta: dict) -> dict:
         r = self._take(meta)
         return {"task_signals": r["task_signals"], "new_facts": r["new_facts"], "lies": r["lies"], "tell": [], "go_to": ""}

@@ -167,6 +167,9 @@ def build_state_block(ctx: TurnContext, skills: list[Skill], flags: list[str],
     mind = [f"- 你的立场：{t['npc_stance']}"]
     if t.get("npc_knows"):                         # 到此刻为止已经发生、他知道的事（人物卡 knowledge，按时间和标记由代码筛过）
         mind.append("- 到此刻为止你知道的事（只有这些；没写的还没发生，或者你没听说）：\n" + _bullets(t["npc_knows"], indent="  "))
+    if t.get("audit_not_yet"):                     # 还有没到时候的事（内容不给他）：小模型爱顺着对方的预设编「听说」（探针实测：第一天的派蒙）
+        mind.append("- 这几天的事，" + ("上面" if t.get("npc_knows") else "立场和局势里") + "没写的你都没听说过："
+                    "别编「我听说……」；对方说起你不知道的事，也别顺着认下来，照实说没听说过，或者问一句。")
     if t.get("concealing"):
         mind.append("- 你在瞒着的事（不说出口、不暗示，照对外的说法撑住）：\n"
                     + _bullets([x["desc"] + (f"。对外：{x['cover']}" if x["cover"] else "") for x in t["concealing"]], indent="  "))
@@ -473,16 +476,19 @@ class NPCLLMAdapter:
         if res.final is None:
             return res
         if allow_tools and not ctx.problems:                                          # ②′ 核对：越界 / 锁住的事 / 口风 / 矛盾 / 编造 / 说不通 → 带着意见重说一次
-            problems: list[str] = []
             said = [h["text"] for h in ctx.history if h["speaker"] == "player"][-3:] + ([player_text] if player_text is not None else [])
-            if not ctx.task.get("must_reveal"):                                    # 先过确定性的两道门（不调模型，开场也要守）：知识边界、锁住的事
-                problems = knowledge_boundary(res.final["speech"], res.final["action"], ctx.task.get("blocked_terms", {}), said)
-                if not problems:
-                    problems = break_character(res.final["speech"], res.final["action"], ctx.player_name, said)
-                if not problems:
-                    problems = self_conceal(res.final["speech"], res.final["action"], ctx.task.get("concealed_terms", {}), said)
-                if not problems:
-                    problems = locked_reveal(res.final["speech"], res.final["action"], ctx.task.get("locked_evidence", []), said)
+
+            def hard(final: dict) -> list[str]:                               # 确定性的几道门（不调模型，开场也要守），撞上第一道就停
+                if ctx.task.get("must_reveal"):
+                    return []
+                s, a = final["speech"], final["action"]
+                return (knowledge_boundary(s, a, ctx.task.get("blocked_terms", {}), said)
+                        or break_character(s, a, ctx.player_name, said)
+                        or self_conceal(s, a, ctx.task.get("concealed_terms", {}), said)
+                        or locked_reveal(s, a, ctx.task.get("locked_evidence", []), said))
+
+            problems = hard(res.final)
+            hard_first = bool(problems)
             press = ctx.task.get("press") or {}
             if not problems and player_text is not None and press.get("slip") and not press.get("ok"):   # 硬问失败那一轮规定要漏口风：代码查有没有漏
                 problems = slip_missing(res.final["speech"], press["slip"])
@@ -499,8 +505,18 @@ class NPCLLMAdapter:
                                            player_intent, skills, flags, self.budget_tokens, details)
                     again = speak(msgs2)
                     if again.final is not None:
-                        extra_tokens += res.tokens
-                        res = again
+                        worse = hard(again.final)
+                        if worse and not hard_first:
+                            # 原句只是核对员有意见，重说反倒撞上了确定性的门（说出瞒着的词、戏外的词……）：留原句。
+                            # 只重说一次、重说的那句不再请核对员，所以至少要过这几道不花钱的门
+                            extra_tokens += again.tokens
+                            if self.tracer:
+                                self.tracer.log("reroll_rejected", npc=p.id, turn=ctx.turn, speech=again.final["speech"], problems=worse)
+                        else:
+                            if worse and self.tracer:
+                                self.tracer.log("guard_failed", npc=p.id, turn=ctx.turn, speech=again.final["speech"], problems=worse)
+                            extra_tokens += res.tokens
+                            res = again
                 finally:
                     ctx.problems = []
         press = ctx.task.get("press") or {}

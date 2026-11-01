@@ -133,6 +133,8 @@ class QuestDef:
     secrets: list[dict] = field(default_factory=list)         # 不许谁说漏的案情事实：{id, terms, known_by, unlocked_by_clues, unlocked_by_signals, conceal?}
                                                               # conceal：{by, until: {min_trust?, flags_any?…}, extra_terms?, cover?}，知道的人自己也要瞒着
     audit_scene_words: list[str] = field(default_factory=list)  # 核对员判“编造”时认的现场细节词（这个故事里编错了会坏事的那类东西）
+    mention_min: int = 1                                      # 玩家的话里要说中一条线索的几个 keywords，才算把它告诉了对方（线索里可再写自己的 mention_min）。
+                                                              # keywords 里有「狸猫」「请帖」这种谁都会顺口说的词时设成 2，不然问一句「她是狸猫变的吗」就等于把整条线索讲了一遍
     milestone: dict = field(default_factory=dict)             # 玩家和 NPC 都要知道还有多久的那个时刻：{label, day, phase}（比如茶会开席）
     fragile: dict = field(default_factory=dict)               # 会被毁掉的证据：{clue: {flag, text}}        # 结局由状态拼出来：满足条件就加一段
 
@@ -667,11 +669,17 @@ class GodEnv:
             self.flags.append(f"alerted:{npc}")                  # 被逼问过的人会起戒心，可能去通风报信
         self.tension = min(1.0, self.tension + 0.05)
 
+    def _said_keywords(self, cid: str, text: str) -> list[str]:
+        """这句话说中了线索的哪些 keywords；不够 mention_min 个就当没说中（返回空）。"""
+        d = self.quest.clues[cid]
+        hit = [k for k in d.get("keywords", []) if k and k in text]
+        need = min(int(d.get("mention_min", self.quest.mention_min)), len(d.get("keywords", [])) or 1)
+        return hit if len(hit) >= need else []
+
     def mentioned_clues(self, npc: str, text: str) -> list[str]:
         """玩家在对话里提到了手上的哪条线索（线索的 keywords），而对方还不知道：说出来就等于出示了。"""
         known = set(self.known.get(npc, []))
-        return [c for c in self.clues if c not in known
-                and any(k and k in text for k in self.quest.clues[c].get("keywords", []))]
+        return [c for c in self.clues if c not in known and self._said_keywords(c, text)]
 
     def unverified_claims(self, npc: str, text: str) -> list[str]:
         """玩家嘴上说了、手上却没有的线索（keywords 在话里出现）：对方没法核实。是否追问凭据由对方的性格决定。
@@ -679,10 +687,10 @@ class GodEnv:
         玩家只问了一句「托盘里有几张」，NPC 就从这里读到了还没发生的事。"""
         known = set(self.known.get(npc, []))
         out: list[str] = []
-        for c, d in self.quest.clues.items():
+        for c in self.quest.clues:
             if c in self.clues or c in known:
                 continue
-            hit = [k for k in d.get("keywords", []) if k and k in text]
+            hit = self._said_keywords(c, text)
             if hit:
                 out.append("、".join(hit))
         return list(dict.fromkeys(out))
@@ -994,6 +1002,12 @@ class GodEnv:
         """人物卡 knowledge 里此刻已经成立的条目：事还没发生，他就不知道（立场里不写具体的事，免得第一天就知道第二天的事）。"""
         return [k["text"] for k in getattr(persona, "knowledge", []) if self.condition_met(k.get("when") or {})]
 
+    def not_yet_known(self, persona) -> list[str]:
+        """knowledge_of 的另一半：他人物卡里还没到时候的条目，加上局势里还没接上的 premise_after（谁都还不知道）。
+        只给核对员判「提前知道」——小模型很爱顺着对方的预设认下来（探针实测：第一天的派蒙说「只听说有两位杜瓦尔女士」）。"""
+        return [k["text"] for k in getattr(persona, "knowledge", []) if not self.condition_met(k.get("when") or {})] \
+            + [x["text"] for x in self.quest.premise_after if not self.condition_met(x.get("when") or {})]
+
     def stance_of(self, persona) -> str:
         """主线结束后用后日谈的立场（可以按结局细分：after:mercy）。"""
         if self.resolved:
@@ -1042,6 +1056,7 @@ class GodEnv:
             "concealing": [{"desc": s["desc"], "cover": (s.get("conceal") or {}).get("cover", "")}
                            for s in self.concealing(persona.id, trust)],
             "npc_knows": self.knowledge_of(persona),
+            "audit_not_yet": self.not_yet_known(persona),           # 只给核对员：绝不进 NPC 的提示词
             "audit_scene_words": list(self.quest.audit_scene_words),
             "prior_clues": [self.quest.clues[c]["desc"] for c in getattr(persona, "knows_clues", []) if c in self.quest.clues],
             "known_clues": [f"{self.quest.clue_name(c)}：{self.quest.clues[c]['desc']}" for c in self.known.get(npc, [])],

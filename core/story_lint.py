@@ -302,6 +302,13 @@ def _consistency(q: Any, w: Any, personas: dict) -> list[Finding]:
             late = [d for d in p.days if d.isdigit() and int(d) > last_day]
             if late:
                 out.append(Finding("warn", "days_after_deadline", f"{nid} 的 days 写到了第 {'、'.join(late)} 天，可主线第 {last_day} 天就散席"))
+        by_act = [a.id for a in q.acts if a.id in p.stances]
+        if by_act and "after" not in p.stances and not any(k.startswith("after:") for k in p.stances):
+            # default 是“没单独写的那几幕”用的，收场以后读的是 after。把散场后的话写进 default，
+            # 没写的那一幕就会提前读到它（第二幕的托马以为茶会已经散了），收场后又停在最后一幕的心思里
+            why = (f"default 里写的「{p.stances['default'][:14]}…」会给没单独写立场的那几幕用；如果它写的是散场以后，改名叫 after"
+                   if p.stances.get("default") else f"收场以后他还停在 {by_act[-1]} 的心思里")
+            out.append(Finding("warn", "stance_no_after", f"{nid} 按幕写了立场（{'、'.join(by_act)}），却没有 after：{why}"))
         for act, text in p.stances.items():
             if re.search(r"第\s*\d+\s*天", text):
                 out.append(Finding("warn", "stance_has_dated_facts",
