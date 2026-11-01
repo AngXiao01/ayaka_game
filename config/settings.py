@@ -4,7 +4,7 @@
 
 后端（LLM_BACKEND）：
   openrouter（默认）  OpenRouter，变量前缀 OPENROUTER_；key 读 OPENROUTER_API_KEY，
-                     否则读 OPENROUTER_API_KEY_FILE（默认 ~/.openrouter_key）；
+                     否则读 OPENROUTER_API_KEY_FILE（默认 ~/.ayaka_game_openrouter_key）；
                      OPENROUTER_MODEL 默认 cheapest = 启动时自动挑能用的最便宜模型（见 llm/model_picker.py）
   gemma              自建 vLLM，变量前缀 GEMMA_；key 读 GEMMA_API_KEY，否则读 GEMMA_API_KEY_FILE
                      （默认 ~/.agentrt/api_key，与 agentrt/scripts/up51.sh 共用）
@@ -71,7 +71,7 @@ class Provider:
 
 
 PROVIDERS = {
-    "openrouter": Provider("OPENROUTER", "https://openrouter.ai/api/v1", "cheapest", "~/.openrouter_key",
+    "openrouter": Provider("OPENROUTER", "https://openrouter.ai/api/v1", "cheapest", "~/.ayaka_game_openrouter_key",
                            (("X-Title", "ayaka_game"),), "none"),
     "gemma": Provider("GEMMA", "http://127.0.0.1:8000/v1", "heretic", "~/.agentrt/api_key"),
 }

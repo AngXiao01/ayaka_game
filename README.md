@@ -37,7 +37,7 @@ python3 tools/lint_story.py                     # 检查 content/ 剧情数据
 默认后端 `LLM_BACKEND=openrouter`，只读 `OPENROUTER_*` 变量；`gemma`（自建 vLLM，`GEMMA_*`）和 `mock` 同理，互不串用变量。所有变量见 `env.example`。
 
 ```bash
-pbpaste > ~/.openrouter_key && chmod 600 ~/.openrouter_key   # key 放文件里，不进 shell 历史（默认读这个文件）
+pbpaste > ~/.ayaka_game_openrouter_key && chmod 600 ~/.ayaka_game_openrouter_key   # key 放文件里，不进 shell 历史（默认读这个文件）
 # 或者 .env 里写 OPENROUTER_API_KEY=...                       # trace 里会自动打码
 python3 main.py --check                                      # 依次查：模型列表 → key → 普通对话 → 结构化 NPC 回复
 ```

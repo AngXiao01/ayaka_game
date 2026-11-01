@@ -17,7 +17,7 @@ START_HINT = ("服务没起来的话：~/Desktop/agentrt/scripts/up51.sh 会在 
               "或者先用 --mock 离线跑。")
 HINTS = {
     "gemma": START_HINT,
-    "openrouter": "检查网络能否访问 openrouter.ai，以及 OPENROUTER_API_KEY / ~/.openrouter_key；或者先用 --mock 离线跑。",
+    "openrouter": "检查网络能否访问 openrouter.ai，以及 OPENROUTER_API_KEY / ~/.ayaka_game_openrouter_key；或者先用 --mock 离线跑。",
 }
 
 

@@ -116,7 +116,7 @@ def clean_env(tmp_path, monkeypatch):
     for k in list(os.environ):
         if k.startswith(("OPENROUTER_", "GEMMA_", "LLM_", "MODEL_")):
             monkeypatch.delenv(k)
-    monkeypatch.setenv("HOME", str(tmp_path))            # ~/.openrouter_key、~/.agentrt/api_key 都落在临时目录
+    monkeypatch.setenv("HOME", str(tmp_path))            # ~/.ayaka_game_openrouter_key、~/.agentrt/api_key 都落在临时目录
     main_mod._RESOLVED.clear()
     return tmp_path
 
@@ -160,10 +160,10 @@ def test_default_is_openrouter_cheapest_and_never_borrows_the_vllm_key(clean_env
 
 
 def test_key_file_is_read_and_source_never_contains_the_key(clean_env):
-    (clean_env / ".openrouter_key").write_text(f"  {KEY}\n")
+    (clean_env / ".ayaka_game_openrouter_key").write_text(f"  {KEY}\n")
     llm = settings(clean_env).llm
     assert llm.api_key == KEY
-    assert "~/.openrouter_key" in llm.key_source and KEY not in llm.key_source
+    assert "~/.ayaka_game_openrouter_key" in llm.key_source and KEY not in llm.key_source
     llm = settings(clean_env, OPENROUTER_API_KEY="env-key", OPENROUTER_MODEL="google/gemma-3-27b-it").llm
     assert llm.api_key == "env-key" and llm.key_source == "OPENROUTER_API_KEY"
     assert llm.model == "google/gemma-3-27b-it"
@@ -176,7 +176,7 @@ def test_key_file_is_read_and_source_never_contains_the_key(clean_env):
     (f"{KEY[:30]}\n{KEY[30:]}", "换行"),                          # 终端里折行粘贴
 ])
 def test_pasted_key_is_cleaned(raw, note, clean_env):
-    (clean_env / ".openrouter_key").write_text(raw)
+    (clean_env / ".ayaka_game_openrouter_key").write_text(raw)
     llm = settings(clean_env).llm
     assert llm.api_key == KEY and note in llm.key_source and KEY not in llm.key_source
 
@@ -273,12 +273,12 @@ def test_upstream_error_in_200_body(clean_env, srv):
 
 
 def test_401_says_where_the_key_came_from_and_its_shape(clean_env, srv):
-    (clean_env / ".openrouter_key").write_text("sk-or-v1-revoked")
+    (clean_env / ".ayaka_game_openrouter_key").write_text("sk-or-v1-revoked")
     bad = build_llm(settings(clean_env, OPENROUTER_BASE_URL=srv.url, OPENROUTER_MODEL="openai/gpt-4o").llm)
     with pytest.raises(LLMError) as e:
         bad.complete(req())
     msg = str(e.value)
-    assert "~/.openrouter_key" in msg and "长度 16，sk-or-v1- 开头" in msg and "User not found" in msg
+    assert "~/.ayaka_game_openrouter_key" in msg and "长度 16，sk-or-v1- 开头" in msg and "User not found" in msg
     assert "revoked" not in msg
     c = client(clean_env, srv)
     srv.behaviors.append(lambda p: (402, {"error": {"code": 402, "message": "Insufficient credits"}}))
@@ -300,7 +300,7 @@ def test_check_validates_the_key_before_spending(clean_env):
         assert any("key 有效" in x and "已用 $0.0123" in x for x in out)
         out.clear()
         _MP.delenv("OPENROUTER_API_KEY")
-        (clean_env / ".openrouter_key").write_text("sk-or-v1-revoked")
+        (clean_env / ".ayaka_game_openrouter_key").write_text("sk-or-v1-revoked")
         bad = build_llm(settings(clean_env, OPENROUTER_BASE_URL=srv.url, OPENROUTER_MODEL="openai/gpt-4o").llm)
         n = len(srv.requests)
         assert not run_check(bad, out.append)
@@ -342,7 +342,7 @@ def test_pick_model_probes_and_pins_first_passing(clean_env, monkeypatch, capsys
     srv = FakeOpenRouter(CATALOG)
     try:
         env = clean_env / ".env"
-        env.write_text("LLM_BACKEND=openrouter\nOPENROUTER_MODEL=cheapest   # 注释\nOPENROUTER_API_KEY_FILE=~/.openrouter_key\n")
+        env.write_text("LLM_BACKEND=openrouter\nOPENROUTER_MODEL=cheapest   # 注释\nOPENROUTER_API_KEY_FILE=~/.ayaka_game_openrouter_key\n")
         settings(clean_env, OPENROUTER_BASE_URL=srv.url, OPENROUTER_API_KEY=KEY)
         srv.behaviors += [lambda p: (200, reply("这不是 JSON")),           # 第一名：3 次里坏 1 次 → 不算通过
                           lambda p: (200, reply(STEP)), lambda p: (200, reply(STEP))] \
@@ -353,7 +353,7 @@ def test_pick_model_probes_and_pins_first_passing(clean_env, monkeypatch, capsys
         assert "✗ deepseek/deepseek-flash" in out and "✓ z-ai/glm-cheap-out" in out
         assert "2/3" in out and "3/3" in out
         lines = env.read_text().splitlines()
-        assert lines[0] == "LLM_BACKEND=openrouter" and lines[2] == "OPENROUTER_API_KEY_FILE=~/.openrouter_key"
+        assert lines[0] == "LLM_BACKEND=openrouter" and lines[2] == "OPENROUTER_API_KEY_FILE=~/.ayaka_game_openrouter_key"
         assert lines[1].startswith("OPENROUTER_MODEL=z-ai/glm-cheap-out ")
         assert [r["model"] for r in srv.requests] == ["deepseek/deepseek-flash"] * 3 + ["z-ai/glm-cheap-out"] * 3 \
             + ["xiaomi/mimo-flash"] * 3                                    # 前 N 个都测，选最便宜的全过者
